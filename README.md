@@ -1,6 +1,14 @@
-# vinext-starter
+# Pulseframe
 
-A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.
+A browser-based music visualizer running on [vinext](https://github.com/cloudflare/vinext), with private Cloudflare D1 preset storage.
+
+Save your settings as personal Quick Looks, pin favorites for quick access, and
+reuse them on another track. Presets include appearance and audio response;
+media, uploaded images, subtitles, and track text stay with the project.
+
+See [Personal Quick Looks and customization](docs/personal-quick-looks.md) for
+the saving contract, controls, and required database migration. Apply the new
+migration before deploying the updated preset API.
 
 ## Prerequisites
 

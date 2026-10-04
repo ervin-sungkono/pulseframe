@@ -7,6 +7,7 @@ const modules=await loadSources(), routes=modules['preset-route'], actions=modul
 const settings=modules['visual-settings'].migrateSettings(modules['visual-settings'].settingsSchema.parse({mode:'edges',particleMode:'stardust',particleFlow:'drift',backdrop:'clean',primary:'#9b72ff',secondary:'#61e5ff',background:'#080c20',sensitivity:1.3,quietThreshold:.006,bassBoost:1,responseStyle:'balanced',atmosphere:1,particleCount:120,glow:.95,visualScale:1.1,motionSpeed:1,particleSize:1,beatRays:true,trails:false,particles:true,videoOpacity:55,logoOpacity:100,showTrackInfo:true,trackTitle:'Song',trackArtist:'Artist',infoPosition:'bottom',infoAlign:'center',infoSize:1,showTimer:false}));
 function database(){
   const db=new DatabaseSync(':memory:');db.exec(readFileSync(new URL('../drizzle/0000_lucky_winter_soldier.sql',import.meta.url),'utf8'));
+  db.exec(readFileSync(new URL('../drizzle/0001_personal_quick_look.sql',import.meta.url),'utf8'));
   return {close:()=>db.close(),prepare(sql){const statement=db.prepare(sql);let args=[];return {bind(...values){args=values;return this;},async all(){return {results:statement.all(...args)};},async first(){return statement.get(...args)??null;},async run(){const result=statement.run(...args);return {meta:{changes:Number(result.changes)}};}};}};
 }
 const origin='https://pulseframe.example';
@@ -29,20 +30,20 @@ test('preset API saves across fresh store instances, validates input and makes r
     const id=crypto.randomUUID(),body={id,name:'  Neon lake  ',settings};
     const first=await routes.POST(req('','POST',body,{Origin:origin}));assert.equal(first.status,201);
     const saved=(await first.json()).preset;assert.equal(saved.name,'Neon lake');assert.equal(saved.settings.mode,'edges');assert.equal('trackTitle' in saved.settings,false);
-    assert.equal((await routes.POST(req('','POST',body))).status,201);
+    assert.equal((await routes.POST(req('','POST',body,{Origin:origin}))).status,200);
     const rows=(await (await routes.GET(req())).json()).presets;assert.equal(rows.length,1);assert.equal(rows[0].id,id);
     const store=new modules['preset-store'].PresetStore(globalThis.__presetTestDB);assert.equal((await store.get('alice',id)).name,'Neon lake');
-    assert.equal((await routes.POST(req('','POST',{...body,id:crypto.randomUUID(),name:' '}))).status,400);
-    assert.equal((await routes.POST(req('','POST',{...body,id:crypto.randomUUID(),settings:{...settings,glow:1000}}))).status,400);
-    const context={params:Promise.resolve({id})};assert.equal((await actions.PATCH(req('/'+id,'PATCH',{name:'Lake'}),context)).status,200);
-    assert.equal((await store.get('alice',id)).name,'Lake');
+    assert.equal((await routes.POST(req('','POST',{...body,id:crypto.randomUUID(),name:' '},{Origin:origin}))).status,400);
+    assert.equal((await routes.POST(req('','POST',{...body,id:crypto.randomUUID(),settings:{...settings,glow:1000}},{Origin:origin}))).status,400);
+    const context={params:Promise.resolve({id})};assert.equal((await actions.PATCH(req('/'+id,'PATCH',{name:'Lake',expectedRevision:saved.revision},{Origin:origin}),context)).status,200);
+    const renamed=await store.get('alice',id);assert.equal(renamed.name,'Lake');
     globalThis.__presetTestUser={userId:'bob',email:'bob@example.test'};
     assert.equal((await (await routes.GET(req())).json()).presets.length,0);
-    assert.equal((await actions.PATCH(req('/'+id,'PATCH',{name:'Stolen'}),context)).status,404);
-    assert.equal((await actions.DELETE(req('/'+id,'DELETE'),context)).status,404);
+    assert.equal((await actions.PATCH(req('/'+id,'PATCH',{name:'Stolen',expectedRevision:renamed.revision},{Origin:origin}),context)).status,404);
+    assert.equal((await actions.DELETE(req('/'+id,'DELETE',undefined,{Origin:origin}),context)).status,404);
     assert.equal((await store.get('alice',id)).name,'Lake');
     globalThis.__presetTestUser={userId:'alice',email:'alice@example.test'};
-    assert.equal((await actions.DELETE(req('/'+id,'DELETE'),context)).status,200);
+    assert.equal((await actions.DELETE(req('/'+id,'DELETE',undefined,{Origin:origin}),context)).status,200);
     assert.equal((await store.get('alice',id)),null);
   }finally{end();}
 });
