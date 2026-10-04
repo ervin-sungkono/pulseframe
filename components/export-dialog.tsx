@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Download, Play, RotateCcw, Scissors } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
+import { EXPORT_FRAME_RATES, type ExportFrameRate } from "@/lib/export-timeline";
 import type { ExportProgress } from "@/lib/export-video";
 
 export function timestamp(value: number, precise = false) {
@@ -34,10 +35,11 @@ function TimeField({ label, value, onCommit, disabled }: {
 }
 
 export function ExportDialog({ open, onOpenChange, duration, range, onRangeChange, dimensions, exporting,
-  profile, onProfileChange, progress, onExport, onCancel, onPreview }: {
+  profile, onProfileChange, frameRate, onFrameRateChange, progress, onExport, onCancel, onPreview }: {
   open: boolean; onOpenChange: (open: boolean) => void; duration: number; range: [number, number];
   onRangeChange: (range: [number, number]) => void; dimensions: { width: number; height: number; label: string };
   profile: "standard" | "smaller"; onProfileChange: (profile: "standard" | "smaller") => void;
+  frameRate: ExportFrameRate; onFrameRateChange: (rate: ExportFrameRate) => void;
   exporting: boolean; progress: ExportProgress | null; onExport: () => void; onCancel: () => void; onPreview: () => void;
 }) {
   const selected = Math.max(0, range[1] - range[0]);
@@ -74,9 +76,19 @@ export function ExportDialog({ open, onOpenChange, duration, range, onRangeChang
             onClick={() => onProfileChange("smaller")}><strong>Smaller</strong><span>Faster export</span></button>
         </div>
       </div>
+      <div className="export-quality">
+        <strong>Frame rate</strong>
+        <div className="export-profile-list export-frame-rate-list" role="group" aria-label="Frame rate">
+          {EXPORT_FRAME_RATES.map(rate => <button key={rate} className={frameRate === rate ? "selected" : ""}
+            aria-pressed={frameRate === rate} disabled={exporting} onClick={() => onFrameRateChange(rate)}>
+            <strong>{rate} fps</strong><span>{rate === 24 ? "Fewer frames" : rate === 30 ? "Balanced" : "Smoother"}</span>
+          </button>)}
+        </div>
+        <p className="export-footnote">60 fps makes motion smoother and takes longer to export.</p>
+      </div>
       <div className="export-summary">
         <div><span>Canvas</span><strong>{dimensions.label} · {dimensions.width} × {dimensions.height}</strong></div>
-        <div><span>Frame rate</span><strong>30 fps</strong></div>
+        <div><span>Frame rate</span><strong>{frameRate} fps</strong></div>
         <div><span>Format</span><strong>MP4 or WebM, based on device support</strong></div>
       </div>
       {exporting && <div className="export-progress" role="status" aria-live="polite">

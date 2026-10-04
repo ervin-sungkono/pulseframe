@@ -7,6 +7,7 @@ import { drawVisualization, warmSoundResponse, makeParticles, type LogoLayer, ty
 import type { SubtitleCue } from "./subtitles";
 import { PcmFeatures, dropEnvelope, prepareSound, type PreparedSound } from "./audio-features";
 import { decodeMediaAudio, audioSections } from "./media-audio";
+import { exportFrames, exportSoundAt, type ExportFrameRate } from "./export-timeline";
 
 export type ExportProgress = { phase: "Preparing media" | "Rendering frames" | "Finishing file"; percent: number };
 export type ExportOptions = {
@@ -19,6 +20,7 @@ export type ExportOptions = {
   subtitles: SubtitleCue[];
   duration: number;
   profile: "standard" | "smaller";
+  frameRate?: ExportFrameRate;
   logo?: LogoLayer | null;
   background?: LogoLayer | null;
   prepared?: PreparedSound;
@@ -27,17 +29,17 @@ export type ExportOptions = {
   onProgress: (progress: ExportProgress) => void;
 };
 
-const FPS = 30;
-
 function checkCanceled(signal: AbortSignal) {
   if (signal.aborted) throw new DOMException("Export canceled", "AbortError");
 }
 
 export async function exportVisualVideo({
-  file, start, end, width, height, settings, subtitles, duration, profile, logo, background, prepared, reducedMotion, signal, onProgress,
+  file, start, end, width, height, settings, subtitles, duration, profile, frameRate = 30, logo, background, prepared, reducedMotion, signal, onProgress,
 }: ExportOptions): Promise<{ blob: Blob; extension: "mp4" | "webm" }> {
   if (!(end > start + .05)) throw new Error("Select at least 0.1 seconds to export.");
   if (typeof VideoEncoder === "undefined") throw new Error("Fast video export needs WebCodecs. Try an up-to-date browser.");
+  // Validate the frame rate before decoder/encoder resources are allocated.
+  exportFrames(end - start, frameRate).next();
   checkCanceled(signal);
   onProgress({ phase: "Preparing media", percent: 2 });
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
@@ -57,13 +59,13 @@ export async function exportVisualVideo({
     const quality = new Quality(profile === "smaller" ? "medium" : "high");
     const audioChannels = audio?.numberOfChannels ?? 0;
     const sampleRate = audio?.sampleRate ?? 48000;
-    const avc = await canEncodeVideo("avc", { width, height, frameRate: FPS, quality });
+    const avc = await canEncodeVideo("avc", { width, height, frameRate, quality });
     const aac = !audio || await canEncodeAudio("aac", { numberOfChannels: audioChannels, sampleRate, quality });
     const mp4 = avc && aac;
     let webmVideo: "vp9" | "vp8" | null = null;
     if (!mp4) {
-      webmVideo = await canEncodeVideo("vp9", { width, height, frameRate: FPS, quality }) ? "vp9"
-        : await canEncodeVideo("vp8", { width, height, frameRate: FPS, quality }) ? "vp8" : null;
+      webmVideo = await canEncodeVideo("vp9", { width, height, frameRate, quality }) ? "vp9"
+        : await canEncodeVideo("vp8", { width, height, frameRate, quality }) ? "vp8" : null;
       if (!webmVideo || (audio && !await canEncodeAudio("opus", { numberOfChannels: audioChannels, sampleRate: 48000, quality }))) {
         throw new Error("This device has no compatible fast video and audio encoder for MP4 or WebM.");
       }
@@ -75,7 +77,7 @@ export async function exportVisualVideo({
     const target = new BufferTarget();
     output = new Output({ format: mp4 ? new Mp4OutputFormat() : new WebMOutputFormat(), target });
     const videoSource = new CanvasSource(canvas, { codec: mp4 ? "avc" : webmVideo!, quality });
-    output.addVideoTrack(videoSource, { frameRate: FPS });
+    output.addVideoTrack(videoSource, { frameRate });
     const audioSource = audio ? new AudioBufferSource({
       codec: mp4 ? "aac" : "opus", quality,
       ...(!mp4 ? { transform: { sampleRate: 48000 } } : {}),
@@ -92,27 +94,27 @@ export async function exportVisualVideo({
     let lastAnalysisTime = history.lastTime;
     const particles = makeParticles(300);
     const length = end - start;
-    const frames = Math.ceil(length * FPS);
+    const frames = Math.ceil(length * frameRate);
+    const silentFrequency = new Uint8Array(2048), silentWave = new Uint8Array(4096).fill(128);
     const timestamps = function* () {
-      for (let frame = 0; frame < frames; frame++) yield start + frame / FPS;
+      for (let frame = 0; frame < frames; frame++) yield start + frame / frameRate;
     };
     const videoIterator = videoSink?.canvasesAtTimestamps(timestamps());
     let lastVideoFrame: HTMLCanvasElement | OffscreenCanvas | null = null;
-    for (let frame = 0; frame < frames; frame++) {
+    for (const { index: frame, time: localTime, duration: frameDuration, keyFrame } of exportFrames(length, frameRate)) {
       checkCanceled(signal);
-      const localTime = frame / FPS;
       const absoluteTime = start + localTime;
       const analysisTime = absoluteTime - analysisStart;
-      const frameData = features?.at(analysisTime);
+      const frameData = features ? exportSoundAt(sound.envelopes, analysisTime, time => features.at(time, false)) : null;
       if (videoIterator) {
         const next = await videoIterator.next();
         lastVideoFrame = next.value?.canvas ?? lastVideoFrame;
       }
-      drawVisualization(context, settings, frameData?.frequency ?? new Uint8Array(2048), frameData?.wave ?? new Uint8Array(4096).fill(128), particles,
+      drawVisualization(context, settings, silentFrequency, silentWave, particles,
         start + localTime, Math.max(0, analysisTime - lastAnalysisTime) * 1000, lastVideoFrame, logo, audioState, sourceAudio?.sampleRate ?? 48000,
         duration, subtitles, { sound: frameData, background, reducedMotion, drop: dropEnvelope(events, absoluteTime) });
       lastAnalysisTime = analysisTime;
-      await videoSource.add(localTime, Math.min(1 / FPS, length - localTime), { keyFrame: frame % (FPS * 2) === 0 });
+      await videoSource.add(localTime, frameDuration, { keyFrame });
       if (frame % 10 === 0 || frame === frames - 1) {
         onProgress({ phase: "Rendering frames", percent: 12 + Math.round((frame + 1) / frames * 83) });
         await new Promise(resolve => setTimeout(resolve, 0));
