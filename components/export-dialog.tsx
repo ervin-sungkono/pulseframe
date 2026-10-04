@@ -1,0 +1,94 @@
+"use client";
+
+import { useState } from "react";
+import { Download, Play, RotateCcw, Scissors } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Slider } from "@/components/ui/slider";
+import type { ExportProgress } from "@/lib/export-video";
+
+export function timestamp(value: number, precise = false) {
+  const seconds = Math.max(0, Number.isFinite(value) ? value : 0);
+  const minutes = Math.floor(seconds / 60);
+  const rest = precise ? (seconds % 60).toFixed(1).padStart(4, "0") : String(Math.floor(seconds % 60)).padStart(2, "0");
+  return `${minutes}:${rest}`;
+}
+function parseTimestamp(raw: string) {
+  const parts = raw.trim().split(":");
+  if (parts.length > 2 || parts.some(part => part === "" || !/^\d+(\.\d+)?$/.test(part))) return null;
+  const seconds = parts.length === 2 ? Number(parts[0]) * 60 + Number(parts[1]) : Number(parts[0]);
+  return Number.isFinite(seconds) ? seconds : null;
+}
+function TimeField({ label, value, onCommit, disabled }: {
+  label: string; value: number; onCommit: (value: number) => void; disabled: boolean;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return <label className="time-field"><span>{label}</span><input aria-label={`${label} timestamp`}
+    inputMode="decimal" value={draft ?? timestamp(value, true)} disabled={disabled}
+    onChange={event => setDraft(event.target.value)}
+    onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }}
+    onBlur={() => {
+      const parsed = parseTimestamp(draft ?? timestamp(value, true));
+      setDraft(null);
+      if (parsed !== null) onCommit(parsed);
+    }}/></label>;
+}
+
+export function ExportDialog({ open, onOpenChange, duration, range, onRangeChange, dimensions, exporting,
+  profile, onProfileChange, progress, onExport, onCancel, onPreview }: {
+  open: boolean; onOpenChange: (open: boolean) => void; duration: number; range: [number, number];
+  onRangeChange: (range: [number, number]) => void; dimensions: { width: number; height: number; label: string };
+  profile: "standard" | "smaller"; onProfileChange: (profile: "standard" | "smaller") => void;
+  exporting: boolean; progress: ExportProgress | null; onExport: () => void; onCancel: () => void; onPreview: () => void;
+}) {
+  const selected = Math.max(0, range[1] - range[0]);
+  const safeChange = (start: number, end: number) => {
+    const clampedStart = Math.max(0, Math.min(start, duration - .1));
+    const clampedEnd = Math.max(clampedStart + .1, Math.min(end, duration));
+    onRangeChange([clampedStart, clampedEnd]);
+  };
+  return <Dialog open={open} onOpenChange={next => { if (!exporting) onOpenChange(next); }}>
+    <DialogContent className="export-dialog" showCloseButton={!exporting}>
+      <DialogHeader>
+        <div className="dialog-icon"><Scissors size={19}/></div>
+        <DialogTitle>Export visualizer</DialogTitle>
+        <DialogDescription>Choose the section you want. Frames are rendered directly from the media timeline.</DialogDescription>
+      </DialogHeader>
+      <div className="export-range-section">
+        <div className="range-heading"><strong>Time range</strong><button onClick={() => safeChange(0, duration)} disabled={exporting}><RotateCcw size={13}/> Full track</button></div>
+        <div className="range-readout"><span>{timestamp(range[0], true)}</span><span className="range-duration">{timestamp(selected, true)} selected</span><span>{timestamp(range[1], true)}</span></div>
+        <Slider aria-label="Selected export time range" className="studio-slider range-slider"
+          value={range} min={0} max={duration || 1} step={.1} minStepsBetweenThumbs={1} disabled={exporting || duration <= 0}
+          onValueChange={values => safeChange(values[0], values[1])}/>
+        <div className="range-fields">
+          <TimeField label="Start" value={range[0]} disabled={exporting} onCommit={value => safeChange(value, range[1])}/>
+          <TimeField label="End" value={range[1]} disabled={exporting} onCommit={value => safeChange(range[0], value)}/>
+        </div>
+        <button className="preview-selection" onClick={onPreview} disabled={exporting || selected < .1}><Play size={14}/> Preview selected section</button>
+      </div>
+      <div className="export-quality">
+        <strong>Output size</strong>
+        <div className="export-profile-list" role="group" aria-label="Output size">
+          <button className={profile === "standard" ? "selected" : ""} aria-pressed={profile === "standard"} disabled={exporting}
+            onClick={() => onProfileChange("standard")}><strong>Standard</strong><span>Best detail</span></button>
+          <button className={profile === "smaller" ? "selected" : ""} aria-pressed={profile === "smaller"} disabled={exporting}
+            onClick={() => onProfileChange("smaller")}><strong>Smaller</strong><span>Faster export</span></button>
+        </div>
+      </div>
+      <div className="export-summary">
+        <div><span>Canvas</span><strong>{dimensions.label} · {dimensions.width} × {dimensions.height}</strong></div>
+        <div><span>Frame rate</span><strong>30 fps</strong></div>
+        <div><span>Format</span><strong>MP4 or WebM, based on device support</strong></div>
+      </div>
+      {exporting && <div className="export-progress" role="status" aria-live="polite">
+        <div><strong>{progress?.phase ?? "Preparing media"}</strong><span>{progress?.percent ?? 0}%</span></div>
+        <progress value={progress?.percent ?? 0} max={100}/>
+        <p>Keep this tab open while the file is created.</p>
+      </div>}
+      <div className="dialog-actions">
+        {exporting ? <button className="button cancel-export" onClick={onCancel}>Cancel export</button>
+          : <button className="button export-button" onClick={onExport} disabled={duration <= 0 || selected < .1}><Download size={18}/> Export selected video</button>}
+      </div>
+      <p className="export-footnote">Export speed depends on your device and clip length. Your file remains in this browser.</p>
+    </DialogContent>
+  </Dialog>;
+}
