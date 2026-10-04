@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { VisualSettings } from "./visualizer";
 import { settingsSchema, migrateSettings } from "./visual-settings";
+import type { ExportFrameRate } from "./export-timeline";
 import type { SubtitleCue } from "./subtitles";
 
 const cueSchema = z.object({ id: z.string().max(80), start: z.number().finite().min(0),
@@ -9,6 +10,7 @@ const assetSchema = z.object({ name: z.string().min(1).max(255), type: z.string(
 const manifestSchema = z.object({
   version: z.union([z.literal(1), z.literal(2)]), format: z.enum(["landscape", "portrait", "square"]),
   profile: z.enum(["standard", "smaller"]),
+  frameRate: z.union([z.literal(24), z.literal(30), z.literal(60)]).optional().default(30),
   range: z.tuple([z.number().finite().min(0), z.number().finite().min(0)]),
   settings: settingsSchema,
   subtitles: z.array(cueSchema).max(500),
@@ -22,6 +24,7 @@ const MAX_MANIFEST = 256 * 1024;
 export type ProjectContent = {
   format: "landscape" | "portrait" | "square";
   profile: "standard" | "smaller";
+  frameRate?: ExportFrameRate;
   range: [number, number];
   settings: VisualSettings;
   subtitles: SubtitleCue[];
@@ -35,7 +38,7 @@ export type ProjectContent = {
 // Blob slicing and composition avoid reading large videos into JS memory.
 export function makeProjectFile(content: ProjectContent): Blob {
   const manifest = {
-    version: 2, format: content.format, profile: content.profile, range: content.range, settings: content.settings,
+    version: 2, format: content.format, profile: content.profile, frameRate: content.frameRate ?? 30, range: content.range, settings: content.settings,
     subtitles: content.subtitles,
     media: { name: content.media.name, type: content.media.type, size: content.media.size },
     logo: content.logo ? { name: content.logo.name, type: content.logo.type, size: content.logo.size } : null,
@@ -82,7 +85,7 @@ export async function readProjectFile(file: File): Promise<ProjectContent> {
     throw new Error("The project contains an unsupported background image.");
   }
   return {
-    format: data.format, profile: data.profile, range: data.range, settings: migrateSettings(data.settings),
+    format: data.format, profile: data.profile, frameRate: data.frameRate, range: data.range, settings: migrateSettings(data.settings),
     migratedStyle: data.settings.mode === "ring" || data.settings.mode === "spectrum" || data.settings.mode === "edges" ? undefined : data.settings.mode,
     subtitles: data.subtitles,
     media: new File([file.slice(mediaStart, logoStart)], data.media.name, { type: data.media.type }),

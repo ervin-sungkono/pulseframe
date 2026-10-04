@@ -36,13 +36,13 @@ export class PcmFeatures {
       channels: this.samples.map((samples, i) => this.impactAnalyzers[i].analyze(samples, end - IMPACT_SIZE / 2, this.sampleRate)) };
     const bassHitDb = db(Math.sqrt(bandPower(impactFrame, 35, 180)));
     const rms = recentRms(this.samples, time, this.sampleRate);
-    this.frequency.fill(0);
-    let loudest = 0, power = -1;
-    for (let c = 0; c < channels.length; c++) {
-      const acPower = recentRms([this.samples[c]], time, this.sampleRate, ANALYSIS_SIZE / this.sampleRate * 1000);
-      if (acPower > power) { power = acPower; loudest = c; }
-    }
     if (display) {
+      this.frequency.fill(0);
+      let loudest = 0, power = -1;
+      for (let c = 0; c < channels.length; c++) {
+        const acPower = recentRms([this.samples[c]], time, this.sampleRate, ANALYSIS_SIZE / this.sampleRate * 1000);
+        if (acPower > power) { power = acPower; loudest = c; }
+      }
       for (let i = 1; i < this.frequency.length; i++) {
         // Power average avoids stereo phase cancellation and max-channel bias.
         let p = 0;

@@ -19,6 +19,7 @@ import { usePresets } from "@/hooks/use-presets";
 import { useSettingsHistory } from "@/hooks/use-settings-history";
 import { SubtitleDialog } from "@/components/subtitle-dialog";
 import type { ExportProgress } from "@/lib/export-video";
+import type { ExportFrameRate } from "@/lib/export-timeline";
 import { makeProjectFile, readProjectFile, type ProjectContent } from "@/lib/project-file";
 import type { SubtitleCue } from "@/lib/subtitles";
 import { PcmFeatures, ANALYSIS_FPS, audibleMediaTime, dropEnvelope, prepareSound, type PreparedSound, type SoundFrame } from "@/lib/audio-features";
@@ -83,6 +84,7 @@ export default function Home() {
   const [lookSaveTarget, setLookSaveTarget] = useState<SavedPreset | null>(null);
   const [subtitles, setSubtitles] = useState<SubtitleCue[]>([]);
   const [format, setFormat] = useState<Format>("landscape");
+  const [frameRate, setFrameRate] = useState<ExportFrameRate>(30);
   const [profile, setProfile] = useState<"standard" | "smaller">("standard");
   const [file, setFile] = useState<File | null>(null);
   const [logoName, setLogoName] = useState<string | null>(null);
@@ -356,7 +358,7 @@ export default function Home() {
       if (project) {
         ++logoLoadRef.current; ++backgroundLoadRef.current;
         commitLogo(candidates.logo); commitBackground(candidates.background);
-        setFormat(project.format); setProfile(project.profile); resetSettings(project.settings); setSubtitles(project.subtitles); setActiveLook(null);
+        setFormat(project.format); setProfile(project.profile); setFrameRate(project.frameRate ?? 30); resetSettings(project.settings); setSubtitles(project.subtitles); setActiveLook(null);
       } else {
         setSubtitles([]); resetSettings(current => ({ ...current, trackTitle: next.name.replace(/\.[^.]+$/, '').slice(0, 120), trackArtist: '' }));
       }
@@ -454,7 +456,7 @@ export default function Home() {
         : dimensions[format];
       const { blob, extension } = await exportVisualVideo({
         file, start: range[0], end: range[1],
-        width: output.width, height: output.height, duration, profile,
+        width: output.width, height: output.height, duration, profile, frameRate,
         settings: structuredClone(settings), subtitles: subtitles.map(cue => ({ ...cue })),
         logo: logoRef.current, background: backgroundRef.current, prepared: soundRef.current ?? undefined,
         reducedMotion: reducedMotionRef.current, signal: controller.signal, onProgress: setProgress,
@@ -479,7 +481,7 @@ export default function Home() {
     if (!file || exportingRef.current) return;
     try {
       const blob = makeProjectFile({ media: file, logo: logoFileRef.current, background: backgroundFileRef.current,
-        settings, subtitles, format, profile, range });
+        settings, subtitles, format, profile, frameRate, range });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -647,7 +649,7 @@ export default function Home() {
       </DrawerContent>
     </Drawer>
     <ExportDialog open={exportOpen} onOpenChange={setExportOpen} duration={duration} range={range} onRangeChange={setRange}
-      dimensions={outputDimensions} profile={profile} onProfileChange={setProfile}
+      dimensions={outputDimensions} frameRate={frameRate} onFrameRateChange={setFrameRate} profile={profile} onProfileChange={setProfile}
       exporting={exporting} progress={progress} onExport={exportVideo}
       onCancel={() => exportAbortRef.current?.abort()} onPreview={previewRange}/>
     <SubtitleDialog open={subtitleOpen} onOpenChange={setSubtitleOpen} cues={subtitles} onChange={setSubtitles}
