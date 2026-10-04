@@ -4,7 +4,7 @@ export type BackdropMode = "nebula" | "grid" | "clean";
 export type ParticleFlow = "drift" | "rise" | "orbit";
 export type ResponseStyle = "punchy" | "balanced" | "smooth";
 import { activeSubtitle, type SubtitleCue } from "./subtitles";
-import type { SoundFrame, SoundEnvelope } from "./audio-features";
+import type { SoundEnvelope } from "./audio-features";
 import { drawGlitch } from './glitch';
 import { drawTrackOverlay, trackOverlayLayout } from "./track-overlay";
 import { drawBeatLighting, type BeatLighting } from './beat-lighting';
@@ -85,7 +85,7 @@ export type VideoLayer = HTMLVideoElement | HTMLCanvasElement | OffscreenCanvas;
 export type LogoLayer = HTMLImageElement | ImageBitmap;
 export type AudioReactiveState = { activity: number; bass: number; energy: number; bands: Float32Array[];
   ringBaseline: number; ringPulse: number; ringMix: number; ringBands: Float32Array[][] };
-export type RenderExtras = { sound?: SoundFrame | null; background?: LogoLayer | null; drop?: number; reducedMotion?: boolean };
+export type RenderExtras = { sound?: SoundEnvelope | null; background?: LogoLayer | null; drop?: number; reducedMotion?: boolean };
 
 export function createAudioReactiveState(): AudioReactiveState {
   return { activity: 0, bass: 0, energy: 0, bands: [], ringBaseline: 0, ringPulse: 0, ringMix: 0, ringBands: [] };
@@ -396,27 +396,35 @@ function drawSpectrum(ctx: CanvasRenderingContext2D, w: number, h: number, s: Vi
   const layout = spectrumLayout(w, h, s.visualScale, s.glow, top, bottom);
   const { x, centerY: mid, zone, count, gap, barWidth, maxHalf } = layout;
   const idle = Math.min(maxHalf, Math.max(2, short * .004));
-  ctx.save();
-  for (let i = 0; i < count; i++) {
+  const bars = Array.from({ length: count }, (_, i) => {
     const pos = Math.abs(i - (count - 1) / 2) / ((count - 1) / 2);
     const left = sampleBarBand(bands[0], pos, count), right = sampleBarBand(bands[Math.min(1, bands.length - 1)], pos, count);
     const value = Math.sqrt((left * left + right * right) / 2);
     const response = clamp(1 - Math.exp(-value * s.sensitivity * 3.8) + impact * .12 * (1 - pos) ** 2);
     const amp = idle + response * (maxHalf - idle), bx = x + i * (barWidth + gap);
     const radius = Math.min(barWidth / 2, amp) * clamp((s.spectrumRoundness ?? 100) / 100);
-    // Clip the two halves separately: the upper glow cannot brighten the reflection.
-    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w, mid); ctx.clip();
+    return { amp, bx, radius };
+  });
+  ctx.save();
+  // Each half shares one clip and shadow setup; retain individual gradients.
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w, mid); ctx.clip();
+  ctx.shadowColor = s.primary; ctx.shadowBlur = s.glow * short * .014;
+  for (const { amp, bx, radius } of bars) {
     const upper = ctx.createLinearGradient(0, mid - amp, 0, mid);
     upper.addColorStop(0, s.secondary); upper.addColorStop(.25, s.primary); upper.addColorStop(1, s.secondary);
-    ctx.fillStyle = upper; ctx.shadowColor = s.primary; ctx.shadowBlur = s.glow * short * .014;
-    ctx.beginPath(); ctx.roundRect(bx, mid - amp, barWidth, amp * 2, radius); ctx.fill(); ctx.restore();
-    const reflection = clamp((s.spectrumReflection ?? 45) / 100);
-    if (reflection > 0) {
-      ctx.save(); ctx.beginPath(); ctx.rect(0, mid, w, h - mid); ctx.clip(); ctx.shadowBlur = 0;
+    ctx.fillStyle = upper;
+    ctx.beginPath(); ctx.roundRect(bx, mid - amp, barWidth, amp * 2, radius); ctx.fill();
+  }
+  ctx.restore();
+  const reflection = clamp((s.spectrumReflection ?? 45) / 100);
+  if (reflection > 0) {
+    ctx.save(); ctx.beginPath(); ctx.rect(0, mid, w, h - mid); ctx.clip(); ctx.shadowBlur = 0;
+    for (const { amp, bx, radius } of bars) {
       const lower = ctx.createLinearGradient(0, mid, 0, mid + amp);
       lower.addColorStop(0, rgba(s.secondary, reflection)); lower.addColorStop(.45, rgba(s.primary, reflection * .65)); lower.addColorStop(1, rgba(s.secondary, reflection * .08));
-      ctx.fillStyle = lower; ctx.beginPath(); ctx.roundRect(bx, mid - amp, barWidth, amp * 2, radius); ctx.fill(); ctx.restore();
+      ctx.fillStyle = lower; ctx.beginPath(); ctx.roundRect(bx, mid - amp, barWidth, amp * 2, radius); ctx.fill();
     }
+    ctx.restore();
   }
   ctx.shadowBlur = 0; ctx.strokeStyle = rgba(s.secondary, .2 + energy * .25); ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(x, mid); ctx.lineTo(x + zone, mid); ctx.stroke(); ctx.restore();

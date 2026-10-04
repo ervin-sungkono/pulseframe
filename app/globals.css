@@ -235,6 +235,7 @@ h2 { font-size: 22px; letter-spacing: -.045em; margin: 0; }
 .export-quality { margin-top: 17px; }
 .export-quality > strong { color: #d7e0f1; font-size: 14px; }
 .export-profile-list { margin-top: 11px; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.export-frame-rate-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .export-profile-list button { display: grid; gap: 5px; min-height: 58px; text-align: left; border: 1px solid #3d4c67; border-radius: 9px; background: #1a263a; color: #e4eaf5; padding: 10px 12px; }
 .export-profile-list button.selected { border-color: #af8afa; background: #2e2a4c; }
 .export-profile-list button:disabled { opacity: .65; }
