@@ -7,9 +7,10 @@ import { drawVisualization, warmSoundResponse, makeParticles, type LogoLayer, ty
 import type { SubtitleCue } from "./subtitles";
 import { PcmFeatures, dropEnvelope, prepareSound, type PreparedSound } from "./audio-features";
 import { decodeMediaAudio, audioSections } from "./media-audio";
+import { COMPRESSED_VIDEO_QUALITY } from "./export-settings";
 import { exportFrames, exportSoundAt, type ExportFrameRate } from "./export-timeline";
 
-export type ExportProgress = { phase: "Preparing media" | "Rendering frames" | "Finishing file" | "Compressing losslessly"; percent: number };
+export type ExportProgress = { phase: "Preparing media" | "Rendering frames" | "Finishing file"; percent: number };
 export type ExportOptions = {
   file: File;
   start: number;
@@ -19,7 +20,7 @@ export type ExportOptions = {
   settings: VisualSettings;
   subtitles: SubtitleCue[];
   duration: number;
-  profile: "standard" | "smaller";
+  videoCompression?: boolean;
   frameRate?: ExportFrameRate;
   logo?: LogoLayer | null;
   background?: LogoLayer | null;
@@ -34,7 +35,7 @@ function checkCanceled(signal: AbortSignal) {
 }
 
 export async function exportVisualVideo({
-  file, start, end, width, height, settings, subtitles, duration, profile, frameRate = 30, logo, background, prepared, reducedMotion, signal, onProgress,
+  file, start, end, width, height, settings, subtitles, duration, videoCompression = false, frameRate = 30, logo, background, prepared, reducedMotion, signal, onProgress,
 }: ExportOptions): Promise<{ blob: Blob; extension: "mp4" | "webm" }> {
   if (!(end > start + .05)) throw new Error("Select at least 0.1 seconds to export.");
   if (typeof VideoEncoder === "undefined") throw new Error("Fast video export needs WebCodecs. Try an up-to-date browser.");
@@ -56,17 +57,18 @@ export async function exportVisualVideo({
     const videoTrack = await input.getPrimaryVideoTrack();
     if (videoTrack && !await videoTrack.canDecode()) throw new Error("The video track cannot be decoded for export on this device.");
     const videoSink = videoTrack ? new CanvasSink(videoTrack, { width: Math.min(width, 1280) }) : null;
-    const quality = new Quality(profile === "smaller" ? "medium" : "high");
+    const quality = new Quality(videoCompression ? COMPRESSED_VIDEO_QUALITY : "high");
+    const audioQuality = new Quality("high");
     const audioChannels = audio?.numberOfChannels ?? 0;
     const sampleRate = audio?.sampleRate ?? 48000;
     const avc = await canEncodeVideo("avc", { width, height, frameRate, quality });
-    const aac = !audio || await canEncodeAudio("aac", { numberOfChannels: audioChannels, sampleRate, quality });
+    const aac = !audio || await canEncodeAudio("aac", { numberOfChannels: audioChannels, sampleRate, quality: audioQuality });
     const mp4 = avc && aac;
     let webmVideo: "vp9" | "vp8" | null = null;
     if (!mp4) {
       webmVideo = await canEncodeVideo("vp9", { width, height, frameRate, quality }) ? "vp9"
         : await canEncodeVideo("vp8", { width, height, frameRate, quality }) ? "vp8" : null;
-      if (!webmVideo || (audio && !await canEncodeAudio("opus", { numberOfChannels: audioChannels, sampleRate: 48000, quality }))) {
+      if (!webmVideo || (audio && !await canEncodeAudio("opus", { numberOfChannels: audioChannels, sampleRate: 48000, quality: audioQuality }))) {
         throw new Error("This device has no compatible fast video and audio encoder for MP4 or WebM.");
       }
     }
@@ -76,10 +78,10 @@ export async function exportVisualVideo({
     if (!context) throw new Error("Canvas rendering is unavailable.");
     const target = new BufferTarget();
     output = new Output({ format: mp4 ? new Mp4OutputFormat() : new WebMOutputFormat(), target });
-    const videoSource = new CanvasSource(canvas, { codec: mp4 ? "avc" : webmVideo!, quality });
+    const videoSource = new CanvasSource(canvas, { codec: mp4 ? "avc" : webmVideo!, quality, latencyMode: "quality" });
     output.addVideoTrack(videoSource, { frameRate });
     const audioSource = audio ? new AudioBufferSource({
-      codec: mp4 ? "aac" : "opus", quality,
+      codec: mp4 ? "aac" : "opus", quality: audioQuality,
       ...(!mp4 ? { transform: { sampleRate: 48000 } } : {}),
     }) : null;
     if (audioSource) output.addAudioTrack(audioSource);

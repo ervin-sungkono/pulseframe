@@ -1,5 +1,7 @@
 "use client";
 
+import { exportDimensions, type ExportResolution } from "@/lib/export-settings";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AudioLines, Captions, CircleHelp, Download, FileAudio2, Film, FolderOpen, ImageDown, Pause, Play, Save, RotateCcw, Repeat2, Volume2, VolumeX, Maximize2, Minimize2,
@@ -85,8 +87,8 @@ export default function Home() {
   const [subtitles, setSubtitles] = useState<SubtitleCue[]>([]);
   const [format, setFormat] = useState<Format>("landscape");
   const [frameRate, setFrameRate] = useState<ExportFrameRate>(30);
-  const [losslessCompression, setLosslessCompression] = useState(false);
-  const [profile, setProfile] = useState<"standard" | "smaller">("standard");
+  const [videoCompression, setVideoCompression] = useState(false);
+  const [resolution, setResolution] = useState<ExportResolution>(720);
   const [file, setFile] = useState<File | null>(null);
   const [logoName, setLogoName] = useState<string | null>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -359,7 +361,7 @@ export default function Home() {
       if (project) {
         ++logoLoadRef.current; ++backgroundLoadRef.current;
         commitLogo(candidates.logo); commitBackground(candidates.background);
-        setFormat(project.format); setProfile(project.profile); setFrameRate(project.frameRate ?? 30); setLosslessCompression(project.losslessCompression ?? false); resetSettings(project.settings); setSubtitles(project.subtitles); setActiveLook(null);
+        setFormat(project.format); setResolution(project.resolution ?? 720); setFrameRate(project.frameRate ?? 30); setVideoCompression(project.videoCompression ?? false); resetSettings(project.settings); setSubtitles(project.subtitles); setActiveLook(null);
       } else {
         setSubtitles([]); resetSettings(current => ({ ...current, trackTitle: next.name.replace(/\.[^.]+$/, '').slice(0, 120), trackArtist: '' }));
       }
@@ -452,30 +454,21 @@ export default function Home() {
     setProgress({ phase: "Preparing media", percent: 0 }); setError(""); setNotice("");
     try {
       const { exportVisualVideo } = await import("@/lib/export-video");
-      const output = profile === "smaller"
-        ? { width: Math.round(dimensions[format].width * .75 / 2) * 2, height: Math.round(dimensions[format].height * .75 / 2) * 2 }
-        : dimensions[format];
+      const output = exportDimensions(format, resolution);
       const { blob, extension } = await exportVisualVideo({
         file, start: range[0], end: range[1],
-        width: output.width, height: output.height, duration, profile, frameRate,
+        width: output.width, height: output.height, duration, videoCompression, frameRate,
         settings: structuredClone(settings), subtitles: subtitles.map(cue => ({ ...cue })),
         logo: logoRef.current, background: backgroundRef.current, prepared: soundRef.current ?? undefined,
         reducedMotion: reducedMotionRef.current, signal: controller.signal, onProgress: setProgress,
       });
       if (controller.signal.aborted) return;
       const filename = `${file.name.replace(/\.[^.]+$/, "")}-pulseframe-${Math.floor(range[0])}-${Math.ceil(range[1])}.${extension}`;
-      const result = losslessCompression
-        ? await (await import("@/lib/export-compression")).compressExport(blob, filename, controller.signal,
-          percent => setProgress({ phase: "Compressing losslessly", percent }))
-        : { blob, filename, compressed: false, savedBytes: 0 };
-      if (controller.signal.aborted) return;
-      const url = URL.createObjectURL(result.blob), link = document.createElement("a");
+      const url = URL.createObjectURL(blob), link = document.createElement("a");
       link.href = url;
-      link.download = result.filename;
+      link.download = filename;
       link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-      setNotice(`Export complete: ${extension.toUpperCase()} video with ${timestamp(range[1] - range[0])} of media.${result.compressed
-        ? ` Lossless ZIP saved ${(result.savedBytes / blob.size * 100).toFixed(1)}% — extract it to play the video.`
-        : losslessCompression ? " Lossless compression could not reduce this file; the original video was downloaded." : ""}`);
+      setNotice(`Export complete: ${extension.toUpperCase()} video at ${resolution}p with ${timestamp(range[1] - range[0])} of media.${videoCompression ? " Video compression enabled." : ""}`);
       setExportOpen(false);
     } catch (caught) {
       if (controller.signal.aborted) setNotice("Export canceled.");
@@ -490,7 +483,7 @@ export default function Home() {
     if (!file || exportingRef.current) return;
     try {
       const blob = makeProjectFile({ media: file, logo: logoFileRef.current, background: backgroundFileRef.current,
-        settings, subtitles, format, profile, frameRate, losslessCompression, range });
+        settings, subtitles, format, resolution, frameRate, videoCompression, range });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -542,9 +535,7 @@ export default function Home() {
   }, [exporting, loadingMedia, presetOpen, lookSaveOpen, exportOpen, subtitleOpen, projectOpen, helpOpen, undo, redo]);
 
   const canvas = dimensions[format];
-  const outputDimensions = profile === "smaller"
-    ? { ...canvas, width: Math.round(canvas.width * .75 / 2) * 2, height: Math.round(canvas.height * .75 / 2) * 2 }
-    : canvas;
+  const outputDimensions = exportDimensions(format, resolution);
   return <main className={`studio-shell ${focusView ? "focus-view" : ""}`}>
     <header className="topbar">
       <div className="brand" aria-label="Pulseframe"><span className="brand-mark"><AudioLines size={22} strokeWidth={2.3}/></span><span>pulseframe<span className="brand-dot">.</span></span></div>
@@ -658,7 +649,7 @@ export default function Home() {
       </DrawerContent>
     </Drawer>
     <ExportDialog open={exportOpen} onOpenChange={setExportOpen} duration={duration} range={range} onRangeChange={setRange}
-      dimensions={outputDimensions} losslessCompression={losslessCompression} onLosslessCompressionChange={setLosslessCompression} frameRate={frameRate} onFrameRateChange={setFrameRate} profile={profile} onProfileChange={setProfile}
+      dimensions={outputDimensions} videoCompression={videoCompression} onVideoCompressionChange={setVideoCompression} frameRate={frameRate} onFrameRateChange={setFrameRate} resolution={resolution} onResolutionChange={setResolution}
       exporting={exporting} progress={progress} onExport={exportVideo}
       onCancel={() => exportAbortRef.current?.abort()} onPreview={previewRange}/>
     <SubtitleDialog open={subtitleOpen} onOpenChange={setSubtitleOpen} cues={subtitles} onChange={setSubtitles}

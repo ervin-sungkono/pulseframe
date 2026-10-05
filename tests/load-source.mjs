@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 export async function loadSources() {
   const directory = mkdtempSync(join(tmpdir(), 'pulseframe-tests-'));
   process.on('exit', () => rmSync(directory, { recursive: true, force: true }));
-  const names = ['export-timeline', 'audio-features', 'visualizer', 'subtitles', 'project-file', 'demo-file', 'media-audio', 'live-sound', 'glitch', 'beat-lighting', 'track-overlay', 'visual-settings', 'presets', 'preset-store', 'preset-api', 'preset-route', 'preset-id-route'];
+  const names = ['export-settings', 'export-timeline', 'audio-features', 'visualizer', 'subtitles', 'project-file', 'demo-file', 'media-audio', 'live-sound', 'glitch', 'beat-lighting', 'track-overlay', 'visual-settings', 'presets', 'preset-store', 'preset-api', 'preset-route', 'preset-id-route'];
   for (const name of ['audio-dsp', 'art-reactivity', 'drop-detector']) writeFileSync(join(directory, name + '.mjs'), readFileSync(new URL('../lib/' + name + '.mjs', import.meta.url)));
   writeFileSync(join(directory,'test-runtime.mjs'), `export const env={get DB(){return globalThis.__presetTestDB}}; export async function getChatGPTUser(){return globalThis.__presetTestUser??null;}`);
   for (const name of names) {

@@ -449,5 +449,8 @@ h2 { font-size: 22px; letter-spacing: -.045em; margin: 0; }
   .custom-colors .custom-color-inputs input[type="text"] { font-size: 9px; padding-inline: 3px; }
 }
 
-.lossless-export-option { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
-.lossless-export-option input { width: 18px; height: 18px; accent-color: var(--primary); }
+.video-compression-option { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
+.video-compression-option input { width: 18px; height: 18px; accent-color: var(--primary); }
+
+.export-resolution-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 480px) { .export-resolution-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
