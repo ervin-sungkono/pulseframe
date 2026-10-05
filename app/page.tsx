@@ -85,6 +85,7 @@ export default function Home() {
   const [subtitles, setSubtitles] = useState<SubtitleCue[]>([]);
   const [format, setFormat] = useState<Format>("landscape");
   const [frameRate, setFrameRate] = useState<ExportFrameRate>(30);
+  const [losslessCompression, setLosslessCompression] = useState(false);
   const [profile, setProfile] = useState<"standard" | "smaller">("standard");
   const [file, setFile] = useState<File | null>(null);
   const [logoName, setLogoName] = useState<string | null>(null);
@@ -358,7 +359,7 @@ export default function Home() {
       if (project) {
         ++logoLoadRef.current; ++backgroundLoadRef.current;
         commitLogo(candidates.logo); commitBackground(candidates.background);
-        setFormat(project.format); setProfile(project.profile); setFrameRate(project.frameRate ?? 30); resetSettings(project.settings); setSubtitles(project.subtitles); setActiveLook(null);
+        setFormat(project.format); setProfile(project.profile); setFrameRate(project.frameRate ?? 30); setLosslessCompression(project.losslessCompression ?? false); resetSettings(project.settings); setSubtitles(project.subtitles); setActiveLook(null);
       } else {
         setSubtitles([]); resetSettings(current => ({ ...current, trackTitle: next.name.replace(/\.[^.]+$/, '').slice(0, 120), trackArtist: '' }));
       }
@@ -462,11 +463,19 @@ export default function Home() {
         reducedMotion: reducedMotionRef.current, signal: controller.signal, onProgress: setProgress,
       });
       if (controller.signal.aborted) return;
-      const url = URL.createObjectURL(blob), link = document.createElement("a");
+      const filename = `${file.name.replace(/\.[^.]+$/, "")}-pulseframe-${Math.floor(range[0])}-${Math.ceil(range[1])}.${extension}`;
+      const result = losslessCompression
+        ? await (await import("@/lib/export-compression")).compressExport(blob, filename, controller.signal,
+          percent => setProgress({ phase: "Compressing losslessly", percent }))
+        : { blob, filename, compressed: false, savedBytes: 0 };
+      if (controller.signal.aborted) return;
+      const url = URL.createObjectURL(result.blob), link = document.createElement("a");
       link.href = url;
-      link.download = `${file.name.replace(/\.[^.]+$/, "")}-pulseframe-${Math.floor(range[0])}-${Math.ceil(range[1])}.${extension}`;
+      link.download = result.filename;
       link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-      setNotice(`Export complete: ${extension.toUpperCase()} video with ${timestamp(range[1] - range[0])} of media.`);
+      setNotice(`Export complete: ${extension.toUpperCase()} video with ${timestamp(range[1] - range[0])} of media.${result.compressed
+        ? ` Lossless ZIP saved ${(result.savedBytes / blob.size * 100).toFixed(1)}% — extract it to play the video.`
+        : losslessCompression ? " Lossless compression could not reduce this file; the original video was downloaded." : ""}`);
       setExportOpen(false);
     } catch (caught) {
       if (controller.signal.aborted) setNotice("Export canceled.");
@@ -481,7 +490,7 @@ export default function Home() {
     if (!file || exportingRef.current) return;
     try {
       const blob = makeProjectFile({ media: file, logo: logoFileRef.current, background: backgroundFileRef.current,
-        settings, subtitles, format, profile, frameRate, range });
+        settings, subtitles, format, profile, frameRate, losslessCompression, range });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -649,7 +658,7 @@ export default function Home() {
       </DrawerContent>
     </Drawer>
     <ExportDialog open={exportOpen} onOpenChange={setExportOpen} duration={duration} range={range} onRangeChange={setRange}
-      dimensions={outputDimensions} frameRate={frameRate} onFrameRateChange={setFrameRate} profile={profile} onProfileChange={setProfile}
+      dimensions={outputDimensions} losslessCompression={losslessCompression} onLosslessCompressionChange={setLosslessCompression} frameRate={frameRate} onFrameRateChange={setFrameRate} profile={profile} onProfileChange={setProfile}
       exporting={exporting} progress={progress} onExport={exportVideo}
       onCancel={() => exportAbortRef.current?.abort()} onPreview={previewRange}/>
     <SubtitleDialog open={subtitleOpen} onOpenChange={setSubtitleOpen} cues={subtitles} onChange={setSubtitles}

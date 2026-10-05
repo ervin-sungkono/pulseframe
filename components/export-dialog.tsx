@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Download, Play, RotateCcw, Scissors } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { EXPORT_FRAME_RATES, type ExportFrameRate } from "@/lib/export-timeline";
+import { supportsLosslessCompression } from "@/lib/export-compression";
 import type { ExportProgress } from "@/lib/export-video";
 
 export function timestamp(value: number, precise = false) {
@@ -34,14 +35,19 @@ function TimeField({ label, value, onCommit, disabled }: {
     }}/></label>;
 }
 
+const subscribeCompressionSupport = () => () => {};
+const serverCompressionSupport = () => false;
+
 export function ExportDialog({ open, onOpenChange, duration, range, onRangeChange, dimensions, exporting,
-  profile, onProfileChange, frameRate, onFrameRateChange, progress, onExport, onCancel, onPreview }: {
+  profile, onProfileChange, losslessCompression, onLosslessCompressionChange, frameRate, onFrameRateChange, progress, onExport, onCancel, onPreview }: {
   open: boolean; onOpenChange: (open: boolean) => void; duration: number; range: [number, number];
   onRangeChange: (range: [number, number]) => void; dimensions: { width: number; height: number; label: string };
   profile: "standard" | "smaller"; onProfileChange: (profile: "standard" | "smaller") => void;
+  losslessCompression: boolean; onLosslessCompressionChange: (enabled: boolean) => void;
   frameRate: ExportFrameRate; onFrameRateChange: (rate: ExportFrameRate) => void;
   exporting: boolean; progress: ExportProgress | null; onExport: () => void; onCancel: () => void; onPreview: () => void;
 }) {
+  const compressionSupported = useSyncExternalStore(subscribeCompressionSupport, supportsLosslessCompression, serverCompressionSupport);
   const selected = Math.max(0, range[1] - range[0]);
   const safeChange = (start: number, end: number) => {
     const clampedStart = Math.max(0, Math.min(start, duration - .1));
@@ -85,6 +91,13 @@ export function ExportDialog({ open, onOpenChange, duration, range, onRangeChang
           </button>)}
         </div>
         <p className="export-footnote">60 fps makes motion smoother and takes longer to export.</p>
+      </div>
+      <div className="export-quality">
+        <label className="lossless-export-option"><input type="checkbox" checked={losslessCompression}
+          disabled={exporting || !compressionSupported} onChange={event => onLosslessCompressionChange(event.currentTarget.checked)}/>
+          <strong>Lossless ZIP compression</strong></label>
+        <p className="export-footnote">Compress after rendering without changing video or audio quality. Extract the ZIP before playback. Already-compressed videos may not shrink; in that case, the original video is downloaded.</p>
+        {!compressionSupported && <p className="export-footnote">Lossless compression is unavailable in this browser.</p>}
       </div>
       <div className="export-summary">
         <div><span>Canvas</span><strong>{dimensions.label} · {dimensions.width} × {dimensions.height}</strong></div>

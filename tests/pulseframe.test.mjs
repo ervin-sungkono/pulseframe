@@ -171,13 +171,13 @@ test('new projects retain background and old v1 projects remain readable', async
   const { makeProjectFile, readProjectFile } = modules['project-file'];
   const media = new File(['original-media'], 'song.wav', { type: 'audio/wav' }), background = new File(['background-bytes'], 'scene.png', { type: 'image/png' });
   const editedSettings = { ...settings, ringLayers: 4, ringRearOpacity: 15, ringMirror: true, ringFocus: 'full', spectrumRoundness: 85, spectrumReflection: 35, infoStyle: 'card', infoFont: 'serif', infoAlign: 'right', glitch: true, glitchStrength: .6, beatLighting: 'edges', beatLightingIntensity: 80, logoFitScale: { ...DEFAULT_LOGO_FIT_SCALE, ring: 90 } };
-  const content = { format: 'square', profile: 'standard', frameRate: 60, range: [1,4], settings: editedSettings, subtitles: [{ id: 'a', start: 1, end: 2, text: 'hello' }], media, logo: null, background };
+  const content = { format: 'square', profile: 'standard', frameRate: 60, losslessCompression: true, range: [1,4], settings: editedSettings, subtitles: [{ id: 'a', start: 1, end: 2, text: 'hello' }], media, logo: null, background };
   const blob = makeProjectFile(content), opened = await readProjectFile(new File([blob], 'new.pulseframe'));
   for (const frameRate of [24, 30, 60]) {
     const restored = await readProjectFile(new File([makeProjectFile({ ...content, frameRate })], 'fps.pulseframe'));
     assert.equal(restored.frameRate, frameRate);
   }
-  assert.equal(opened.frameRate, 60); assert.equal(await opened.background.text(), 'background-bytes'); assert.equal(await opened.media.text(), 'original-media'); assert.equal(opened.settings.mode, 'ring');
+  assert.equal(opened.losslessCompression, true); assert.equal(opened.frameRate, 60); assert.equal(await opened.background.text(), 'background-bytes'); assert.equal(await opened.media.text(), 'original-media'); assert.equal(opened.settings.mode, 'ring');
   assert.equal(opened.settings.ringLayers, 4); assert.equal(opened.settings.logoFitScale.ring, 90);
   assert.equal(opened.settings.ringRearOpacity, 15); assert.equal(opened.settings.ringMirror, true); assert.equal(opened.settings.glitch, true); assert.equal(opened.settings.glitchStrength, .6);
   assert.equal(opened.settings.spectrumRoundness,85); assert.equal(opened.settings.spectrumReflection,35); assert.equal(opened.settings.infoStyle,'card'); assert.equal(opened.settings.infoFont,'serif'); assert.equal(opened.settings.infoAlign,'right'); assert.equal(opened.settings.ringFocus, 'full'); assert.equal(opened.settings.beatLighting, 'edges'); assert.equal(opened.settings.beatLightingIntensity, 80);
@@ -186,7 +186,7 @@ test('new projects retain background and old v1 projects remain readable', async
   const manifest = { version: 1, format: 'landscape', profile: 'standard', range: [0,4], settings: oldSettings, subtitles: [], media: { name: media.name, type: media.type, size: media.size }, logo: null };
   const bytes = new TextEncoder().encode(JSON.stringify(manifest)), header = new Uint8Array(8); header.set(new TextEncoder().encode('PF01')); new DataView(header.buffer).setUint32(4, bytes.length, true);
   const old = await readProjectFile(new File([header, bytes, media], 'old.pulseframe'));
-  assert.equal(old.frameRate, 30); assert.equal(old.background, null); assert.equal(old.settings.mode, 'ring'); assert.equal(old.migratedStyle, 'halo'); assert.deepEqual(old.settings.logoPlacements.ring, { x: 45, y: 48, size: 30 }); assert.equal(old.settings.dropEffects, false); assert.equal(old.settings.logoAutoFit.ring, false); assert.equal(old.settings.beatLighting, "rays"); assert.equal(old.settings.beatLightingIntensity, 65);
+  assert.equal(old.losslessCompression, false); assert.equal(old.frameRate, 30); assert.equal(old.background, null); assert.equal(old.settings.mode, 'ring'); assert.equal(old.migratedStyle, 'halo'); assert.deepEqual(old.settings.logoPlacements.ring, { x: 45, y: 48, size: 30 }); assert.equal(old.settings.dropEffects, false); assert.equal(old.settings.logoAutoFit.ring, false); assert.equal(old.settings.beatLighting, "rays"); assert.equal(old.settings.beatLightingIntensity, 65);
   assert.equal(old.settings.ringLayers, 3); assert.deepEqual(old.settings.logoFitScale, DEFAULT_LOGO_FIT_SCALE);
   assert.equal(old.settings.ringRearOpacity, 30); assert.equal(old.settings.ringMirror, false); assert.equal(old.settings.glitch, false); assert.equal(old.settings.glitchStrength, .35);
   assert.equal(old.settings.ringFocus, 'bass');

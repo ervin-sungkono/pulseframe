@@ -448,3 +448,6 @@ h2 { font-size: 22px; letter-spacing: -.045em; margin: 0; }
   .custom-colors .custom-color-inputs input[type="color"] { width: 24px; }
   .custom-colors .custom-color-inputs input[type="text"] { font-size: 9px; padding-inline: 3px; }
 }
+
+.lossless-export-option { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
+.lossless-export-option input { width: 18px; height: 18px; accent-color: var(--primary); }

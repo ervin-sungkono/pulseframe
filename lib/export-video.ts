@@ -9,7 +9,7 @@ import { PcmFeatures, dropEnvelope, prepareSound, type PreparedSound } from "./a
 import { decodeMediaAudio, audioSections } from "./media-audio";
 import { exportFrames, exportSoundAt, type ExportFrameRate } from "./export-timeline";
 
-export type ExportProgress = { phase: "Preparing media" | "Rendering frames" | "Finishing file"; percent: number };
+export type ExportProgress = { phase: "Preparing media" | "Rendering frames" | "Finishing file" | "Compressing losslessly"; percent: number };
 export type ExportOptions = {
   file: File;
   start: number;

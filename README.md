@@ -132,3 +132,5 @@ The portable build runs Vinext directly without a host `timeout` command. The ma
 
 - [vinext Documentation](https://github.com/cloudflare/vinext)
 - [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+
+Export offers optional lossless ZIP compression after rendering. The archive preserves the encoded video exactly; if it cannot save space, the original video is downloaded. See [lossless export details](docs/lossless-export.md).
