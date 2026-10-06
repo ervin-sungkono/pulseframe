@@ -1,4 +1,5 @@
-import { ANALYSIS_FPS, type SoundEnvelope } from "./audio-features";
+import { ANALYSIS_FPS } from "./audio-analysis-config";
+import type { SoundEnvelope } from "./audio-features";
 
 export const EXPORT_FRAME_RATES = [24, 30, 60] as const;
 export type ExportFrameRate = typeof EXPORT_FRAME_RATES[number];

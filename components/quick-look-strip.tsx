@@ -5,7 +5,7 @@ import type { CSSProperties } from "react";
 import { Bookmark, Check, Plus, PinOff, RotateCcw, Undo2, Redo2 } from "lucide-react";
 import { BUILTIN_LOOKS } from "@/lib/customizer-config";
 import { visualModeName, type PresetStyle, type SavedPreset } from "@/lib/presets";
-import type { VisualSettings } from "@/lib/visualizer";
+import type { VisualSettings } from "@/lib/visual-settings-model";
 import type { PresetLibrary } from "@/hooks/use-presets";
 
 export type ActiveLook = { id: string; name: string; settings: PresetStyle; preset?: SavedPreset };

@@ -4,7 +4,7 @@ import {
   DEFAULT_LOGO_FIT_SCALE,
   DEFAULT_LOGO_PLACEMENTS,
   type VisualSettings,
-} from "./visualizer";
+} from "./visual-settings-model";
 
 export type CustomizerSection = "visual" | "colors" | "motion" | "audio" | "logo" | "track";
 

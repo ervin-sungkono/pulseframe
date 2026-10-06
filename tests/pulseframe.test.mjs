@@ -3,8 +3,12 @@ import assert from 'node:assert/strict';
 import { loadSources } from './load-source.mjs';
 import { generateDemo } from '../lib/audio-dsp.mjs';
 const modules = await loadSources();
-const { PcmFeatures, findDropEvents, dropEnvelope, audibleMediaTime } = modules['audio-features'];
-const { createAudioReactiveState, soundResponse, warmSoundResponse, drawVisualization, ringMagnitude, edgeBarResponse, edgeBarLayout, spectrumLayout, makeParticles, coverCrop, DEFAULT_LOGO_AUTO_FIT, DEFAULT_LOGO_FIT_SCALE, DEFAULT_LOGO_PLACEMENTS } = modules.visualizer;
+const { PcmFeatures, findDropEvents, dropEnvelope, audibleMediaTime, prepareSound } = modules['audio-features'];
+const { ANALYSIS_FPS, ANALYSIS_SIZE } = modules['audio-analysis-config'];
+const { DEFAULT_LOGO_AUTO_FIT, DEFAULT_LOGO_FIT_SCALE, DEFAULT_LOGO_PLACEMENTS } = modules['visual-settings-model'];
+const { settingsSchema, migrateSettings } = modules['visual-settings'];
+const { DEFAULT_SETTINGS } = modules['customizer-config'];
+const { createAudioReactiveState, soundResponse, warmSoundResponse, drawVisualization, ringMagnitude, edgeBarResponse, edgeBarLayout, spectrumLayout, makeParticles, coverCrop } = modules.visualizer;
 const settings = {
   mode: 'ring', spectrumRoundness: 100, spectrumReflection: 45, ringLayers: 3, ringRearOpacity: 30, ringMirror: false, ringFocus: 'bass', glitch: false, glitchStrength: .35, particleMode: 'stardust', particleFlow: 'drift', backdrop: 'clean',
   primary: '#9b72ff', secondary: '#61e5ff', background: '#080c20', sensitivity: 1.3, quietThreshold: .006, bassBoost: 1, responseStyle: 'balanced',
@@ -93,24 +97,37 @@ test('a silent DC-heavy channel cannot replace the audible waveform', () => {
 });
 test('range warm-up uses the actual first-frame interval and handles trailing silence', () => {
   const analyzer = new PcmFeatures([tone(24000, 80, .5, 2)], 24000);
-  const history = Array.from({ length: 60 }, (_, i) => analyzer.at(i / 30, false));
+  const history = Array.from({ length: 2 * ANALYSIS_FPS }, (_, i) => analyzer.at(i / ANALYSIS_FPS, false));
   const start = 1.01, warmed = warmSoundResponse(history, settings, start);
-  assert.equal(warmed.lastTime, 1); close((start - warmed.lastTime) * 1000, 10, 1e-8);
+  const lastIndex = Math.ceil(start * ANALYSIS_FPS) - 1;
+  assert.equal(warmed.lastTime, lastIndex / ANALYSIS_FPS);
   const sequential = createAudioReactiveState();
-  for (let i = 0; i < 31; i++) soundResponse(history[i], settings, sequential, i ? 1000 / 30 : 0);
+  for (let i = 0; i <= lastIndex; i++) soundResponse(history[i], settings, sequential, i ? 1000 / ANALYSIS_FPS : 0);
   assert.deepEqual(warmed.state, sequential);
   const later = warmSoundResponse(history, settings, 6);
   assert.ok(later.state.activity < 1e-7); assert.ok(later.state.energy < 1e-7);
 });
 test('paused sound settings can rebuild a held frame without advancing its timeline', () => {
   const analyzer = new PcmFeatures([tone(24000, 70, .01, 2)], 24000);
-  const history = Array.from({ length: 30 }, (_, i) => analyzer.at(i / 30, false));
+  const history = Array.from({ length: ANALYSIS_FPS }, (_, i) => analyzer.at(i / ANALYSIS_FPS, false));
   const quiet = warmSoundResponse(history, { ...settings, quietThreshold: .1 }, 1).state;
   const active = warmSoundResponse(history, { ...settings, quietThreshold: 0 }, 1).state;
   assert.equal(quiet.activity, 0); assert.ok(active.activity > .3);
   const before = active.activity;
   soundResponse(analyzer.at(1), settings, active, 0);
   assert.equal(active.activity, before);
+});
+test('shared analysis config keeps feature timing and legacy schema fallbacks stable', async () => {
+  assert.equal(ANALYSIS_FPS, 30); assert.equal(ANALYSIS_SIZE, 4096);
+  assert.equal(new PcmFeatures([new Float32Array(ANALYSIS_SIZE)], 48000).at(0).size, ANALYSIS_SIZE);
+  const audio = new TestAudioBuffer({ length: Math.round(1.01 * 24000), sampleRate: 24000, numberOfChannels: 1 });
+  const prepared = await prepareSound(audio);
+  assert.equal(prepared.envelopes.length, Math.ceil(audio.duration * ANALYSIS_FPS));
+  assert.equal(DEFAULT_SETTINGS.ringMirror, true); assert.equal(DEFAULT_SETTINGS.ringFocus, 'full');
+  const legacy = settingsSchema.parse({ ...DEFAULT_SETTINGS, ringMirror: undefined, ringFocus: undefined });
+  assert.equal(legacy.ringMirror, false); assert.equal(legacy.ringFocus, 'bass');
+  const migrated = migrateSettings(legacy);
+  assert.equal(migrated.ringMirror, false); assert.equal(migrated.ringFocus, 'bass');
 });
 test('silence, DC and inaudible noise do not cause deformation; kicks do', () => {
   for (const samples of [new Float32Array(48000), new Float32Array(48000).fill(.2), tone(48000, 60, .0001, 1)]) {
@@ -275,7 +292,7 @@ test('short bass impacts use a causal faster window at both sample rates', () =>
 test('ring impact settles on sustained bass and transparent layers trail the main contour', () => {
   const analyzer = new PcmFeatures([tone(48000, 70, .4)], 48000), state = createAudioReactiveState();
   const pulses = [];
-  for (let i = 0; i < 45; i++) { soundResponse(analyzer.at(i / 30), settings, state, i ? 1000 / 30 : 0); pulses.push(state.ringPulse); }
+  for (let i = 0; i < 1.5 * ANALYSIS_FPS; i++) { soundResponse(analyzer.at(i / ANALYSIS_FPS), settings, state, i ? 1000 / ANALYSIS_FPS : 0); pulses.push(state.ringPulse); }
   assert.ok(Math.max(...pulses.slice(0, 8)) > state.ringPulse * 2);
   assert.ok(state.ringPulse > 0 && state.ringPulse < .25);
   const fresh = createAudioReactiveState(); soundResponse(analyzer.at(1), settings, fresh, 33);

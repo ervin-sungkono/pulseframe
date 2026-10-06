@@ -3,7 +3,8 @@ import {
   CanvasSink, CanvasSource, Input, Mp4OutputFormat, Output, Quality,
   WebMOutputFormat, canEncodeAudio, canEncodeVideo,
 } from "mediabunny";
-import { drawVisualization, warmSoundResponse, makeParticles, type LogoLayer, type VisualSettings } from "./visualizer";
+import { drawVisualization, warmSoundResponse, makeParticles, type LogoLayer } from "./visualizer";
+import type { VisualSettings } from "./visual-settings-model";
 import type { SubtitleCue } from "./subtitles";
 import { PcmFeatures, dropEnvelope, prepareSound, type PreparedSound } from "./audio-features";
 import { decodeMediaAudio, audioSections } from "./media-audio";
