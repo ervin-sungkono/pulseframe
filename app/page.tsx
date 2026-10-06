@@ -657,7 +657,7 @@ export default function Home() {
         if (mediaRef.current) { mediaRef.current.pause(); mediaRef.current.currentTime = time; setPosition(time); audioStateRef.current = createAudioReactiveState(); }
       }}/>
     <PresetDialog open={presetOpen} onOpenChange={setPresetOpen} settings={settings} hasMedia={!!file} library={library} currentPreset={currentPreset}
-      onApply={applySavedLook} onSaved={lookSaved} onDeleted={id => { setActiveLook(current => current?.id === id ? null : current); }}
+      onApply={applySavedLook} onSaved={lookSaved} onMetadataChanged={lookMetadataChanged} onDeleted={id => { setActiveLook(current => current?.id === id ? null : current); }}
       onHelp={() => { setPresetOpen(false); setHelpOpen(true); }}
       onOpenProject={() => { setPresetOpen(false); setProjectOpen(true); }}/>
     <PresetSaveDialog open={lookSaveOpen} onOpenChange={setLookSaveOpen} settings={settings} library={library}
