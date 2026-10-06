@@ -1,9 +1,8 @@
 import { FFTAnalyzer, waveformEnvelope } from './audio-dsp.mjs';
 import { bandPower, recentRms } from './art-reactivity.mjs';
 import { BassReturnDetector } from './drop-detector.mjs';
+import { ANALYSIS_FPS, ANALYSIS_SIZE } from './audio-analysis-config';
 
-export const ANALYSIS_SIZE = 4096;
-export const ANALYSIS_FPS = 30;
 const IMPACT_SIZE = 1024;
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
 const db = (n: number) => n > 0 ? 20 * Math.log10(n) : -160;

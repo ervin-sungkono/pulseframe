@@ -1,6 +1,5 @@
 import { z } from "zod";
-import type { VisualSettings } from "./visualizer";
-import { DEFAULT_LOGO_AUTO_FIT, DEFAULT_LOGO_FIT_SCALE, DEFAULT_LOGO_PLACEMENTS } from "./visualizer";
+import { DEFAULT_LOGO_AUTO_FIT, DEFAULT_LOGO_FIT_SCALE, DEFAULT_LOGO_PLACEMENTS, type VisualSettings } from "./visual-settings-model";
 
 const visualModes = ["halo", "ring", "spectrum", "wave", "tunnel", "aurora", "bloom", "edges"] as const;
 

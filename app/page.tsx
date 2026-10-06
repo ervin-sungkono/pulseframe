@@ -10,11 +10,11 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Drawer, DrawerContent, DrawerDescription, DrawerHandle, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CustomizerPanel, DEFAULT_SETTINGS } from "@/components/customizer-panel";
+import { CustomizerPanel } from "@/components/customizer-panel";
 import { ExportDialog, timestamp } from "@/components/export-dialog";
 import { PresetDialog } from "@/components/preset-dialog";
 import { applyPreset, presetStyle, type SavedPreset } from "@/lib/presets";
-import { BUILTIN_LOOKS, SECTION_KEYS, type CustomizerSection } from "@/lib/customizer-config";
+import { BUILTIN_LOOKS, DEFAULT_SETTINGS, SECTION_KEYS, type CustomizerSection } from "@/lib/customizer-config";
 import { QuickLookStrip, type ActiveLook } from "@/components/quick-look-strip";
 import { PresetSaveDialog } from "@/components/preset-save-dialog";
 import { usePresets } from "@/hooks/use-presets";
@@ -24,11 +24,13 @@ import type { ExportProgress } from "@/lib/export-video";
 import type { ExportFrameRate } from "@/lib/export-timeline";
 import { makeProjectFile, readProjectFile, type ProjectContent } from "@/lib/project-file";
 import type { SubtitleCue } from "@/lib/subtitles";
-import { PcmFeatures, ANALYSIS_FPS, audibleMediaTime, dropEnvelope, prepareSound, type PreparedSound, type SoundFrame } from "@/lib/audio-features";
+import { PcmFeatures, audibleMediaTime, dropEnvelope, prepareSound, type PreparedSound, type SoundFrame } from "@/lib/audio-features";
+import { ANALYSIS_FPS } from "@/lib/audio-analysis-config";
 import { readLocalImage, type LocalImage } from "@/lib/local-image";
 import { LiveSound } from "@/lib/live-sound";
 import { TrackWaveform } from "@/components/track-waveform";
-import { createAudioReactiveState, drawVisualization, soundResponse, warmSoundResponse, makeParticles, type VisualSettings } from "@/lib/visualizer";
+import { createAudioReactiveState, drawVisualization, soundResponse, warmSoundResponse, makeParticles } from "@/lib/visualizer";
+import type { VisualSettings } from "@/lib/visual-settings-model";
 
 const dimensions = {
   landscape: { width: 1280, height: 720, label: "16:9", css: "16 / 9" },

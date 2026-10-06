@@ -4,6 +4,7 @@ import { loadSources } from './load-source.mjs';
 const modules = await loadSources();
 const { exportFrames, exportSoundAt } = modules['export-timeline'];
 const { PcmFeatures } = modules['audio-features'];
+const { ANALYSIS_FPS } = modules['audio-analysis-config'];
 
 for (const fps of [24, 30, 60]) test(`${fps} fps preserves exact duration, timestamps and two-second keyframes`, () => {
   for (const length of [.1, 1, 2.013, 5.527]) {
@@ -30,11 +31,16 @@ test('cached envelopes are reused only at exact PCM analysis times', () => {
     fresh = 0;
     for (const frame of exportFrames(2,fps)) {
       const envelope = exportSoundAt(cached,frame.time,analyze);
-      const exact = Math.abs(frame.time * 30 - Math.round(frame.time * 30)) < 1e-7;
-      if (exact) assert.equal(envelope,cached[Math.round(frame.time*30)]);
+      const position = frame.time * ANALYSIS_FPS, index = Math.round(position);
+      const exact = Math.abs(position - index) < 1e-7;
+      if (exact) assert.equal(envelope,cached[index]);
       if (!exact) assert.equal(envelope.time,frame.time);
     }
-    assert.equal(fresh, fps===30 ? 0 : fps===60 ? 60 : 36);
+    const expectedFresh = [...exportFrames(2, fps)].filter(frame => {
+      const position = frame.time * ANALYSIS_FPS;
+      return Math.abs(position - Math.round(position)) >= 1e-7;
+    }).length;
+    assert.equal(fresh, expectedFresh);
   }
   assert.deepEqual(exportSoundAt(cached,1.013,analyze), {time:1.013});
   assert.deepEqual(exportSoundAt(cached,3,analyze), {time:3});
@@ -43,7 +49,7 @@ test('off-grid bass impacts use original PCM rather than interpolated cache', ()
   const rate = 48000, samples = new Float32Array(rate);
   for (let i=Math.round(.201*rate); i<Math.round(.217*rate); i++) samples[i]=.8*Math.sin(2*Math.PI*70*i/rate);
   const analyzer = new PcmFeatures([samples],rate);
-  const cache = Array.from({length:30}, (_,i) => analyzer.at(i/30,false));
+  const cache = Array.from({length:ANALYSIS_FPS}, (_,i) => analyzer.at(i/ANALYSIS_FPS,false));
   const time = .216;
   const actual = exportSoundAt(cache,time,t=>analyzer.at(t,false));
   const expected = analyzer.at(time);

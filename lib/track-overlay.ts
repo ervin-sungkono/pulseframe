@@ -1,4 +1,4 @@
-import type { VisualSettings } from './visualizer';
+import type { VisualSettings } from './visual-settings-model';
 
 const fonts = { sans: 'ui-sans-serif,system-ui,sans-serif', serif: 'Georgia,serif', mono: 'ui-monospace,Menlo,monospace' };
 const rgba = (hex: string, alpha: number) => { const v = parseInt(hex.slice(1),16); return `rgba(${v>>>16},${(v>>>8)&255},${v&255},${alpha})`; };

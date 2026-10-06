@@ -7,7 +7,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { PresetSaveDialog } from "@/components/preset-save-dialog";
 import { PresetRequestError, type PresetLibrary } from "@/hooks/use-presets";
 import { visualModeName, type SavedPreset } from "@/lib/presets";
-import type { VisualSettings } from "@/lib/visualizer";
+import type { VisualSettings } from "@/lib/visual-settings-model";
 
 type Props = {
   open: boolean;

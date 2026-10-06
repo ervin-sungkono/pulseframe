@@ -138,7 +138,7 @@ const appMockRequire = id => {
   if (id === '@/components/ui/slider') return { Slider: stubComponent };
   if (id === '@/components/ui/drawer') return { Drawer: stubComponent, DrawerContent: stubComponent, DrawerDescription: stubComponent, DrawerHandle: stubComponent, DrawerHeader: stubComponent, DrawerTitle: stubComponent };
   if (id === '@/components/ui/dialog') return uiDialog;
-  if (id === '@/components/customizer-panel') return { CustomizerPanel: customizerPanelStub, DEFAULT_SETTINGS };
+  if (id === '@/components/customizer-panel') return { CustomizerPanel: customizerPanelStub };
   if (id === '@/components/export-dialog') return { ExportDialog: stubComponent, timestamp: () => '0:00' };
   if (id === '@/components/preset-dialog') return { PresetDialog: actualPresetDialog };
   if (id === '@/lib/presets') return {
@@ -148,6 +148,7 @@ const appMockRequire = id => {
   if (id === '@/lib/customizer-config') return {
     BUILTIN_LOOKS: [],
     SECTION_KEYS: { colors: ['primary', 'secondary', 'background'] },
+    DEFAULT_SETTINGS,
   };
   if (id === '@/components/quick-look-strip') return { QuickLookStrip: stubComponent };
   if (id === '@/components/preset-save-dialog') return { PresetSaveDialog: presetSaveDialogStub };
@@ -160,8 +161,9 @@ const appMockRequire = id => {
   };
   if (id === '@/components/subtitle-dialog') return { SubtitleDialog: stubComponent };
   if (id === '@/lib/audio-features') return {
-    PcmFeatures: class {}, ANALYSIS_FPS: 30, audibleMediaTime: () => 0, dropEnvelope: () => 0, prepareSound: () => null,
+    PcmFeatures: class {}, audibleMediaTime: () => 0, dropEnvelope: () => 0, prepareSound: () => null,
   };
+  if (id === '@/lib/audio-analysis-config') return { ANALYSIS_FPS: 30 };
   if (id === '@/lib/local-image') return { readLocalImage: async () => null };
   if (id === '@/lib/live-sound') return { LiveSound: class {} };
   if (id === '@/components/track-waveform') return { TrackWaveform: stubComponent };
