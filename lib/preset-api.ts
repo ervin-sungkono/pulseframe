@@ -8,15 +8,18 @@ export async function presetAccess(request: Request, write=false) {
   if(!user) return {error:presetResponse({error:'Sign in to save and reuse your presets.',signin:'/signin-with-chatgpt?return_to=%2F%3Fpresets%3D1'},401)};
   if(write) {
     const origin=request.headers.get('Origin');
-    let allowed=request.headers.get('Sec-Fetch-Site')!=='cross-site';
+    const fetchSite=request.headers.get('Sec-Fetch-Site');
+    let allowed=fetchSite!=='cross-site';
     if(origin) {try{allowed=allowed && new URL(origin).origin===new URL(request.url).origin;}catch{allowed=false;}}
+    else if(fetchSite!=='same-origin') allowed=false;
     if(!allowed)return {error:presetResponse({error:'This request could not be verified.'},403)};
   }
   if(!env.DB) throw new Error('Preset storage is unavailable.');
   return {userId:user.userId,store:new PresetStore(env.DB)};
 }
 export async function readPresetBody(request:Request) {
-  if(!request.headers.get('content-type')?.startsWith('application/json')) throw new Error('Use a valid preset name and settings.');
+  const mediaType=request.headers.get('content-type')?.split(';',1)[0].trim().toLowerCase();
+  if(mediaType!=='application/json') throw new Error('Use a valid preset name and settings.');
   const reader=request.body?.getReader(); if(!reader) throw new Error('Use a valid preset name and settings.');
   const decoder=new TextDecoder();let bytes=0,text='';
   try {for(;;){const {done,value}=await reader.read();if(done)break;bytes+=value.byteLength;if(bytes>32768){await reader.cancel();throw new Error('This preset is too large.');}text+=decoder.decode(value,{stream:true});}text+=decoder.decode();return JSON.parse(text) as unknown;}

@@ -171,13 +171,13 @@ test('new projects retain background and old v1 projects remain readable', async
   const { makeProjectFile, readProjectFile } = modules['project-file'];
   const media = new File(['original-media'], 'song.wav', { type: 'audio/wav' }), background = new File(['background-bytes'], 'scene.png', { type: 'image/png' });
   const editedSettings = { ...settings, ringLayers: 4, ringRearOpacity: 15, ringMirror: true, ringFocus: 'full', spectrumRoundness: 85, spectrumReflection: 35, infoStyle: 'card', infoFont: 'serif', infoAlign: 'right', glitch: true, glitchStrength: .6, beatLighting: 'edges', beatLightingIntensity: 80, logoFitScale: { ...DEFAULT_LOGO_FIT_SCALE, ring: 90 } };
-  const content = { format: 'square', profile: 'standard', frameRate: 60, range: [1,4], settings: editedSettings, subtitles: [{ id: 'a', start: 1, end: 2, text: 'hello' }], media, logo: null, background };
+  const content = { format: 'square', resolution: 1440, frameRate: 60, videoCompression: true, range: [1,4], settings: editedSettings, subtitles: [{ id: 'a', start: 1, end: 2, text: 'hello' }], media, logo: null, background };
   const blob = makeProjectFile(content), opened = await readProjectFile(new File([blob], 'new.pulseframe'));
   for (const frameRate of [24, 30, 60]) {
     const restored = await readProjectFile(new File([makeProjectFile({ ...content, frameRate })], 'fps.pulseframe'));
     assert.equal(restored.frameRate, frameRate);
   }
-  assert.equal(opened.frameRate, 60); assert.equal(await opened.background.text(), 'background-bytes'); assert.equal(await opened.media.text(), 'original-media'); assert.equal(opened.settings.mode, 'ring');
+  assert.equal(opened.resolution, 1440); assert.equal(opened.videoCompression, true); assert.equal(opened.frameRate, 60); assert.equal(await opened.background.text(), 'background-bytes'); assert.equal(await opened.media.text(), 'original-media'); assert.equal(opened.settings.mode, 'ring');
   assert.equal(opened.settings.ringLayers, 4); assert.equal(opened.settings.logoFitScale.ring, 90);
   assert.equal(opened.settings.ringRearOpacity, 15); assert.equal(opened.settings.ringMirror, true); assert.equal(opened.settings.glitch, true); assert.equal(opened.settings.glitchStrength, .6);
   assert.equal(opened.settings.spectrumRoundness,85); assert.equal(opened.settings.spectrumReflection,35); assert.equal(opened.settings.infoStyle,'card'); assert.equal(opened.settings.infoFont,'serif'); assert.equal(opened.settings.infoAlign,'right'); assert.equal(opened.settings.ringFocus, 'full'); assert.equal(opened.settings.beatLighting, 'edges'); assert.equal(opened.settings.beatLightingIntensity, 80);
@@ -186,7 +186,7 @@ test('new projects retain background and old v1 projects remain readable', async
   const manifest = { version: 1, format: 'landscape', profile: 'standard', range: [0,4], settings: oldSettings, subtitles: [], media: { name: media.name, type: media.type, size: media.size }, logo: null };
   const bytes = new TextEncoder().encode(JSON.stringify(manifest)), header = new Uint8Array(8); header.set(new TextEncoder().encode('PF01')); new DataView(header.buffer).setUint32(4, bytes.length, true);
   const old = await readProjectFile(new File([header, bytes, media], 'old.pulseframe'));
-  assert.equal(old.frameRate, 30); assert.equal(old.background, null); assert.equal(old.settings.mode, 'ring'); assert.equal(old.migratedStyle, 'halo'); assert.deepEqual(old.settings.logoPlacements.ring, { x: 45, y: 48, size: 30 }); assert.equal(old.settings.dropEffects, false); assert.equal(old.settings.logoAutoFit.ring, false); assert.equal(old.settings.beatLighting, "rays"); assert.equal(old.settings.beatLightingIntensity, 65);
+  assert.equal(old.resolution, 720); assert.equal(old.videoCompression, false); assert.equal(old.frameRate, 30); assert.equal(old.background, null); assert.equal(old.settings.mode, 'ring'); assert.equal(old.migratedStyle, 'halo'); assert.deepEqual(old.settings.logoPlacements.ring, { x: 45, y: 48, size: 30 }); assert.equal(old.settings.dropEffects, false); assert.equal(old.settings.logoAutoFit.ring, false); assert.equal(old.settings.beatLighting, "rays"); assert.equal(old.settings.beatLightingIntensity, 65);
   assert.equal(old.settings.ringLayers, 3); assert.deepEqual(old.settings.logoFitScale, DEFAULT_LOGO_FIT_SCALE);
   assert.equal(old.settings.ringRearOpacity, 30); assert.equal(old.settings.ringMirror, false); assert.equal(old.settings.glitch, false); assert.equal(old.settings.glitchStrength, .35);
   assert.equal(old.settings.ringFocus, 'bass');
@@ -444,5 +444,39 @@ test('Edge Bars leave room for a fitted center logo even at maximum scale and gl
   for(const [w,h] of [[1280,720],[720,1280],[1080,1080]]){
     const short=Math.min(w,h),clear=short*.085+2.5*16,layout=edgeBarLayout(w,h,1.5,2.5,clear);
     assert.ok(layout.maxHeight+clear+layout.margin<=h/2+1e-8);
+  }
+});
+
+test('resolution presets retain aspect ratio, short edge and even encoder dimensions', () => {
+  const { EXPORT_RESOLUTIONS, exportDimensions } = modules['export-settings'];
+  assert.deepEqual(EXPORT_RESOLUTIONS, [480, 720, 1080, 1440]);
+  for (const resolution of EXPORT_RESOLUTIONS) {
+    for (const format of ['landscape', 'portrait', 'square']) {
+      const { width, height } = exportDimensions(format, resolution);
+      assert.equal(Math.min(width, height), resolution);
+      assert.equal(width % 2, 0); assert.equal(height % 2, 0);
+      assert.ok(Math.abs(width / height - (format === 'landscape' ? 16 / 9 : format === 'portrait' ? 9 / 16 : 1)) < .003);
+    }
+  }
+  assert.throws(() => exportDimensions('landscape', 540), /Unsupported/);
+});
+test('new export defaults and legacy ZIP settings do not opt users into lossy encoding', async () => {
+  const { makeProjectFile, readProjectFile } = modules['project-file'];
+  const media = new File(['media'], 'song.wav', { type: 'audio/wav' });
+  const blob = makeProjectFile({ settings, media, logo: null, background: null, format: 'landscape', range: [0,1], subtitles: [] });
+  const opened = await readProjectFile(new File([blob], 'project.pulseframe'));
+  assert.equal(opened.videoCompression, false); assert.equal(opened.resolution, 720);
+  const bytes = new Uint8Array(await blob.slice(0,8).arrayBuffer());
+  const length = new DataView(bytes.buffer).getUint32(4, true);
+  const manifest = JSON.parse(await blob.slice(8,8 + length).text());
+  delete manifest.videoCompression; delete manifest.resolution;
+  manifest.profile = 'smaller'; manifest.losslessCompression = true;
+  const data = new TextEncoder().encode(JSON.stringify(manifest));
+  new DataView(bytes.buffer).setUint32(4, data.length, true);
+  const legacy = await readProjectFile(new File([bytes,data,media], 'old.pulseframe'));
+  assert.equal(legacy.videoCompression, false); assert.equal(legacy.resolution, 480);
+  for (const resolution of [480,720,1080,1440]) {
+    const restored = await readProjectFile(new File([makeProjectFile({ ...opened, resolution, videoCompression: true })], 'settings.pulseframe'));
+    assert.equal(restored.resolution, resolution); assert.equal(restored.videoCompression, true);
   }
 });

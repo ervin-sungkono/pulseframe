@@ -5,6 +5,7 @@ import { Download, Play, RotateCcw, Scissors } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";
 import { EXPORT_FRAME_RATES, type ExportFrameRate } from "@/lib/export-timeline";
+import { EXPORT_RESOLUTIONS, type ExportResolution } from "@/lib/export-settings";
 import type { ExportProgress } from "@/lib/export-video";
 
 export function timestamp(value: number, precise = false) {
@@ -35,10 +36,11 @@ function TimeField({ label, value, onCommit, disabled }: {
 }
 
 export function ExportDialog({ open, onOpenChange, duration, range, onRangeChange, dimensions, exporting,
-  profile, onProfileChange, frameRate, onFrameRateChange, progress, onExport, onCancel, onPreview }: {
+  resolution, onResolutionChange, videoCompression, onVideoCompressionChange, frameRate, onFrameRateChange, progress, onExport, onCancel, onPreview }: {
   open: boolean; onOpenChange: (open: boolean) => void; duration: number; range: [number, number];
   onRangeChange: (range: [number, number]) => void; dimensions: { width: number; height: number; label: string };
-  profile: "standard" | "smaller"; onProfileChange: (profile: "standard" | "smaller") => void;
+  resolution: ExportResolution; onResolutionChange: (resolution: ExportResolution) => void;
+  videoCompression: boolean; onVideoCompressionChange: (enabled: boolean) => void;
   frameRate: ExportFrameRate; onFrameRateChange: (rate: ExportFrameRate) => void;
   exporting: boolean; progress: ExportProgress | null; onExport: () => void; onCancel: () => void; onPreview: () => void;
 }) {
@@ -68,12 +70,12 @@ export function ExportDialog({ open, onOpenChange, duration, range, onRangeChang
         <button className="preview-selection" onClick={onPreview} disabled={exporting || selected < .1}><Play size={14}/> Preview selected section</button>
       </div>
       <div className="export-quality">
-        <strong>Output size</strong>
-        <div className="export-profile-list" role="group" aria-label="Output size">
-          <button className={profile === "standard" ? "selected" : ""} aria-pressed={profile === "standard"} disabled={exporting}
-            onClick={() => onProfileChange("standard")}><strong>Standard</strong><span>Best detail</span></button>
-          <button className={profile === "smaller" ? "selected" : ""} aria-pressed={profile === "smaller"} disabled={exporting}
-            onClick={() => onProfileChange("smaller")}><strong>Smaller</strong><span>Faster export</span></button>
+        <strong>Video resolution</strong>
+        <div className="export-profile-list export-resolution-list" role="group" aria-label="Video resolution">
+          {EXPORT_RESOLUTIONS.map(value => <button key={value} className={resolution === value ? "selected" : ""}
+            aria-pressed={resolution === value} disabled={exporting} onClick={() => onResolutionChange(value)}>
+            <strong>{value}p</strong><span>{value === 480 ? "Compact" : value === 720 ? "HD" : value === 1080 ? "Full HD" : "Quad HD"}</span>
+          </button>)}
         </div>
       </div>
       <div className="export-quality">
@@ -85,6 +87,12 @@ export function ExportDialog({ open, onOpenChange, duration, range, onRangeChang
           </button>)}
         </div>
         <p className="export-footnote">60 fps makes motion smoother and takes longer to export.</p>
+      </div>
+      <div className="export-quality">
+        <label className="video-compression-option"><input type="checkbox" checked={videoCompression}
+          disabled={exporting} onChange={event => onVideoCompressionChange(event.currentTarget.checked)}/>
+          <strong>Video compression</strong></label>
+        <p className="export-footnote">Reduce file size with a slightly lower video quality setting. Designed for minimal visible change; fine details may differ. Resolution, frame rate and audio quality stay the same.</p>
       </div>
       <div className="export-summary">
         <div><span>Canvas</span><strong>{dimensions.label} · {dimensions.width} × {dimensions.height}</strong></div>

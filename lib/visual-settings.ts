@@ -6,7 +6,13 @@ const visualModes = ["halo", "ring", "spectrum", "wave", "tunnel", "aurora", "bl
 
 const percent = z.number().finite();
 const color = z.string().regex(/^#[\da-fA-F]{6}$/);
-const placement = z.object({ x: percent, y: percent, size: percent });
+// Placement values are percentages. The full 0–100 range also preserves older
+// custom layouts that were valid in the old UI's wider-than-default controls.
+const placement = z.object({
+  x: percent.min(0).max(100),
+  y: percent.min(0).max(100),
+  size: percent.min(0).max(100),
+});
 export const settingsSchema = z.object({
   mode: z.enum(visualModes),
   spectrumRoundness: percent.min(0).max(100).default(100),
@@ -51,4 +57,3 @@ export function migrateSettings(settings: z.infer<typeof settingsSchema>): Visua
     logoPlacements: layouts(settings.logoPlacements, DEFAULT_LOGO_PLACEMENTS),
   };
 }
-

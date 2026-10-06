@@ -1,5 +1,7 @@
 "use client";
 
+import { exportDimensions, type ExportResolution } from "@/lib/export-settings";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AudioLines, Captions, CircleHelp, Download, FileAudio2, Film, FolderOpen, ImageDown, Pause, Play, Save, RotateCcw, Repeat2, Volume2, VolumeX, Maximize2, Minimize2,
@@ -11,7 +13,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { CustomizerPanel, DEFAULT_SETTINGS } from "@/components/customizer-panel";
 import { ExportDialog, timestamp } from "@/components/export-dialog";
 import { PresetDialog } from "@/components/preset-dialog";
-import { applyPreset } from "@/lib/presets";
+import { applyPreset, presetStyle, type SavedPreset } from "@/lib/presets";
+import { BUILTIN_LOOKS, SECTION_KEYS, type CustomizerSection } from "@/lib/customizer-config";
+import { QuickLookStrip, type ActiveLook } from "@/components/quick-look-strip";
+import { PresetSaveDialog } from "@/components/preset-save-dialog";
+import { usePresets } from "@/hooks/use-presets";
+import { useSettingsHistory } from "@/hooks/use-settings-history";
 import { SubtitleDialog } from "@/components/subtitle-dialog";
 import type { ExportProgress } from "@/lib/export-video";
 import type { ExportFrameRate } from "@/lib/export-timeline";
@@ -72,11 +79,16 @@ export default function Home() {
   const exportAbortRef = useRef<AbortController | null>(null);
   const segmentEndRef = useRef<number | null>(null);
 
-  const [settings, setSettings] = useState<VisualSettings>(DEFAULT_SETTINGS);
+  const { value: settings, setValue: setSettings, resetValue: resetSettings, undo, redo, canUndo, canRedo } = useSettingsHistory<VisualSettings>(DEFAULT_SETTINGS);
+  const library = usePresets();
+  const [activeLook, setActiveLook] = useState<ActiveLook | null>(null);
+  const [lookSaveOpen, setLookSaveOpen] = useState(false);
+  const [lookSaveTarget, setLookSaveTarget] = useState<SavedPreset | null>(null);
   const [subtitles, setSubtitles] = useState<SubtitleCue[]>([]);
   const [format, setFormat] = useState<Format>("landscape");
   const [frameRate, setFrameRate] = useState<ExportFrameRate>(30);
-  const [profile, setProfile] = useState<"standard" | "smaller">("standard");
+  const [videoCompression, setVideoCompression] = useState(false);
+  const [resolution, setResolution] = useState<ExportResolution>(720);
   const [file, setFile] = useState<File | null>(null);
   const [logoName, setLogoName] = useState<string | null>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -217,8 +229,54 @@ export default function Home() {
   }, []);
 
   const update = <K extends keyof VisualSettings>(key: K, value: VisualSettings[K]) =>
-    setSettings(current => ({ ...current, [key]: value }));
-  const applyLook = (changes: Partial<VisualSettings>) => setSettings(current => ({ ...current, ...changes }));
+    { if (!exportingRef.current) setSettings(current => ({ ...current, [key]: value }), key); };
+  const applyLook = (changes: Partial<VisualSettings>) => { if (!exportingRef.current) setSettings(current => ({ ...current, ...changes })); };
+  const applySavedLook = (preset: SavedPreset) => {
+    if (exportingRef.current) return;
+    setSettings(current => applyPreset(current, preset.settings));
+    setActiveLook({ id: preset.id, name: preset.name, settings: preset.settings, preset });
+    setNotice(`Applied “${preset.name}”.`);
+  };
+  const applyBuiltinLook = (look: (typeof BUILTIN_LOOKS)[number]) => {
+    if (exportingRef.current) return;
+    setSettings(current => applyPreset(current, look.settings));
+    setActiveLook({ id: look.id, name: look.name, settings: look.settings });
+    setNotice(`Applied “${look.name}”.`);
+  };
+  const resetAppearance = () => {
+    if (exportingRef.current) return;
+    setSettings(current => applyPreset(current, presetStyle(DEFAULT_SETTINGS)));
+    setActiveLook(null); setNotice("Appearance reset. Your track text and project assets are preserved.");
+  };
+  const resetSection = (section: CustomizerSection) => {
+    if (exportingRef.current) return;
+    const baseline = activeLook?.settings ?? presetStyle(DEFAULT_SETTINGS);
+    setSettings(current => {
+      const next = { ...current };
+      for (const key of SECTION_KEYS[section]) {
+        if (key === "trackTitle" || key === "trackArtist") continue;
+        Object.assign(next, { [key]: structuredClone(baseline[key as keyof typeof baseline]) });
+      }
+      return next;
+    });
+    setNotice(`Reset ${section} settings to ${activeLook ? `“${activeLook.name}”` : "defaults"}.`);
+  };
+  const currentPreset = activeLook?.preset
+    ? library.pinnedPresets.find(item => item.id === activeLook.id) ?? library.presets.find(item => item.id === activeLook.id) ?? activeLook.preset : null;
+  const currentLook = activeLook ? { ...activeLook, name: currentPreset?.name ?? activeLook.name, preset: currentPreset ?? undefined } : null;
+  const lookModified = !!activeLook && JSON.stringify(presetStyle(settings)) !== JSON.stringify(presetStyle(activeLook.settings));
+  const saveQuickLook = (target: SavedPreset | null = null) => { setLookSaveTarget(target); setLookSaveOpen(true); };
+  const lookSaved = (preset: SavedPreset) => {
+    setActiveLook({ id: preset.id, name: preset.name, settings: preset.settings, preset });
+    setNotice(`Saved “${preset.name}”.`);
+  };
+  const lookMetadataChanged = (preset: SavedPreset) => {
+    setActiveLook(current => current?.id === preset.id ? { ...current, name: preset.name, preset } : current);
+  };
+  const quickLooks = <QuickLookStrip settings={settings} library={library} active={currentLook} modified={lookModified}
+    disabled={exporting} canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo}
+    onApplyBuiltin={applyBuiltinLook} onApplyPreset={applySavedLook} onSave={() => saveQuickLook()}
+    onUpdate={preset => saveQuickLook(preset)} onManage={() => setPresetOpen(true)} onPresetChanged={lookMetadataChanged}/>;
   const commitLogo = (asset: LocalImage | null) => {
     if (logoUrlRef.current) URL.revokeObjectURL(logoUrlRef.current);
     logoRef.current = asset?.image ?? null; logoFileRef.current = asset?.file ?? null; logoUrlRef.current = asset?.url ?? null;
@@ -230,20 +288,22 @@ export default function Home() {
     setBackgroundName(asset?.file.name ?? null); setBackgroundUrl(asset?.url ?? null);
   };
   const changeLogo = async (next: File | null) => {
+    if (exportingRef.current) return;
     const request = ++logoLoadRef.current;
     if (!next) { commitLogo(null); return; }
     try {
       const asset = await readLocalImage(next, 'logo');
-      if (request !== logoLoadRef.current) { URL.revokeObjectURL(asset.url); return; }
+      if (request !== logoLoadRef.current || exportingRef.current) { URL.revokeObjectURL(asset.url); return; }
       commitLogo(asset); setError('');
     } catch (error) { if (request === logoLoadRef.current) setError(error instanceof Error ? error.message : 'Could not read that logo.'); }
   };
   const changeBackground = async (next: File | null) => {
+    if (exportingRef.current) return;
     const request = ++backgroundLoadRef.current;
     if (!next) { commitBackground(null); return; }
     try {
       const asset = await readLocalImage(next, 'background');
-      if (request !== backgroundLoadRef.current) { URL.revokeObjectURL(asset.url); return; }
+      if (request !== backgroundLoadRef.current || exportingRef.current) { URL.revokeObjectURL(asset.url); return; }
       commitBackground(asset); setError('');
     } catch (error) { if (request === backgroundLoadRef.current) setError(error instanceof Error ? error.message : 'Could not read that background.'); }
   };
@@ -301,9 +361,9 @@ export default function Home() {
       if (project) {
         ++logoLoadRef.current; ++backgroundLoadRef.current;
         commitLogo(candidates.logo); commitBackground(candidates.background);
-        setFormat(project.format); setProfile(project.profile); setFrameRate(project.frameRate ?? 30); setSettings(project.settings); setSubtitles(project.subtitles);
+        setFormat(project.format); setResolution(project.resolution ?? 720); setFrameRate(project.frameRate ?? 30); setVideoCompression(project.videoCompression ?? false); resetSettings(project.settings); setSubtitles(project.subtitles); setActiveLook(null);
       } else {
-        setSubtitles([]); setSettings(current => ({ ...current, trackTitle: next.name.replace(/\.[^.]+$/, '').slice(0, 120), trackArtist: '' }));
+        setSubtitles([]); resetSettings(current => ({ ...current, trackTitle: next.name.replace(/\.[^.]+$/, '').slice(0, 120), trackArtist: '' }));
       }
       element.onplay = () => { if (element === mediaRef.current) setPlaying(true); };
       element.onpause = () => { if (element === mediaRef.current) { setPlaying(false); liveSoundRef.current?.reset(); } };
@@ -332,7 +392,7 @@ export default function Home() {
       }
       if (request === mediaLoadRef.current) { setLoadingMedia(false); mediaLoadAbortRef.current = null; }
     }
-  }, []);
+  }, [resetSettings]);
 
   const seek = useCallback((time: number) => {
     const element = mediaRef.current;
@@ -394,22 +454,21 @@ export default function Home() {
     setProgress({ phase: "Preparing media", percent: 0 }); setError(""); setNotice("");
     try {
       const { exportVisualVideo } = await import("@/lib/export-video");
-      const output = profile === "smaller"
-        ? { width: Math.round(dimensions[format].width * .75 / 2) * 2, height: Math.round(dimensions[format].height * .75 / 2) * 2 }
-        : dimensions[format];
+      const output = exportDimensions(format, resolution);
       const { blob, extension } = await exportVisualVideo({
         file, start: range[0], end: range[1],
-        width: output.width, height: output.height, duration, profile, frameRate,
+        width: output.width, height: output.height, duration, videoCompression, frameRate,
         settings: structuredClone(settings), subtitles: subtitles.map(cue => ({ ...cue })),
         logo: logoRef.current, background: backgroundRef.current, prepared: soundRef.current ?? undefined,
         reducedMotion: reducedMotionRef.current, signal: controller.signal, onProgress: setProgress,
       });
       if (controller.signal.aborted) return;
+      const filename = `${file.name.replace(/\.[^.]+$/, "")}-pulseframe-${Math.floor(range[0])}-${Math.ceil(range[1])}.${extension}`;
       const url = URL.createObjectURL(blob), link = document.createElement("a");
       link.href = url;
-      link.download = `${file.name.replace(/\.[^.]+$/, "")}-pulseframe-${Math.floor(range[0])}-${Math.ceil(range[1])}.${extension}`;
+      link.download = filename;
       link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-      setNotice(`Export complete: ${extension.toUpperCase()} video with ${timestamp(range[1] - range[0])} of media.`);
+      setNotice(`Export complete: ${extension.toUpperCase()} video at ${resolution}p with ${timestamp(range[1] - range[0])} of media.${videoCompression ? " Video compression enabled." : ""}`);
       setExportOpen(false);
     } catch (caught) {
       if (controller.signal.aborted) setNotice("Export canceled.");
@@ -424,7 +483,7 @@ export default function Home() {
     if (!file || exportingRef.current) return;
     try {
       const blob = makeProjectFile({ media: file, logo: logoFileRef.current, background: backgroundFileRef.current,
-        settings, subtitles, format, profile, frameRate, range });
+        settings, subtitles, format, resolution, frameRate, videoCompression, range });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -452,7 +511,7 @@ export default function Home() {
   useEffect(() => {
     const keys = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && focusView) { setFocusView(false); return; }
-      if (customizerOpen || exportOpen || subtitleOpen || projectOpen || presetOpen || helpOpen || exporting || loadingMedia) return;
+      if (customizerOpen || exportOpen || subtitleOpen || projectOpen || presetOpen || lookSaveOpen || helpOpen || exporting || loadingMedia) return;
       const target = event.target as HTMLElement;
       if (target.closest('input,textarea,select,button,[role="slider"],[contenteditable="true"],[role="dialog"]')) return;
       if (event.code === 'Space') { event.preventDefault(); void togglePlay(); }
@@ -461,12 +520,22 @@ export default function Home() {
       }
     };
     window.addEventListener('keydown', keys); return () => window.removeEventListener('keydown', keys);
-  }, [customizerOpen, exportOpen, subtitleOpen, projectOpen, presetOpen, helpOpen, exporting, loadingMedia, focusView, seek]);
+  }, [customizerOpen, exportOpen, subtitleOpen, projectOpen, presetOpen, lookSaveOpen, helpOpen, exporting, loadingMedia, focusView, seek]);
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || exporting || loadingMedia || presetOpen || lookSaveOpen || exportOpen || subtitleOpen || projectOpen || helpOpen) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, [contenteditable=true]")) return;
+      const key = event.key.toLowerCase();
+      if (key === "z") { event.preventDefault(); if (event.shiftKey) redo(); else undo(); }
+      else if (key === "y") { event.preventDefault(); redo(); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [exporting, loadingMedia, presetOpen, lookSaveOpen, exportOpen, subtitleOpen, projectOpen, helpOpen, undo, redo]);
 
   const canvas = dimensions[format];
-  const outputDimensions = profile === "smaller"
-    ? { ...canvas, width: Math.round(canvas.width * .75 / 2) * 2, height: Math.round(canvas.height * .75 / 2) * 2 }
-    : canvas;
+  const outputDimensions = exportDimensions(format, resolution);
   return <main className={`studio-shell ${focusView ? "focus-view" : ""}`}>
     <header className="topbar">
       <div className="brand" aria-label="Pulseframe"><span className="brand-mark"><AudioLines size={22} strokeWidth={2.3}/></span><span>pulseframe<span className="brand-dot">.</span></span></div>
@@ -535,8 +604,9 @@ export default function Home() {
       <aside className="controls desktop-controls" aria-label="Customization controls">
         <div className="panel-header"><div><p className="kicker">CONTROL ROOM / 02</p><h2>Customize</h2></div><SlidersHorizontal size={19}/></div>
         <CustomizerPanel settings={settings} onChange={update} onApplyLook={applyLook} isVideo={isVideo}
+          quickLooks={quickLooks} disabled={exporting} onPatch={applyLook} onResetSection={resetSection}
           logoName={logoName} logoUrl={logoUrl} onLogoFile={changeLogo}
-          backgroundName={backgroundName} backgroundUrl={backgroundUrl} onBackgroundFile={changeBackground} onReset={() => setSettings(DEFAULT_SETTINGS)}/>
+          backgroundName={backgroundName} backgroundUrl={backgroundUrl} onBackgroundFile={changeBackground} onReset={resetAppearance}/>
         <div className="export-panel">
           <div className="export-title"><div><WandSparkles size={18}/><strong>Ready to share?</strong></div><span>{canvas.width} × {canvas.height}</span></div>
           <button className="button export-button" onClick={() => setExportOpen(true)} disabled={!file || !duration || exporting || loadingMedia}><Download size={18}/> Export video</button>
@@ -571,24 +641,27 @@ export default function Home() {
           <DrawerHeader><DrawerTitle>Customize visualizer</DrawerTitle>
             <DrawerDescription>Adjust the look while the preview stays visible above.</DrawerDescription></DrawerHeader>
           <CustomizerPanel settings={settings} onChange={update} onApplyLook={applyLook} isVideo={isVideo}
+            quickLooks={quickLooks} disabled={exporting} onPatch={applyLook} onResetSection={resetSection}
             logoName={logoName} logoUrl={logoUrl} onLogoFile={changeLogo}
-          backgroundName={backgroundName} backgroundUrl={backgroundUrl} onBackgroundFile={changeBackground} onReset={() => setSettings(DEFAULT_SETTINGS)}/>
+          backgroundName={backgroundName} backgroundUrl={backgroundUrl} onBackgroundFile={changeBackground} onReset={resetAppearance}/>
           <button className="button done-button" onClick={() => setCustomizerOpen(false)}>Done</button>
         </div>
       </DrawerContent>
     </Drawer>
     <ExportDialog open={exportOpen} onOpenChange={setExportOpen} duration={duration} range={range} onRangeChange={setRange}
-      dimensions={outputDimensions} frameRate={frameRate} onFrameRateChange={setFrameRate} profile={profile} onProfileChange={setProfile}
+      dimensions={outputDimensions} videoCompression={videoCompression} onVideoCompressionChange={setVideoCompression} frameRate={frameRate} onFrameRateChange={setFrameRate} resolution={resolution} onResolutionChange={setResolution}
       exporting={exporting} progress={progress} onExport={exportVideo}
       onCancel={() => exportAbortRef.current?.abort()} onPreview={previewRange}/>
     <SubtitleDialog open={subtitleOpen} onOpenChange={setSubtitleOpen} cues={subtitles} onChange={setSubtitles}
       position={position} duration={duration} onSeek={time => {
         if (mediaRef.current) { mediaRef.current.pause(); mediaRef.current.currentTime = time; setPosition(time); audioStateRef.current = createAudioReactiveState(); }
       }}/>
-    <PresetDialog open={presetOpen} onOpenChange={setPresetOpen} settings={settings} hasMedia={!!file}
-      onApply={preset => { setSettings(current => applyPreset(current, preset.settings)); setNotice(`Applied “${preset.name}”.`); }}
+    <PresetDialog open={presetOpen} onOpenChange={setPresetOpen} settings={settings} hasMedia={!!file} library={library} currentPreset={currentPreset}
+      onApply={applySavedLook} onSaved={lookSaved} onDeleted={id => { setActiveLook(current => current?.id === id ? null : current); }}
       onHelp={() => { setPresetOpen(false); setHelpOpen(true); }}
       onOpenProject={() => { setPresetOpen(false); setProjectOpen(true); }}/>
+    <PresetSaveDialog open={lookSaveOpen} onOpenChange={setLookSaveOpen} settings={settings} library={library}
+      hasMedia={!!file} pinned={lookSaveTarget ? undefined : true} target={lookSaveTarget} onSaved={lookSaved}/>
     <Dialog open={projectOpen} onOpenChange={setProjectOpen}>
       <DialogContent className="project-dialog">
         <DialogHeader><div className="dialog-icon"><FolderOpen size={19}/></div><DialogTitle>Your project</DialogTitle>
