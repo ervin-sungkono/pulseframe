@@ -175,6 +175,12 @@ const appMockRequire = id => {
       setVolume() {}, setLoop() {},
     }),
   };
+  if (id === '@/hooks/use-visualizer-preview') return {
+    useVisualizerPreview: () => ({ captureImage() {}, reducedMotionRef: { current: false } }),
+  };
+  if (id === '@/hooks/use-export-controller') return {
+    useExportController: () => ({ exporting: false, progress: null, exportVideo() {}, cancelExport() {} }),
+  };
   if (id === '@/components/subtitle-dialog') return { SubtitleDialog: stubComponent };
   if (id === '@/lib/audio-features') return {
     PcmFeatures: class {}, audibleMediaTime: () => 0, dropEnvelope: () => 0, prepareSound: () => null,

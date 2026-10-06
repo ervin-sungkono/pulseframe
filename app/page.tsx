@@ -2,7 +2,7 @@
 
 import { exportDimensions, type ExportResolution } from "@/lib/export-settings";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AudioLines, Captions, CircleHelp, Download, FileAudio2, Film, FolderOpen, ImageDown, Pause, Play, Save, RotateCcw, Repeat2, Volume2, VolumeX, Maximize2, Minimize2,
   SlidersHorizontal, Sparkles, Upload, Bookmark, WandSparkles, X,
@@ -24,11 +24,9 @@ import type { ExportProgress } from "@/lib/export-video";
 import type { ExportFrameRate } from "@/lib/export-timeline";
 import { makeProjectFile, readProjectFile } from "@/lib/project-file";
 import type { SubtitleCue } from "@/lib/subtitles";
-import { audibleMediaTime, dropEnvelope, type SoundFrame } from "@/lib/audio-features";
-import { ANALYSIS_FPS } from "@/lib/audio-analysis-config";
 import { useMediaSession } from "@/hooks/use-media-session";
+import { useVisualizerPreview } from "@/hooks/use-visualizer-preview";
 import { TrackWaveform } from "@/components/track-waveform";
-import { createAudioReactiveState, drawVisualization, soundResponse, warmSoundResponse, makeParticles } from "@/lib/visualizer";
 import type { VisualSettings } from "@/lib/visual-settings-model";
 
 const dimensions = {
@@ -43,17 +41,6 @@ export default function Home() {
   const mediaHostRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
-  const soundFrameRef = useRef<SoundFrame | null>(null);
-  const reducedMotionRef = useRef(false);
-  const dropRef = useRef(0);
-  const lastAudioRef = useRef(0);
-  const audioStateRef = useRef(createAudioReactiveState());
-  const particleRef = useRef(makeParticles(300));
-  const frequencyRef = useRef(new Uint8Array(2048));
-  const waveRef = useRef(new Uint8Array(4096).fill(128));
-  const frameTimeRef = useRef(0);
-  const settingsRef = useRef(DEFAULT_SETTINGS);
-  const subtitlesRef = useRef<SubtitleCue[]>([]);
   const exportingRef = useRef(false);
   const exportAbortRef = useRef<AbortController | null>(null);
 
@@ -107,20 +94,6 @@ export default function Home() {
     },
     onEvent: event => {
       if (event.type === "loading" && event.loading) { setError(""); setNotice(""); }
-      if (event.type === "commit") {
-        soundFrameRef.current = null;
-        audioStateRef.current = createAudioReactiveState();
-        dropRef.current = 0; lastAudioRef.current = 0;
-      } else if (event.type === "seek") {
-        const time = Math.floor(event.time * ANALYSIS_FPS) / ANALYSIS_FPS;
-        const history = warmSoundResponse(event.snapshot.sound?.envelopes ?? [], settingsRef.current, time);
-        audioStateRef.current = history.state;
-        const frame = event.snapshot.features?.at(time);
-        if (frame) soundResponse(frame, settingsRef.current, audioStateRef.current, (time - history.lastTime) * 1000);
-        else soundFrameRef.current = null;
-        event.snapshot.live?.reset();
-        lastAudioRef.current = time;
-      }
     },
   });
   const { session } = mediaSession;
@@ -131,24 +104,13 @@ export default function Home() {
   const loadingMedia = mediaSession.loadingMedia;
   const logoName = mediaSession.logoName, logoUrl = mediaSession.logoUrl;
   const backgroundName = mediaSession.backgroundName, backgroundUrl = mediaSession.backgroundUrl;
-  const pollPosition = mediaSession.pollPosition;
   const setMediaVolume = mediaSession.setVolume, setMediaLoop = mediaSession.setLoop;
   const snapshot = mediaSession.snapshot;
   const isVideo = !!snapshot.video;
   const preparedSound = snapshot.sound;
-  const { mediaRef, videoRef, audioContextRef, soundRef, featuresRef, liveSoundRef, logoRef, backgroundRef, durationRef } = useMemo(() => ({
-    mediaRef: { get current() { return session.snapshot.media; } },
-    videoRef: { get current() { return session.snapshot.video; } },
-    audioContextRef: { get current() { return session.snapshot.audioContext; } },
-    soundRef: { get current() { return session.snapshot.sound; } },
-    featuresRef: { get current() { return session.snapshot.features; } },
-    liveSoundRef: { get current() { return session.snapshot.live; } },
-    logoRef: { get current() { return session.snapshot.logo?.image ?? null; } },
-    backgroundRef: { get current() { return session.snapshot.background?.image ?? null; } },
-    durationRef: { get current() { return session.snapshot.duration; } },
-  }), [session]);
-
-  useEffect(() => { settingsRef.current = settings; }, [settings]);
+  const { captureImage, reducedMotionRef } = useVisualizerPreview({
+    session, canvasRef, settings, subtitles, format, lockedRef: exportingRef, onError: setError, onNotice: setNotice,
+  });
   useEffect(() => {
     const timer = window.setTimeout(() => {
       if (new URLSearchParams(window.location.search).get("presets") === "1") setPresetOpen(true);
@@ -156,89 +118,9 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, []);
   useEffect(() => {
-    const currentSettings = settingsRef.current;
-    if (mediaRef.current?.paused) {
-      const time = Math.floor(mediaRef.current.currentTime * ANALYSIS_FPS) / ANALYSIS_FPS;
-      if (soundRef.current) {
-        const history = warmSoundResponse(soundRef.current.envelopes, currentSettings, time);
-        audioStateRef.current = history.state;
-        const frame = featuresRef.current?.at(time);
-        if (frame) soundResponse(frame, currentSettings, audioStateRef.current, (time - history.lastTime) * 1000);
-      } else if (soundFrameRef.current) {
-        audioStateRef.current = createAudioReactiveState();
-        soundResponse(soundFrameRef.current, currentSettings, audioStateRef.current, 1000);
-      }
-      lastAudioRef.current = time;
-    }
-  }, [settings.sensitivity, settings.quietThreshold, settings.bassBoost, settings.responseStyle, mediaRef, soundRef, featuresRef]);
-  useEffect(() => { subtitlesRef.current = subtitles; }, [subtitles]);
-  useEffect(() => {
     setMediaVolume(muted ? 0 : volume);
   }, [volume, muted, setMediaVolume]);
   useEffect(() => { setMediaLoop(looping); }, [looping, setMediaLoop]);
-  useEffect(() => {
-    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const update = () => { reducedMotionRef.current = preference.matches; };
-    update(); preference.addEventListener('change', update); return () => preference.removeEventListener('change', update);
-  }, []);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d", { alpha: false });
-    if (!canvas || !context) return;
-    let frame = 0, last = 0, lastUi = 0;
-    const demoFrequency = new Uint8Array(2048), demoWave = new Uint8Array(4096);
-    const render = (now: number) => {
-      frame = requestAnimationFrame(render);
-      if (document.hidden || now - last < 1000 / 30 - 1) return;
-      const delta = Math.min(100, now - last); last = now;
-      if (!exportingRef.current) {
-        const media = mediaRef.current;
-        const visualTime = media ? audibleMediaTime(media, audioContextRef.current, now) : now / 1000;
-        const analysisTime = Math.floor(visualTime * ANALYSIS_FPS) / ANALYSIS_FPS;
-        if (analysisTime < lastAudioRef.current) { audioStateRef.current = createAudioReactiveState(); liveSoundRef.current?.reset(); }
-        const audioDelta = media ? (media.paused ? 0 : Math.max(0, Math.min(.25, analysisTime - lastAudioRef.current)) * 1000) : delta;
-        lastAudioRef.current = analysisTime;
-        let frequency: Uint8Array = demoFrequency, wave: Uint8Array = demoWave;
-        const live = liveSoundRef.current && media && !media.paused ? liveSoundRef.current.at(analysisTime) : null;
-        const sound = featuresRef.current?.at(analysisTime) ?? live?.sound ?? (liveSoundRef.current ? soundFrameRef.current : null);
-        if (sound) { frequency = sound.frequency; wave = sound.wave; }
-        else if (media) { demoFrequency.fill(0); demoWave.fill(128); }
-        else {
-          for (let i = 0; i < demoFrequency.length; i++) {
-            demoFrequency[i] = Math.max(0, Math.min(255, (73 + 49 * Math.sin(i * .065 + now * .0017) + 26 * Math.sin(i * .015 - now * .0012)) * Math.exp(-i / 180)));
-          }
-          for (let i = 0; i < demoWave.length; i++) demoWave[i] = 128 + 32 * Math.sin(i * .033 + now * .002) * Math.sin(i * .009 - now * .0007);
-        }
-        soundFrameRef.current = sound;
-        dropRef.current = media && !media.paused ? (live?.drop ?? dropEnvelope(soundRef.current?.events ?? [], visualTime)) : 0;
-        frequencyRef.current.set(frequency); waveRef.current.set(wave); frameTimeRef.current = visualTime;
-        drawVisualization(context, settingsRef.current, frequency, wave, particleRef.current,
-          visualTime, audioDelta, videoRef.current, logoRef.current, audioStateRef.current,
-          sound?.sampleRate ?? 48000, durationRef.current, subtitlesRef.current,
-          { sound, background: backgroundRef.current, drop: dropRef.current, reducedMotion: reducedMotionRef.current });
-      }
-      const element = mediaRef.current;
-      if (element && now - lastUi > 150) {
-        pollPosition();
-        lastUi = now;
-      }
-    };
-    frame = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(frame);
-  }, [audioContextRef, backgroundRef, durationRef, featuresRef, liveSoundRef, logoRef, mediaRef, pollPosition, soundRef, videoRef]);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const resize = () => {
-      const target = dimensions[format];
-      const maxEdge = window.innerWidth <= 860 ? 900 : 1280;
-      const scale = Math.min(1, maxEdge / Math.max(target.width, target.height));
-      canvas.width = Math.round(target.width * scale);
-      canvas.height = Math.round(target.height * scale);
-    };
-    resize(); window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
-  }, [format]);
   useEffect(() => () => { exportAbortRef.current?.abort(); }, []);
 
   const update = <K extends keyof VisualSettings>(key: K, value: VisualSettings[K]) =>
@@ -297,24 +179,6 @@ export default function Home() {
   const changeBackground = mediaSession.changeBackground;
   const previewRange = async () => {
     if (await mediaSession.previewRange(range)) setExportOpen(false);
-  };
-  const exportImage = () => {
-    const target = dimensions[format];
-    const imageCanvas = document.createElement("canvas");
-    imageCanvas.width = target.width; imageCanvas.height = target.height;
-    const context = imageCanvas.getContext("2d", { alpha: false });
-    if (!context) { setError("Could not create the image."); return; }
-    drawVisualization(context, settings, frequencyRef.current, waveRef.current, particleRef.current,
-      frameTimeRef.current, 0, videoRef.current, logoRef.current, audioStateRef.current,
-      soundFrameRef.current?.sampleRate ?? 48000, duration, subtitles,
-      { sound: soundFrameRef.current, background: backgroundRef.current, drop: dropRef.current, reducedMotion: reducedMotionRef.current });
-    imageCanvas.toBlob(blob => {
-      if (!blob) { setError("Could not create the image."); return; }
-      const url = URL.createObjectURL(blob), link = document.createElement("a");
-      link.href = url; link.download = `pulseframe-${settings.mode}-${dimensions[format].label.replace(":", "x")}.png`;
-      link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-      setNotice("Frame saved as PNG.");
-    }, "image/png");
   };
   const exportVideo = async () => {
     const current = session.snapshot;
@@ -389,11 +253,11 @@ export default function Home() {
       if (target.closest('input,textarea,select,button,[role="slider"],[contenteditable="true"],[role="dialog"]')) return;
       if (event.code === 'Space') { event.preventDefault(); void togglePlay(); }
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-        event.preventDefault(); seek((mediaRef.current?.currentTime ?? 0) + (event.key === 'ArrowRight' ? 5 : -5));
+        event.preventDefault(); seek((session.snapshot.media?.currentTime ?? 0) + (event.key === 'ArrowRight' ? 5 : -5));
       }
     };
     window.addEventListener('keydown', keys); return () => window.removeEventListener('keydown', keys);
-  }, [customizerOpen, exportOpen, subtitleOpen, projectOpen, presetOpen, lookSaveOpen, helpOpen, exporting, loadingMedia, focusView, seek, mediaRef, togglePlay]);
+  }, [customizerOpen, exportOpen, subtitleOpen, projectOpen, presetOpen, lookSaveOpen, helpOpen, exporting, loadingMedia, focusView, seek, session, togglePlay]);
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || exporting || loadingMedia || presetOpen || lookSaveOpen || exportOpen || subtitleOpen || projectOpen || helpOpen) return;
@@ -445,7 +309,7 @@ export default function Home() {
           <div className="toolbar-spacer"/>
           <button className="icon-text-button" onClick={() => setFocusView(value => !value)} aria-label={focusView ? "Exit focus view" : "Focus preview"} aria-pressed={focusView}>{focusView ? <Minimize2 size={17}/> : <Maximize2 size={17}/>}</button>
           <button className="icon-text-button" aria-label={`Edit subtitles${subtitles.length ? `, ${subtitles.length} blocks` : ""}`} onClick={() => setSubtitleOpen(true)} disabled={!file || exporting}><Captions size={17}/><span>Subtitles{subtitleOpen || !subtitles.length ? "" : ` (${subtitles.length})`}</span></button>
-          <button className="icon-text-button" onClick={exportImage} title="Save current frame"><ImageDown size={16}/><span>Save frame</span></button>
+          <button className="icon-text-button" onClick={captureImage} title="Save current frame"><ImageDown size={16}/><span>Save frame</span></button>
         </div>
         <div className="transport-card">
           <div className="track-details">
