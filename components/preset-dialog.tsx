@@ -17,6 +17,7 @@ type Props = {
   currentPreset?: SavedPreset | null;
   onApply: (preset: SavedPreset) => void;
   onSaved?: (preset: SavedPreset) => void;
+  onMetadataChanged?: (preset: SavedPreset) => void;
   onDeleted?: (id: string) => void;
   hasMedia: boolean;
   onHelp: () => void;
@@ -27,7 +28,7 @@ const errorMessage = (caught: unknown, fallback: string) => caught instanceof Ty
   ? "Check your connection and try again."
   : caught instanceof Error ? caught.message : fallback;
 
-export function PresetDialog({ open, onOpenChange, settings, library, currentPreset = null, onApply, onSaved, onDeleted, hasMedia, onHelp, onOpenProject }: Props) {
+export function PresetDialog({ open, onOpenChange, settings, library, currentPreset = null, onApply, onSaved, onMetadataChanged, onDeleted, hasMedia, onHelp, onOpenProject }: Props) {
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveTarget, setSaveTarget] = useState<SavedPreset | null>(null);
   const [rename, setRename] = useState<SavedPreset | null>(null);
@@ -69,7 +70,7 @@ export function PresetDialog({ open, onOpenChange, settings, library, currentPre
     try {
       const updated = await library.update(preset.id, { pinned: !preset.pinned, expectedRevision: preset.revision });
       setNotice(updated.pinned ? `Added “${updated.name}” to Quick Looks.` : `Removed “${updated.name}” from Quick Looks.`);
-      if (currentPreset?.id === updated.id) onSaved?.(updated);
+      if (currentPreset?.id === updated.id) onMetadataChanged?.(updated);
     } catch (caught) {
       if (caught instanceof PresetRequestError && caught.status === 409) refreshAfterConflict();
       setActionError(errorMessage(caught, "Could not update this preset."));
@@ -88,8 +89,8 @@ export function PresetDialog({ open, onOpenChange, settings, library, currentPre
     try {
       const [moved, shifted] = await library.reorder(preset, neighbor);
       setNotice(`Moved “${moved.name}” ${direction < 0 ? "up" : "down"}.`);
-      if (currentPreset?.id === moved.id) onSaved?.(moved);
-      else if (currentPreset?.id === shifted.id) onSaved?.(shifted);
+      if (currentPreset?.id === moved.id) onMetadataChanged?.(moved);
+      else if (currentPreset?.id === shifted.id) onMetadataChanged?.(shifted);
     } catch (caught) {
       if (caught instanceof PresetRequestError && caught.status === 409) refreshAfterConflict();
       setActionError(errorMessage(caught, "Could not move this Quick Look. Refresh the list and try again."));
@@ -107,7 +108,7 @@ export function PresetDialog({ open, onOpenChange, settings, library, currentPre
       const updated = await library.update(rename.id, { name: renameName.trim(), expectedRevision: rename.revision });
       setRename(null);
       setNotice("Preset renamed.");
-      if (currentPreset?.id === updated.id) onSaved?.(updated);
+      if (currentPreset?.id === updated.id) onMetadataChanged?.(updated);
     } catch (caught) {
       if (caught instanceof PresetRequestError && caught.status === 409) refreshAfterConflict();
       setFormError(errorMessage(caught, "Could not rename this preset."));
