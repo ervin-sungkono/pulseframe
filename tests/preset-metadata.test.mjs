@@ -15,15 +15,15 @@ function compileTsx(path, mockedRequire) {
       jsx: ts.JsxEmit.ReactJSX,
     },
   }).outputText;
-  const module = { exports: {} };
+  const compiledModule = { exports: {} };
   const jsxRuntime = {
     Fragment: Symbol.for('test.fragment'),
     jsx: (type, props) => ({ type, props: props ?? {} }),
     jsxs: (type, props) => ({ type, props: props ?? {} }),
   };
   const localRequire = id => id === 'react/jsx-runtime' ? jsxRuntime : mockedRequire(id);
-  new Function('require', 'module', 'exports', code)(localRequire, module, module.exports);
-  return module.exports;
+  new Function('require', 'module', 'exports', code)(localRequire, compiledModule, compiledModule.exports);
+  return compiledModule.exports;
 }
 
 class HookHarness {

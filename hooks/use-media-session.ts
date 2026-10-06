@@ -48,18 +48,30 @@ export type UseMediaSessionResult = {
   setLoop: (looping: boolean) => void;
 };
 
+// React StrictMode replays effect cleanup/setup for the same owner. A weak map
+// lets that replay invalidate deferred cleanup without reading a mutable ref
+// from an effect cleanup closure.
+const lifecycleGenerations = new WeakMap<MediaSessionOwner, number>();
+
 export function useMediaSession(options: UseMediaSessionOptions = {}): UseMediaSessionResult {
   const latestOptions = useRef(options);
-  latestOptions.current = options;
-  const [session] = useState(() => new MediaSessionOwner({
-    getMediaHost: () => latestOptions.current.getMediaHost?.() ?? null,
-    isBlocked: () => latestOptions.current.isBlocked?.() ?? false,
-  }));
+  useEffect(() => {
+    latestOptions.current = options;
+  }, [options]);
+
+  // Host and export-lock getters are lifetime capabilities: callers should
+  // provide stable callbacks that read their own refs (as the page does).
+  const [session] = useState(() => {
+    const getMediaHost = options.getMediaHost;
+    const isBlocked = options.isBlocked;
+    return new MediaSessionOwner({
+      getMediaHost: () => getMediaHost?.() ?? null,
+      isBlocked: () => isBlocked?.() ?? false,
+    });
+  });
   const [snapshot, setSnapshot] = useState(() => session.snapshot);
   const [position, setPosition] = useState(0);
   const [loadingMedia, setLoadingMedia] = useState(false);
-  const lifecycleGeneration = useRef(0);
-
   useEffect(() => {
     session.setVolume(latestOptions.current.initialVolume ?? 0.7);
     session.setLoop(latestOptions.current.initialLoop ?? false);
@@ -92,13 +104,14 @@ export function useMediaSession(options: UseMediaSessionOptions = {}): UseMediaS
     });
   }, [session]);
 
-  // React StrictMode replays effect cleanup/setup. Defer disposal one microtask
-  // and invalidate that cleanup when the same owner is mounted again.
+  // Defer disposal one microtask so StrictMode's immediate effect replay can
+  // invalidate the cleanup for this same owner.
   useEffect(() => {
-    const lifecycle = ++lifecycleGeneration.current;
+    const lifecycle = (lifecycleGenerations.get(session) ?? 0) + 1;
+    lifecycleGenerations.set(session, lifecycle);
     return () => {
       queueMicrotask(() => {
-        if (lifecycleGeneration.current === lifecycle) session.dispose();
+        if (lifecycleGenerations.get(session) === lifecycle) session.dispose();
       });
     };
   }, [session]);

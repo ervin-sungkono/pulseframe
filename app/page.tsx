@@ -19,8 +19,8 @@ import { QuickLookStrip, type ActiveLook } from "@/components/quick-look-strip";
 import { PresetSaveDialog } from "@/components/preset-save-dialog";
 import { usePresets } from "@/hooks/use-presets";
 import { useSettingsHistory } from "@/hooks/use-settings-history";
+import { useExportController } from "@/hooks/use-export-controller";
 import { SubtitleDialog } from "@/components/subtitle-dialog";
-import type { ExportProgress } from "@/lib/export-video";
 import type { ExportFrameRate } from "@/lib/export-timeline";
 import { makeProjectFile, readProjectFile } from "@/lib/project-file";
 import type { SubtitleCue } from "@/lib/subtitles";
@@ -42,7 +42,6 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
   const exportingRef = useRef(false);
-  const exportAbortRef = useRef<AbortController | null>(null);
 
   const { value: settings, setValue: setSettings, resetValue: resetSettings, undo, redo, canUndo, canRedo } = useSettingsHistory<VisualSettings>(DEFAULT_SETTINGS);
   const library = usePresets();
@@ -54,8 +53,6 @@ export default function Home() {
   const [frameRate, setFrameRate] = useState<ExportFrameRate>(30);
   const [videoCompression, setVideoCompression] = useState(false);
   const [resolution, setResolution] = useState<ExportResolution>(720);
-  const [exporting, setExporting] = useState(false);
-  const [progress, setProgress] = useState<ExportProgress | null>(null);
   const [range, setRange] = useState<[number, number]>([0, 0]);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
@@ -111,6 +108,32 @@ export default function Home() {
   const { captureImage, reducedMotionRef } = useVisualizerPreview({
     session, canvasRef, settings, subtitles, format, lockedRef: exportingRef, onError: setError, onNotice: setNotice,
   });
+  const { exporting, progress, exportVideo, cancelExport } = useExportController({
+    lockedRef: exportingRef,
+    getSource: () => {
+      const current = session.snapshot;
+      if (loadingMedia || openingProject || !current.file || !current.duration) return null;
+      return {
+        file: current.file,
+        duration: current.duration,
+        range,
+        format,
+        resolution,
+        frameRate,
+        videoCompression,
+        settings,
+        subtitles,
+        logo: current.logo?.image ?? null,
+        background: current.background?.image ?? null,
+        prepared: current.sound ?? undefined,
+        reducedMotion: reducedMotionRef.current,
+      };
+    },
+    pausePlayback: () => session.pause(),
+    onError: setError,
+    onNotice: setNotice,
+    onComplete: () => setExportOpen(false),
+  });
   useEffect(() => {
     const timer = window.setTimeout(() => {
       if (new URLSearchParams(window.location.search).get("presets") === "1") setPresetOpen(true);
@@ -121,7 +144,6 @@ export default function Home() {
     setMediaVolume(muted ? 0 : volume);
   }, [volume, muted, setMediaVolume]);
   useEffect(() => { setMediaLoop(looping); }, [looping, setMediaLoop]);
-  useEffect(() => () => { exportAbortRef.current?.abort(); }, []);
 
   const update = <K extends keyof VisualSettings>(key: K, value: VisualSettings[K]) =>
     { if (!exportingRef.current) setSettings(current => ({ ...current, [key]: value }), key); };
@@ -179,40 +201,6 @@ export default function Home() {
   const changeBackground = mediaSession.changeBackground;
   const previewRange = async () => {
     if (await mediaSession.previewRange(range)) setExportOpen(false);
-  };
-  const exportVideo = async () => {
-    const current = session.snapshot;
-    if (!current.file || !current.duration || exportingRef.current) return;
-    session.pause();
-    const controller = new AbortController();
-    exportAbortRef.current = controller;
-    exportingRef.current = true; setExporting(true);
-    setProgress({ phase: "Preparing media", percent: 0 }); setError(""); setNotice("");
-    try {
-      const { exportVisualVideo } = await import("@/lib/export-video");
-      const output = exportDimensions(format, resolution);
-      const { blob, extension } = await exportVisualVideo({
-        file: current.file, start: range[0], end: range[1],
-        width: output.width, height: output.height, duration: current.duration, videoCompression, frameRate,
-        settings: structuredClone(settings), subtitles: subtitles.map(cue => ({ ...cue })),
-        logo: current.logo?.image ?? null, background: current.background?.image ?? null, prepared: current.sound ?? undefined,
-        reducedMotion: reducedMotionRef.current, signal: controller.signal, onProgress: setProgress,
-      });
-      if (controller.signal.aborted) return;
-      const filename = `${current.file.name.replace(/\.[^.]+$/, "")}-pulseframe-${Math.floor(range[0])}-${Math.ceil(range[1])}.${extension}`;
-      const url = URL.createObjectURL(blob), link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-      setNotice(`Export complete: ${extension.toUpperCase()} video at ${resolution}p with ${timestamp(range[1] - range[0])} of media.${videoCompression ? " Video compression enabled." : ""}`);
-      setExportOpen(false);
-    } catch (caught) {
-      if (controller.signal.aborted) setNotice("Export canceled.");
-      else setError(caught instanceof Error ? caught.message : "Could not export this file.");
-    } finally {
-      exportingRef.current = false; exportAbortRef.current = null;
-      setExporting(false); setProgress(null);
-    }
   };
 
   const saveProject = () => {
@@ -388,7 +376,7 @@ export default function Home() {
     <ExportDialog open={exportOpen} onOpenChange={setExportOpen} duration={duration} range={range} onRangeChange={setRange}
       dimensions={outputDimensions} videoCompression={videoCompression} onVideoCompressionChange={setVideoCompression} frameRate={frameRate} onFrameRateChange={setFrameRate} resolution={resolution} onResolutionChange={setResolution}
       exporting={exporting} progress={progress} onExport={exportVideo}
-      onCancel={() => exportAbortRef.current?.abort()} onPreview={previewRange}/>
+      onCancel={cancelExport} onPreview={previewRange}/>
     <SubtitleDialog open={subtitleOpen} onOpenChange={setSubtitleOpen} cues={subtitles} onChange={setSubtitles}
       position={position} duration={duration} onSeek={time => { session.pause(); seek(time); }}/>
     <PresetDialog open={presetOpen} onOpenChange={setPresetOpen} settings={settings} hasMedia={!!file} library={library} currentPreset={currentPreset}

@@ -5,7 +5,7 @@ import { createContext, useContext, useState, type ComponentProps, type ReactNod
 import { Check, ChevronDown, ImagePlus, RotateCcw, X } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { DEFAULT_SETTINGS, palettes, type CustomizerSection } from "@/lib/customizer-config";
+import { palettes, type CustomizerSection } from "@/lib/customizer-config";
 import { DEFAULT_LOGO_AUTO_FIT, DEFAULT_LOGO_FIT_SCALE, DEFAULT_LOGO_PLACEMENTS, type VisualMode, type ParticleMode, type VisualSettings, type BackdropMode, type LogoPlacement, type ParticleFlow, type ResponseStyle } from "@/lib/visual-settings-model";
 
 const modes: { id: VisualMode; name: string; description: string }[] = [
