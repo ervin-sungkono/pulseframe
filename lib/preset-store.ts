@@ -152,14 +152,6 @@ export class PresetStore {
     return current ? { status: 'conflict', preset: current } : { status: 'missing' };
   }
 
-  /** Backward-compatible helper for code that still performs a simple rename directly. */
-  async rename(userId: string, id: string, name: string) {
-    const current = await this.get(userId, id);
-    if (!current) return null;
-    const result = await this.update(userId, id, { name, expectedRevision: current.revision });
-    return result.status === 'updated' ? result.preset : null;
-  }
-
   async reorder(
     userId: string,
     first: { id: string; expectedRevision: number },
