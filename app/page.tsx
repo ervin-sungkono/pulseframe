@@ -605,7 +605,7 @@ export default function Home() {
       </section>
       <aside className="controls desktop-controls" aria-label="Customization controls">
         <div className="panel-header"><div><p className="kicker">CONTROL ROOM / 02</p><h2>Customize</h2></div><SlidersHorizontal size={19}/></div>
-        <CustomizerPanel settings={settings} onChange={update} onApplyLook={applyLook} isVideo={isVideo}
+        <CustomizerPanel settings={settings} onChange={update} isVideo={isVideo}
           quickLooks={quickLooks} disabled={exporting} onPatch={applyLook} onResetSection={resetSection}
           logoName={logoName} logoUrl={logoUrl} onLogoFile={changeLogo}
           backgroundName={backgroundName} backgroundUrl={backgroundUrl} onBackgroundFile={changeBackground} onReset={resetAppearance}/>
@@ -642,7 +642,7 @@ export default function Home() {
           </div>
           <DrawerHeader><DrawerTitle>Customize visualizer</DrawerTitle>
             <DrawerDescription>Adjust the look while the preview stays visible above.</DrawerDescription></DrawerHeader>
-          <CustomizerPanel settings={settings} onChange={update} onApplyLook={applyLook} isVideo={isVideo}
+          <CustomizerPanel settings={settings} onChange={update} isVideo={isVideo}
             quickLooks={quickLooks} disabled={exporting} onPatch={applyLook} onResetSection={resetSection}
             logoName={logoName} logoUrl={logoUrl} onLogoFile={changeLogo}
           backgroundName={backgroundName} backgroundUrl={backgroundUrl} onBackgroundFile={changeBackground} onReset={resetAppearance}/>

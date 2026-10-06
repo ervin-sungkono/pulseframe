@@ -8,8 +8,6 @@ import { Switch } from "@/components/ui/switch";
 import { DEFAULT_SETTINGS, palettes, type CustomizerSection } from "@/lib/customizer-config";
 import { DEFAULT_LOGO_AUTO_FIT, DEFAULT_LOGO_FIT_SCALE, DEFAULT_LOGO_PLACEMENTS, type VisualMode, type ParticleMode, type VisualSettings, type BackdropMode, type LogoPlacement, type ParticleFlow, type ResponseStyle } from "@/lib/visual-settings-model";
 
-export { DEFAULT_SETTINGS };
-
 const modes: { id: VisualMode; name: string; description: string }[] = [
   { id: "ring", name: "Pulse Ring", description: "Layered solid waves" },
   { id: "spectrum", name: "Spectrum", description: "Bars with a soft reflection" },
@@ -117,10 +115,7 @@ export type CustomizerPanelProps = {
   disabled?: boolean;
   onPatch: (changes: Partial<VisualSettings>) => void;
   onResetSection: (section: CustomizerSection) => void;
-  /** Compatibility callback for callers that still update one setting at a time. */
-  onChange?: <K extends keyof VisualSettings>(key: K, value: VisualSettings[K]) => void;
-  /** Compatibility callback for callers that apply multi-setting quick looks. */
-  onApplyLook?: (changes: Partial<VisualSettings>) => void;
+  onChange: <K extends keyof VisualSettings>(key: K, value: VisualSettings[K]) => void;
   isVideo: boolean;
   onReset: () => void;
   logoName: string | null;
@@ -131,19 +126,13 @@ export type CustomizerPanelProps = {
   onBackgroundFile: (file: File | null) => void;
 };
 
-export function CustomizerPanel({ settings, quickLooks, disabled = false, onPatch, onResetSection, onChange, onApplyLook, isVideo, onReset, logoName, logoUrl, onLogoFile, backgroundName, backgroundUrl, onBackgroundFile }: CustomizerPanelProps) {
+export function CustomizerPanel({ settings, quickLooks, disabled = false, onPatch, onResetSection, onChange, isVideo, onReset, logoName, logoUrl, onLogoFile, backgroundName, backgroundUrl, onBackgroundFile }: CustomizerPanelProps) {
   const palette = palettes.find(item => item.primary === settings.primary && item.secondary === settings.secondary && item.background === settings.background);
   const placement = settings.logoPlacements[settings.mode];
   const fitTarget = settings.mode === "ring" ? "inner circle" : settings.mode === "edges" ? "center frame" : "upper frame";
   const change = <K extends keyof VisualSettings>(key: K, value: VisualSettings[K]) => {
     if (disabled) return;
-    if (onChange) onChange(key, value);
-    else onPatch({ [key]: value } as Partial<VisualSettings>);
-  };
-  const applyChanges = (changes: Partial<VisualSettings>) => {
-    if (disabled) return;
-    if (onApplyLook) onApplyLook(changes);
-    else onPatch(changes);
+    onChange(key, value);
   };
   const patch = (changes: Partial<VisualSettings>) => {
     if (!disabled) onPatch(changes);
@@ -193,7 +182,7 @@ export function CustomizerPanel({ settings, quickLooks, disabled = false, onPatc
         <div className="palette-list">{palettes.map(item => {
           const selected = palette?.name === item.name;
           return <button type="button" key={item.name} className={`palette-option ${selected ? "selected" : ""}`}
-            onClick={() => applyChanges({ primary: item.primary, secondary: item.secondary, background: item.background })}
+            onClick={() => patch({ primary: item.primary, secondary: item.secondary, background: item.background })}
             aria-pressed={selected}>
             <span className="palette-dots"><i style={{ background: item.primary }}/><i style={{ background: item.secondary }}/><i style={{ background: item.background }}/></span>
             <span>{item.name}</span>{selected && <Check size={15}/>}
