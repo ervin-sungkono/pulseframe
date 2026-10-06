@@ -49,6 +49,7 @@ class HookHarness {
   }
 
   useCallback(callback) { this.index++; return callback; }
+  useMemo(factory) { this.index++; return factory(); }
   useEffect() { this.index++; }
   render(callback) { this.begin(); return callback(); }
 }
@@ -58,6 +59,7 @@ const reactMock = {
   useState: initial => activeHarness.useState(initial),
   useRef: initial => activeHarness.useRef(initial),
   useCallback: callback => activeHarness.useCallback(callback),
+  useMemo: factory => activeHarness.useMemo(factory),
   useEffect: (...args) => activeHarness.useEffect(...args),
 };
 
@@ -131,6 +133,11 @@ actualPresetDialog = compileTsx('../components/preset-dialog.tsx', presetCompone
 
 const library = makeLibrary([originalA]);
 const appHooks = new HookHarness();
+const mediaSnapshot = {
+  media: null, video: null, audioContext: null, sound: null, features: null, live: null,
+  logo: null, background: null, duration: 0, file: null, playing: false, generation: 0,
+};
+const mediaSessionOwner = { snapshot: mediaSnapshot, requestGeneration: 0, pause() {} };
 const appMockRequire = id => {
   if (id === 'react') return reactMock;
   if (id === 'lucide-react') return icons;
@@ -158,6 +165,15 @@ const appMockRequire = id => {
       const [value, setValue] = reactMock.useState(initial);
       return { value, setValue, resetValue: setValue, undo() {}, redo() {}, canUndo: false, canRedo: false };
     },
+  };
+  if (id === '@/hooks/use-media-session') return {
+    useMediaSession: () => ({
+      session: mediaSessionOwner, snapshot: mediaSnapshot, file: null, duration: 0, position: 0, playing: false,
+      loadingMedia: false, logoName: null, logoUrl: null, backgroundName: null, backgroundUrl: null,
+      generation: 0, requestGeneration: 0, loadFile: async () => false, seek() {}, togglePlay: async () => false,
+      previewRange: async () => false, pollPosition() {}, changeLogo: async () => false, changeBackground: async () => false,
+      setVolume() {}, setLoop() {},
+    }),
   };
   if (id === '@/components/subtitle-dialog') return { SubtitleDialog: stubComponent };
   if (id === '@/lib/audio-features') return {
