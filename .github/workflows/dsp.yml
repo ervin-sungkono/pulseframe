@@ -1,0 +1,59 @@
+name: DSP parity and generated assets
+on:
+  pull_request:
+    paths: &dsp_paths
+      - 'crates/pulseframe-dsp/**'
+      - 'rust-toolchain.toml'
+      - 'scripts/build-dsp.mjs'
+      - 'public/dsp/**'
+      - 'lib/dsp/**'
+      - 'lib/audio-*.ts'
+      - 'lib/audio-dsp.mjs'
+      - 'lib/pcm-features.ts'
+      - 'lib/art-reactivity.mjs'
+      - 'lib/drop-detector.mjs'
+      - 'lib/media-session.ts'
+      - 'lib/live-sound.ts'
+      - 'lib/export-video.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'vite.config.ts'
+      - 'vite-env.d.ts'
+      - 'tests/**'
+      - '.github/workflows/dsp.yml'
+  push:
+    branches: [main]
+    paths: *dsp_paths
+permissions:
+  contents: read
+jobs:
+  dsp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.25.0'
+      - run: pnpm install --frozen-lockfile
+      - run: rustup show
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/wasm2es6js
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: dsp-toolchain-1.85.1-bindgen-0.2.100-${{ runner.os }}
+      - run: cargo install wasm-bindgen-cli --version 0.2.100 --locked
+      - run: cargo test --locked --manifest-path crates/pulseframe-dsp/Cargo.toml
+      - run: pnpm dsp:build
+      - run: git diff --exit-code -- public/dsp
+      - run: node --test tests/*.test.mjs
+      - run: pnpm exec tsc --noEmit --incremental false

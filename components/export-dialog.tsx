@@ -7,6 +7,7 @@ import { Slider } from "@/components/ui/slider";
 import { EXPORT_FRAME_RATES, type ExportFrameRate } from "@/lib/export-timeline";
 import { EXPORT_RESOLUTIONS, type ExportResolution } from "@/lib/export-settings";
 import type { ExportProgress } from "@/lib/export-video";
+import type { TimeRange } from "@/lib/export-time-estimate";
 
 export function timestamp(value: number, precise = false) {
   const seconds = Math.max(0, Number.isFinite(value) ? value : 0);
@@ -19,6 +20,15 @@ function parseTimestamp(raw: string) {
   if (parts.length > 2 || parts.some(part => part === "" || !/^\d+(\.\d+)?$/.test(part))) return null;
   const seconds = parts.length === 2 ? Number(parts[0]) * 60 + Number(parts[1]) : Number(parts[0]);
   return Number.isFinite(seconds) ? seconds : null;
+}
+function estimateLabel(range: TimeRange) {
+  const low = Math.max(1, Math.floor(range.minSeconds));
+  const high = Math.max(low, Math.ceil(range.maxSeconds));
+  if (high < 60) return `about ${low}–${high} seconds`;
+  const lowMinutes = Math.max(1, Math.floor(low / 60));
+  const highMinutes = Math.max(lowMinutes, Math.ceil(high / 60));
+  return lowMinutes === highMinutes ? `about ${lowMinutes} ${lowMinutes === 1 ? "minute" : "minutes"}`
+    : `about ${lowMinutes}–${highMinutes} minutes`;
 }
 function TimeField({ label, value, onCommit, disabled }: {
   label: string; value: number; onCommit: (value: number) => void; disabled: boolean;
@@ -36,15 +46,17 @@ function TimeField({ label, value, onCommit, disabled }: {
 }
 
 export function ExportDialog({ open, onOpenChange, duration, range, onRangeChange, dimensions, exporting,
-  resolution, onResolutionChange, videoCompression, onVideoCompressionChange, frameRate, onFrameRateChange, progress, onExport, onCancel, onPreview }: {
+  resolution, onResolutionChange, videoCompression, onVideoCompressionChange, frameRate, onFrameRateChange, progress, estimateBeforeExport, onExport, onCancel, onPreview }: {
   open: boolean; onOpenChange: (open: boolean) => void; duration: number; range: [number, number];
   onRangeChange: (range: [number, number]) => void; dimensions: { width: number; height: number; label: string };
   resolution: ExportResolution; onResolutionChange: (resolution: ExportResolution) => void;
   videoCompression: boolean; onVideoCompressionChange: (enabled: boolean) => void;
   frameRate: ExportFrameRate; onFrameRateChange: (rate: ExportFrameRate) => void;
-  exporting: boolean; progress: ExportProgress | null; onExport: () => void; onCancel: () => void; onPreview: () => void;
+  exporting: boolean; progress: ExportProgress | null; estimateBeforeExport: TimeRange | null;
+  onExport: () => void; onCancel: () => void; onPreview: () => void;
 }) {
   const selected = Math.max(0, range[1] - range[0]);
+  const remaining = progress?.remainingEstimate?.range;
   const safeChange = (start: number, end: number) => {
     const clampedStart = Math.max(0, Math.min(start, duration - .1));
     const clampedEnd = Math.max(clampedStart + .1, Math.min(end, duration));
@@ -99,9 +111,14 @@ export function ExportDialog({ open, onOpenChange, duration, range, onRangeChang
         <div><span>Frame rate</span><strong>{frameRate} fps</strong></div>
         <div><span>Format</span><strong>MP4 or WebM, based on device support</strong></div>
       </div>
-      {exporting && <div className="export-progress" role="status" aria-live="polite">
-        <div><strong>{progress?.phase ?? "Preparing media"}</strong><span>{progress?.percent ?? 0}%</span></div>
-        <progress value={progress?.percent ?? 0} max={100}/>
+      {!exporting && <p className="export-time-estimate">Estimated export time: {estimateBeforeExport
+        ? estimateLabel(estimateBeforeExport) : "An estimate will be available after export starts."}</p>}
+      {exporting && <div className="export-progress">
+        <div><strong aria-live="polite">{progress?.phase ?? "Preparing media"}</strong><span>{progress?.percent ?? 0}%</span></div>
+        <progress aria-label="Export progress" value={progress?.percent ?? 0} max={100}/>
+        <p>Elapsed {timestamp((progress?.elapsedMs ?? 0) / 1000)}
+          <span> · </span>{remaining ? `${estimateLabel(remaining)}${progress?.remainingEstimate?.scope === "rendering" ? " of frame rendering" : " remaining"}`
+            : progress?.phase === "Finishing file" ? "Finishing file…" : "Estimating…"}</p>
         <p>Keep this tab open while the file is created.</p>
       </div>}
       <div className="dialog-actions">

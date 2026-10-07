@@ -23,6 +23,7 @@ function makeJob(overrides = {}) {
   const errors = [];
   const notices = [];
   const downloads = [];
+  const completions = [];
   let pauses = 0;
   const controller = createExportJobController({
     lockedRef,
@@ -32,9 +33,10 @@ function makeJob(overrides = {}) {
     onState: (exporting, progress) => states.push({ exporting, progress }),
     onError: message => errors.push(message),
     onNotice: message => notices.push(message),
+    onComplete: (...args) => completions.push(args),
     ...overrides,
   });
-  return { controller, lockedRef, states, errors, notices, downloads, get pauses() { return pauses; } };
+  return { controller, lockedRef, states, errors, notices, downloads, completions, get pauses() { return pauses; } };
 }
 
 test('cancellation holds the lock until pending encoding settles and skips a late download', async () => {
@@ -66,6 +68,7 @@ test('cancellation holds the lock until pending encoding settles and skips a lat
   finishFirst(output);
   await firstTask;
   assert.equal(job.downloads.length, 0, 'a resolved result is not downloaded after cancellation');
+  assert.equal(job.completions.length, 0, 'a canceled job cannot record a successful timing sample');
   assert.equal(job.lockedRef.current, false);
   assert.deepEqual(job.states.at(-1), { exporting: false, progress: null });
 
@@ -74,10 +77,12 @@ test('cancellation holds the lock until pending encoding settles and skips a lat
   job.controller.cancel();
   await resolvedTask;
   assert.equal(job.downloads.length, 0, 'cancel between encoding resolution and continuation prevents download');
+  assert.equal(job.completions.length, 0, 'late canceled results do not reach completion callbacks');
 
   await job.controller.start({ id: 'next' });
   assert.equal(executions, 3);
   assert.equal(job.downloads.length, 1, 'a new job can start after the prior job settles');
+  assert.equal(job.completions.length, 1, 'only a successful current job reaches the history callback');
   assert.equal(job.downloads[0].source.id, 'next');
   assert.equal(job.lockedRef.current, false);
 });
@@ -142,19 +147,27 @@ test('successful download URLs revoke after 60 seconds or immediately on teardow
 
 test('hook snapshots mutable export inputs before lazy import and retains prepared assets by reference', async () => {
   const settingsPath = join(testDirectory, 'export-settings.mjs');
+  const estimatePath = join(testDirectory, 'export-time-estimate.mjs');
   const reactPath = join(testDirectory, 'react-mock.mjs');
   const adapterPath = join(testDirectory, 'export-video-mock.mjs');
   const hookPath = join(testDirectory, 'use-export-controller.mjs');
   writeFileSync(settingsPath, `
+    export const COMPRESSED_VIDEO_QUALITY = 0.68;
     export function exportDimensions(format, resolution) {
       return format === 'square'
         ? { width: resolution, height: resolution }
         : { width: resolution * 2, height: resolution };
     }
   `);
+  const estimateSource = readFileSync(new URL('../lib/export-time-estimate.ts', import.meta.url), 'utf8')
+    .replaceAll('"./export-settings"', JSON.stringify(pathToFileURL(settingsPath).href));
+  writeFileSync(estimatePath, ts.transpileModule(estimateSource, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+  }).outputText);
   writeFileSync(reactPath, `
     export const useCallback = (...args) => globalThis.__snapshotHookHarness.useCallback(...args);
     export const useEffect = (...args) => globalThis.__snapshotHookHarness.useEffect(...args);
+    export const useMemo = (...args) => globalThis.__snapshotHookHarness.useMemo(...args);
     export const useRef = (...args) => globalThis.__snapshotHookHarness.useRef(...args);
     export const useState = (...args) => globalThis.__snapshotHookHarness.useState(...args);
   `);
@@ -172,6 +185,7 @@ test('hook snapshots mutable export inputs before lazy import and retains prepar
     .replaceAll('"react"', JSON.stringify(pathToFileURL(reactPath).href))
     .replaceAll('"@/lib/export-settings"', JSON.stringify(pathToFileURL(settingsPath).href))
     .replaceAll('"@/lib/export-job"', JSON.stringify(pathToFileURL(modulePath).href))
+    .replaceAll('"@/lib/export-time-estimate"', JSON.stringify(pathToFileURL(estimatePath).href))
     .replaceAll('"@/lib/export-video"', JSON.stringify(pathToFileURL(adapterPath).href));
   writeFileSync(hookPath, ts.transpileModule(hookSource, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
@@ -206,6 +220,12 @@ test('hook snapshots mutable export inputs before lazy import and retains prepar
       const slot = slots[index];
       if (!slot || !sameDeps(slot.deps, deps)) slots[index] = { deps, callback };
       return slots[index].callback;
+    },
+    useMemo(factory, deps) {
+      const index = cursor++;
+      const slot = slots[index];
+      if (!slot || !sameDeps(slot.deps, deps)) slots[index] = { deps, value: factory() };
+      return slots[index].value;
     },
     useEffect(create, deps) {
       const index = cursor++;

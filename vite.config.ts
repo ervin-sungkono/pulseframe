@@ -35,7 +35,7 @@ const localBindingConfig = {
     : [],
 };
 
-export default defineConfig(async () => {
+export default defineConfig(async ({ command }) => {
   // Use Miniflare's local Request.cf placeholder unless fetching is requested.
   process.env.CLOUDFLARE_CF_FETCH_ENABLED ??= "false";
   process.env.WRANGLER_SEND_METRICS ??= "false";
@@ -50,13 +50,19 @@ export default defineConfig(async () => {
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
+  const vinextPlugins = vinext();
+
   return {
     server: {
       ...(managedLinux ? { host: "0.0.0.0", allowedHosts: ["terminal.local"] } : {}),
       ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),
     },
     plugins: [
-      vinext(),
+      // vinext@1.0.0-beta.5's Rolldown 1.0.1 AST fallback folds Vite's
+      // worker-HMR `typeof window` guards in dev; browser runtime guards remain
+      // correct without this scanner, and production keeps the full plugin set.
+      ...vinextPlugins.filter(plugin => command !== "serve" || !plugin ||
+        typeof plugin !== "object" || !("name" in plugin) || plugin.name !== "vinext:typeof-window-scan"),
       sites({ mockAuth: !managedLinux }),
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },

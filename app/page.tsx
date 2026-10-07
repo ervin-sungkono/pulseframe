@@ -108,13 +108,15 @@ export default function Home() {
   const { captureImage, reducedMotionRef } = useVisualizerPreview({
     session, canvasRef, settings, subtitles, format, lockedRef: exportingRef, onError: setError, onNotice: setNotice,
   });
-  const { exporting, progress, exportVideo, cancelExport } = useExportController({
+  const { exporting, progress, estimateBeforeExport, exportVideo, cancelExport } = useExportController({
     lockedRef: exportingRef,
     getSource: () => {
       const current = session.snapshot;
       if (loadingMedia || openingProject || !current.file || !current.duration) return null;
       return {
         file: current.file,
+        generation: current.generation,
+        sourceKind: current.video ? "video" : "audio",
         duration: current.duration,
         range,
         format,
@@ -375,7 +377,7 @@ export default function Home() {
     </Drawer>
     <ExportDialog open={exportOpen} onOpenChange={setExportOpen} duration={duration} range={range} onRangeChange={setRange}
       dimensions={outputDimensions} videoCompression={videoCompression} onVideoCompressionChange={setVideoCompression} frameRate={frameRate} onFrameRateChange={setFrameRate} resolution={resolution} onResolutionChange={setResolution}
-      exporting={exporting} progress={progress} onExport={exportVideo}
+      exporting={exporting} progress={progress} estimateBeforeExport={estimateBeforeExport} onExport={exportVideo}
       onCancel={cancelExport} onPreview={previewRange}/>
     <SubtitleDialog open={subtitleOpen} onOpenChange={setSubtitleOpen} cues={subtitles} onChange={setSubtitles}
       position={position} duration={duration} onSeek={time => { session.pause(); seek(time); }}/>
