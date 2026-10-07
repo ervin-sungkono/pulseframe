@@ -51,8 +51,9 @@ test('preset library has no item-count cap, pages stable tied timestamps and tre
   begin();try{
     const store=new modules['preset-store'].PresetStore(globalThis.__presetTestDB),ids=new Set();
     for(let i=0;i<125;i++){const id=crypto.randomUUID();ids.add(id);await store.save('alice',id,`Look ${i}`,modules.presets.presetStyle(settings));}
+    await globalThis.__presetTestDB.prepare('UPDATE visual_presets SET updated_at = ? WHERE user_id = ?').bind(123456789,'alice').run();
     let cursor,found=[];
-    do {const page=await store.list('alice','',cursor);found.push(...page.presets);cursor=page.cursor ? {time:Number(page.cursor.split(':')[0]),id:page.cursor.split(':')[1]} : undefined;}while(cursor);
+    do {const page=await store.list('alice','',cursor);found.push(...page.presets);cursor=page.cursor ? {value:Number(page.cursor.split(':')[0]),id:page.cursor.split(':')[1]} : undefined;}while(cursor);
     assert.equal(found.length,125);assert.equal(new Set(found.map(x=>x.id)).size,125);assert.deepEqual(new Set(found.map(x=>x.id)),ids);
     await store.save('alice',crypto.randomUUID(),'50%_\'s look',modules.presets.presetStyle(settings));
     assert.equal((await store.list('alice','%_')).presets.length,1);

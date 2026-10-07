@@ -1,82 +1,10 @@
-export type VisualMode = "ring" | "spectrum" | "edges";
-export type ParticleMode = "stardust" | "sparks" | "constellation" | "comets";
-export type BackdropMode = "nebula" | "grid" | "clean";
-export type ParticleFlow = "drift" | "rise" | "orbit";
-export type ResponseStyle = "punchy" | "balanced" | "smooth";
+import { ANALYSIS_FPS } from "./audio-analysis-config";
+import type { ResponseStyle, VisualSettings } from "./visual-settings-model";
 import { activeSubtitle, type SubtitleCue } from "./subtitles";
 import type { SoundEnvelope } from "./audio-features";
 import { drawGlitch } from './glitch';
 import { drawTrackOverlay, trackOverlayLayout } from "./track-overlay";
-import { drawBeatLighting, type BeatLighting } from './beat-lighting';
-export type LogoPlacement = { x: number; y: number; size: number };
-
-export const DEFAULT_LOGO_PLACEMENTS: Record<VisualMode, LogoPlacement> = {
-  ring: { x: 50, y: 50, size: 26 },
-  spectrum: { x: 50, y: 25, size: 17 },
-  edges: { x: 50, y: 50, size: 20 },
-};
-export const DEFAULT_LOGO_AUTO_FIT: Record<VisualMode, boolean> = {
-  ring: true, spectrum: true, edges: true,
-};
-export const DEFAULT_LOGO_FIT_SCALE: Record<VisualMode, number> = {
-  ring: 100, spectrum: 100, edges: 100,
-};
-
-export type VisualSettings = {
-  mode: VisualMode;
-  spectrumRoundness: number;
-  spectrumReflection: number;
-  ringLayers: number;
-  ringRearOpacity: number;
-  ringMirror: boolean;
-  ringFocus: "auto" | "bass" | "full";
-  particleMode: ParticleMode;
-  particleFlow: ParticleFlow;
-  backdrop: BackdropMode;
-  primary: string;
-  secondary: string;
-  background: string;
-  sensitivity: number;
-  quietThreshold: number;
-  bassBoost: number;
-  responseStyle: ResponseStyle;
-  atmosphere: number;
-  particleCount: number;
-  glow: number;
-  visualScale: number;
-  motionSpeed: number;
-  particleSize: number;
-  beatRays: boolean;
-  beatLighting: BeatLighting;
-  beatLightingIntensity: number;
-  trails: boolean;
-  particles: boolean;
-  videoOpacity: number;
-  backgroundOpacity: number;
-  dropEffects: boolean;
-  glitch: boolean;
-  glitchStrength: number;
-  logoOpacity: number;
-  logoAutoFit: Record<VisualMode, boolean>;
-  logoFitScale: Record<VisualMode, number>;
-  logoPlacements: Record<VisualMode, LogoPlacement>;
-  showTrackInfo: boolean;
-  trackTitle: string;
-  trackArtist: string;
-  infoPosition: "top" | "center" | "bottom";
-  infoAlign: "left" | "center" | "right";
-  infoSize: number;
-  infoStyle: "shade" | "card" | "accent" | "plain";
-  infoFont: "sans" | "serif" | "mono";
-  infoWeight: 500 | 700;
-  infoColor: string;
-  infoSecondaryColor: string;
-  infoOpacity: number;
-  infoBackground: string;
-  infoBackgroundOpacity: number;
-  infoRadius: number;
-  showTimer: boolean;
-};
+import { drawBeatLighting } from './beat-lighting';
 
 export type Particle = {
   x: number; y: number; vx: number; vy: number; size: number; phase: number;
@@ -181,13 +109,13 @@ export function soundResponse(frame: SoundEnvelope, settings: VisualSettings, st
 }
 
 export function warmSoundResponse(envelopes: SoundEnvelope[], settings: VisualSettings, time: number) {
-  const state = createAudioReactiveState(), count = Math.ceil(time * 30);
+  const state = createAudioReactiveState(), count = Math.ceil(time * ANALYSIS_FPS);
   const silence: SoundEnvelope = { rms: 0, rmsDb: -160, bassDb: -160, middleDb: -160, highDb: -160,
     bands: (envelopes[0]?.bands ?? []).map(b => new Float32Array(b.length)) };
   // Beyond ten seconds of trailing silence, every release is below a pixel.
-  if (!envelopes.length || count > envelopes.length + 300) return { state, lastTime: time };
-  for (let i = 0; i < count; i++) soundResponse(envelopes[i] ?? silence, settings, state, i ? 1000 / 30 : 0);
-  return { state, lastTime: count ? (count - 1) / 30 : 0 };
+  if (!envelopes.length || count > envelopes.length + 10 * ANALYSIS_FPS) return { state, lastTime: time };
+  for (let i = 0; i < count; i++) soundResponse(envelopes[i] ?? silence, settings, state, i ? 1000 / ANALYSIS_FPS : 0);
+  return { state, lastTime: count ? (count - 1) / ANALYSIS_FPS : 0 };
 }
 
 // Use the waveform's actual level to reject FFT noise and the modes' idle shapes.

@@ -1,4 +1,5 @@
 import { ALL_FORMATS, AudioBufferSink, BlobSource, Input } from 'mediabunny';
+import { ANALYSIS_FPS } from './audio-analysis-config';
 const MAX_PCM = 300 * 1024 * 1024;
 export async function decodeMediaAudio(file: File, signal?: AbortSignal, start = 0, end?: number): Promise<AudioBuffer | null> {
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
@@ -16,7 +17,7 @@ export async function decodeMediaAudio(file: File, signal?: AbortSignal, start =
         if (item.buffer.numberOfChannels > 2) throw new Error('Export needs a mono or stereo audio track. This surround-sound file can still play with live visualization.');
         const channels = Math.min(2, item.buffer.numberOfChannels);
         const length = Math.max(1, Math.ceil(duration * item.buffer.sampleRate));
-        const historyBytes = Math.ceil(duration * 30) * channels * (96 * 4 + 128);
+        const historyBytes = Math.ceil(duration * ANALYSIS_FPS) * channels * (96 * 4 + 128);
         if (!Number.isFinite(length) || length * channels * 4 + historyBytes > MAX_PCM) throw new Error('Choose a shorter section to export this long media file.');
         audio = new AudioBuffer({ length, sampleRate: item.buffer.sampleRate, numberOfChannels: channels });
       }

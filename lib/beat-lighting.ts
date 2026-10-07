@@ -1,4 +1,4 @@
-export type BeatLighting = "rays" | "aura" | "beams" | "edges";
+import type { BeatLighting } from "./visual-settings-model";
 type LightingSettings = { primary: string; secondary: string; sensitivity: number; beatLighting: BeatLighting; beatLightingIntensity: number };
 const rgba = (hex: string, alpha: number) => {
   const rgb = parseInt(hex.slice(1), 16);

@@ -15,15 +15,15 @@ function compileTsx(path, mockedRequire) {
       jsx: ts.JsxEmit.ReactJSX,
     },
   }).outputText;
-  const module = { exports: {} };
+  const compiledModule = { exports: {} };
   const jsxRuntime = {
     Fragment: Symbol.for('test.fragment'),
     jsx: (type, props) => ({ type, props: props ?? {} }),
     jsxs: (type, props) => ({ type, props: props ?? {} }),
   };
   const localRequire = id => id === 'react/jsx-runtime' ? jsxRuntime : mockedRequire(id);
-  new Function('require', 'module', 'exports', code)(localRequire, module, module.exports);
-  return module.exports;
+  new Function('require', 'module', 'exports', code)(localRequire, compiledModule, compiledModule.exports);
+  return compiledModule.exports;
 }
 
 class HookHarness {
@@ -49,6 +49,7 @@ class HookHarness {
   }
 
   useCallback(callback) { this.index++; return callback; }
+  useMemo(factory) { this.index++; return factory(); }
   useEffect() { this.index++; }
   render(callback) { this.begin(); return callback(); }
 }
@@ -58,6 +59,7 @@ const reactMock = {
   useState: initial => activeHarness.useState(initial),
   useRef: initial => activeHarness.useRef(initial),
   useCallback: callback => activeHarness.useCallback(callback),
+  useMemo: factory => activeHarness.useMemo(factory),
   useEffect: (...args) => activeHarness.useEffect(...args),
 };
 
@@ -131,6 +133,11 @@ actualPresetDialog = compileTsx('../components/preset-dialog.tsx', presetCompone
 
 const library = makeLibrary([originalA]);
 const appHooks = new HookHarness();
+const mediaSnapshot = {
+  media: null, video: null, audioContext: null, sound: null, features: null, live: null,
+  logo: null, background: null, duration: 0, file: null, playing: false, generation: 0,
+};
+const mediaSessionOwner = { snapshot: mediaSnapshot, requestGeneration: 0, pause() {} };
 const appMockRequire = id => {
   if (id === 'react') return reactMock;
   if (id === 'lucide-react') return icons;
@@ -138,7 +145,7 @@ const appMockRequire = id => {
   if (id === '@/components/ui/slider') return { Slider: stubComponent };
   if (id === '@/components/ui/drawer') return { Drawer: stubComponent, DrawerContent: stubComponent, DrawerDescription: stubComponent, DrawerHandle: stubComponent, DrawerHeader: stubComponent, DrawerTitle: stubComponent };
   if (id === '@/components/ui/dialog') return uiDialog;
-  if (id === '@/components/customizer-panel') return { CustomizerPanel: customizerPanelStub, DEFAULT_SETTINGS };
+  if (id === '@/components/customizer-panel') return { CustomizerPanel: customizerPanelStub };
   if (id === '@/components/export-dialog') return { ExportDialog: stubComponent, timestamp: () => '0:00' };
   if (id === '@/components/preset-dialog') return { PresetDialog: actualPresetDialog };
   if (id === '@/lib/presets') return {
@@ -148,6 +155,7 @@ const appMockRequire = id => {
   if (id === '@/lib/customizer-config') return {
     BUILTIN_LOOKS: [],
     SECTION_KEYS: { colors: ['primary', 'secondary', 'background'] },
+    DEFAULT_SETTINGS,
   };
   if (id === '@/components/quick-look-strip') return { QuickLookStrip: stubComponent };
   if (id === '@/components/preset-save-dialog') return { PresetSaveDialog: presetSaveDialogStub };
@@ -158,10 +166,26 @@ const appMockRequire = id => {
       return { value, setValue, resetValue: setValue, undo() {}, redo() {}, canUndo: false, canRedo: false };
     },
   };
+  if (id === '@/hooks/use-media-session') return {
+    useMediaSession: () => ({
+      session: mediaSessionOwner, snapshot: mediaSnapshot, file: null, duration: 0, position: 0, playing: false,
+      loadingMedia: false, logoName: null, logoUrl: null, backgroundName: null, backgroundUrl: null,
+      generation: 0, requestGeneration: 0, loadFile: async () => false, seek() {}, togglePlay: async () => false,
+      previewRange: async () => false, pollPosition() {}, changeLogo: async () => false, changeBackground: async () => false,
+      setVolume() {}, setLoop() {},
+    }),
+  };
+  if (id === '@/hooks/use-visualizer-preview') return {
+    useVisualizerPreview: () => ({ captureImage() {}, reducedMotionRef: { current: false } }),
+  };
+  if (id === '@/hooks/use-export-controller') return {
+    useExportController: () => ({ exporting: false, progress: null, exportVideo() {}, cancelExport() {} }),
+  };
   if (id === '@/components/subtitle-dialog') return { SubtitleDialog: stubComponent };
   if (id === '@/lib/audio-features') return {
-    PcmFeatures: class {}, ANALYSIS_FPS: 30, audibleMediaTime: () => 0, dropEnvelope: () => 0, prepareSound: () => null,
+    PcmFeatures: class {}, audibleMediaTime: () => 0, dropEnvelope: () => 0, prepareSound: () => null,
   };
+  if (id === '@/lib/audio-analysis-config') return { ANALYSIS_FPS: 30 };
   if (id === '@/lib/local-image') return { readLocalImage: async () => null };
   if (id === '@/lib/live-sound') return { LiveSound: class {} };
   if (id === '@/components/track-waveform') return { TrackWaveform: stubComponent };

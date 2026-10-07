@@ -1,4 +1,5 @@
-import { ANALYSIS_SIZE, PcmFeatures, type SoundFrame } from './audio-features';
+import { ANALYSIS_SIZE } from './audio-analysis-config';
+import { PcmFeatures, type SoundFrame } from './audio-features';
 import { BassReturnDetector } from './drop-detector.mjs';
 
 /** Native playback fallback when a full decoded track exceeds the cache budget. */

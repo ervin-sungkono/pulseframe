@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { presetStyle, visualModeName, type SavedPreset } from "@/lib/presets";
-import type { VisualSettings } from "@/lib/visualizer";
+import type { VisualSettings } from "@/lib/visual-settings-model";
 import { PresetRequestError, type PresetLibrary } from "@/hooks/use-presets";
 
 type SaveDraft = {

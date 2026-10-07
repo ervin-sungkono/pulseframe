@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { VisualSettings } from "./visualizer";
+import type { VisualSettings } from "./visual-settings-model";
 import { settingsSchema, migrateSettings } from "./visual-settings";
 import type { ExportResolution } from "./export-settings";
 import type { ExportFrameRate } from "./export-timeline";

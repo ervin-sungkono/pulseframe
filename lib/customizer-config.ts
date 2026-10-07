@@ -4,7 +4,7 @@ import {
   DEFAULT_LOGO_FIT_SCALE,
   DEFAULT_LOGO_PLACEMENTS,
   type VisualSettings,
-} from "./visualizer";
+} from "./visual-settings-model";
 
 export type CustomizerSection = "visual" | "colors" | "motion" | "audio" | "logo" | "track";
 
@@ -16,15 +16,6 @@ export const SECTION_KEYS: Record<CustomizerSection, readonly (keyof VisualSetti
   logo: ["logoOpacity", "logoAutoFit", "logoFitScale", "logoPlacements"],
   track: ["showTrackInfo", "trackTitle", "trackArtist", "infoPosition", "infoAlign", "infoSize", "infoStyle", "infoFont", "infoWeight", "infoColor", "infoSecondaryColor", "infoOpacity", "infoBackground", "infoBackgroundOpacity", "infoRadius", "showTimer"],
 };
-
-export function sectionResetChanges(section: CustomizerSection): Partial<VisualSettings> {
-  const changes: Partial<VisualSettings> = {};
-  const keys = SECTION_KEYS[section].filter(key => section !== "track" || (key !== "trackTitle" && key !== "trackArtist"));
-  for (const key of keys) {
-    (changes as Record<keyof VisualSettings, VisualSettings[keyof VisualSettings]>)[key] = DEFAULT_SETTINGS[key];
-  }
-  return changes;
-}
 
 export const palettes = [
   { name: "Electric", primary: "#9b72ff", secondary: "#61e5ff", background: "#080c20" },

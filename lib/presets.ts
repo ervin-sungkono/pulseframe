@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { settingsSchema, migrateSettings } from './visual-settings';
-import type { VisualSettings } from './visualizer';
+import type { VisualSettings } from './visual-settings-model';
 
 export type PresetStyle = Omit<VisualSettings,'trackTitle'|'trackArtist'>;
 export type SavedPreset = {
