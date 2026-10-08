@@ -10,11 +10,10 @@ export async function loadSources({ dspAssets = false } = {}) {
   process.on('exit', () => rmSync(directory, { recursive: true, force: true }));
   mkdirSync(join(directory, 'dsp'), { recursive: true });
   writeFileSync(join(directory, 'dsp', 'analysis-worker-url.mjs'), `export default 'analysis-worker.test.js';`);
-  const names = ['audio-analysis-config', 'visual-settings-model', 'export-settings', 'export-timeline', 'audio-features', 'pcm-features', 'dsp/contracts', 'dsp/loader', 'dsp/wasm-backend', 'dsp/scan-client', 'visualizer', 'subtitles', 'project-file', 'demo-file', 'media-audio', 'live-sound', 'glitch', 'beat-lighting', 'track-overlay', 'visual-settings', 'presets', 'customizer-config', 'preset-store', 'preset-api', 'preset-route', 'preset-id-route'];
+  const names = ['audio-analysis-config', 'visual-settings-model', 'export-settings', 'export-timeline', 'audio-features', 'pcm-features', 'dsp/contracts', 'dsp/loader', 'dsp/wasm-backend', 'dsp/scan-client', 'visualizer', 'subtitles', 'project-file', 'demo-file', 'media-audio', 'live-sound', 'glitch', 'beat-lighting', 'track-overlay', 'visual-settings', 'presets', 'customizer-config', 'preset-store'];
   for (const name of ['audio-dsp', 'art-reactivity', 'drop-detector']) writeFileSync(join(directory, name + '.mjs'), readFileSync(new URL('../lib/' + name + '.mjs', import.meta.url)));
-  writeFileSync(join(directory,'test-runtime.mjs'), `export const env={get DB(){return globalThis.__presetTestDB}}; export async function getChatGPTUser(){return globalThis.__presetTestUser??null;}`);
   for (const name of names) {
-    const file = name === 'preset-route' ? '../app/api/presets/route.ts' : name === 'preset-id-route' ? '../app/api/presets/[id]/route.ts' : '../lib/' + name + '.ts';
+    const file = '../lib/' + name + '.ts';
     let source = readFileSync(new URL(file, import.meta.url), 'utf8');
     if (dspAssets && name === 'dsp/loader') {
       for (const asset of ['pulseframe_dsp.js', 'pulseframe_dsp_bg.wasm']) {
@@ -23,8 +22,6 @@ export async function loadSources({ dspAssets = false } = {}) {
     }
     const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
       .replace(/from ["']\.\/analysis-worker\.ts\?worker&url["']/g, "from './analysis-worker-url.mjs'")
-      .replace(/from ["']cloudflare:workers["']/g, "from './test-runtime.mjs'")
-      .replace(/from ["']@\/app\/chatgpt-auth["']/g, "from './test-runtime.mjs'")
       .replace(/from ["']@\/lib\/([^"']+)["']/g, (_, name) => `from './${name}.mjs'`)
       .replace(/from ["'](\.\.?\/[^"']+)["']/g, (_, path) => `from '${path.endsWith('.mjs') ? path : path + '.mjs'}'`)
       .replace(/import\(["'](\.\.?\/[^"']+)["']\)/g, (_, path) => `import('${path.endsWith('.mjs') ? path : path + '.mjs'}')`)

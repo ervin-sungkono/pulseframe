@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { Captions, Plus, Trash2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";

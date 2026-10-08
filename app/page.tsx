@@ -1,5 +1,3 @@
-"use client";
-
 import { exportDimensions, type ExportResolution } from "@/lib/export-settings";
 
 import { useEffect, useRef, useState } from "react";
@@ -136,12 +134,6 @@ export default function Home() {
     onNotice: setNotice,
     onComplete: () => setExportOpen(false),
   });
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      if (new URLSearchParams(window.location.search).get("presets") === "1") setPresetOpen(true);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
   useEffect(() => {
     setMediaVolume(muted ? 0 : volume);
   }, [volume, muted, setMediaVolume]);
@@ -381,12 +373,11 @@ export default function Home() {
       onCancel={cancelExport} onPreview={previewRange}/>
     <SubtitleDialog open={subtitleOpen} onOpenChange={setSubtitleOpen} cues={subtitles} onChange={setSubtitles}
       position={position} duration={duration} onSeek={time => { session.pause(); seek(time); }}/>
-    <PresetDialog open={presetOpen} onOpenChange={setPresetOpen} settings={settings} hasMedia={!!file} library={library} currentPreset={currentPreset}
+    <PresetDialog open={presetOpen} onOpenChange={setPresetOpen} settings={settings} library={library} currentPreset={currentPreset}
       onApply={applySavedLook} onSaved={lookSaved} onMetadataChanged={lookMetadataChanged} onDeleted={id => { setActiveLook(current => current?.id === id ? null : current); }}
-      onHelp={() => { setPresetOpen(false); setHelpOpen(true); }}
-      onOpenProject={() => { setPresetOpen(false); setProjectOpen(true); }}/>
+      onHelp={() => { setPresetOpen(false); setHelpOpen(true); }}/>
     <PresetSaveDialog open={lookSaveOpen} onOpenChange={setLookSaveOpen} settings={settings} library={library}
-      hasMedia={!!file} pinned={lookSaveTarget ? undefined : true} target={lookSaveTarget} onSaved={lookSaved}/>
+      pinned={lookSaveTarget ? undefined : true} target={lookSaveTarget} onSaved={lookSaved}/>
     <Dialog open={projectOpen} onOpenChange={setProjectOpen}>
       <DialogContent className="project-dialog">
         <DialogHeader><div className="dialog-icon"><FolderOpen size={19}/></div><DialogTitle>Your project</DialogTitle>

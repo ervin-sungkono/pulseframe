@@ -1,30 +1,19 @@
 import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
+import js from "@eslint/js";
+import tseslint from "typescript-eslint";
+import reactHooks from "eslint-plugin-react-hooks";
 
-const eslintConfig = defineConfig([
-  ...nextVitals,
-  ...nextTs,
-  // Override default ignores of eslint-config-next.
-  globalIgnores([
-    // Default ignores of eslint-config-next:
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
-    "public/dsp/**", // Reproducible wasm-bindgen output; checked by DSP CI.
-    "crates/pulseframe-dsp/target/**",
-  ]),
+export default defineConfig([
+  globalIgnores(["dist/**", "build/**", "public/dsp/**", "crates/pulseframe-dsp/target/**"]),
+  { ...js.configs.recommended, files: ["**/*.{ts,tsx}"] },
+  tseslint.configs.recommended,
+  { ...reactHooks.configs.flat.recommended, files: ["**/*.{ts,tsx}"] },
   {
-    files: ["components/ui/**/*.{ts,tsx}", "hooks/use-mobile.ts"],
+    files: ["components/ui/**/*.{ts,tsx}"],
     rules: {
-      // These files are vendored verbatim from shadcn@4.17.0. Keep the
-      // registry source intact while applying the stricter rules to Site code.
       "@typescript-eslint/no-unused-vars": "off",
       "react-hooks/purity": "off",
       "react-hooks/set-state-in-effect": "off",
     },
   },
 ]);
-
-export default eslintConfig;

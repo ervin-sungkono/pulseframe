@@ -1,6 +1,3 @@
-"use client";
-/* eslint-disable @next/next/no-img-element -- Local logo and background previews use blob URLs. */
-
 import { createContext, useContext, useState, type ComponentProps, type ReactNode } from "react";
 import { Check, ChevronDown, ImagePlus, RotateCcw, X } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
