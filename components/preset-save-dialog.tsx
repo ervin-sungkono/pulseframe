@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { presetStyle, visualModeName, type SavedPreset } from "@/lib/presets";
 import type { VisualSettings } from "@/lib/visual-settings-model";
 import type { PresetLibrary } from "@/hooks/use-presets";
@@ -21,7 +27,15 @@ type Props = {
   onSaved?: (preset: SavedPreset) => void;
 };
 
-export function PresetSaveDialog({ open, onOpenChange, settings, library, pinned, target = null, onSaved }: Props) {
+export function PresetSaveDialog({
+  open,
+  onOpenChange,
+  settings,
+  library,
+  pinned,
+  target = null,
+  onSaved,
+}: Props) {
   const [draft, setDraft] = useState<SaveDraft | null>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState<"update" | "copy" | null>(null);
@@ -38,13 +52,22 @@ export function PresetSaveDialog({ open, onOpenChange, settings, library, pinned
   useEffect(() => {
     if (open && !wasOpenRef.current) {
       const timer = window.setTimeout(() => {
-        const snapshotTarget = targetRef.current ? { ...targetRef.current, settings: presetStyle(targetRef.current.settings) } : null;
-        setDraft({ id: crypto.randomUUID(), settings: presetStyle(settingsRef.current), target: snapshotTarget });
+        const snapshotTarget = targetRef.current
+          ? { ...targetRef.current, settings: presetStyle(targetRef.current.settings) }
+          : null;
+        setDraft({
+          id: crypto.randomUUID(),
+          settings: presetStyle(settingsRef.current),
+          target: snapshotTarget,
+        });
         setName(snapshotTarget?.name ?? "");
         setFormError("");
         wasOpenRef.current = true;
       }, 0);
-      return () => { window.clearTimeout(timer); wasOpenRef.current = false; };
+      return () => {
+        window.clearTimeout(timer);
+        wasOpenRef.current = false;
+      };
     }
     if (!open) {
       wasOpenRef.current = false;
@@ -62,19 +85,20 @@ export function PresetSaveDialog({ open, onOpenChange, settings, library, pinned
     setBusy(asCopy ? "copy" : "update");
     setFormError("");
     try {
-      const preset = draft.target && !asCopy
-        ? await library.update(draft.target.id, {
-          name: name.trim(),
-          settings: draft.settings,
-          ...(pinned === undefined ? {} : { pinned }),
-          expectedRevision: draft.target.revision,
-        })
-        : await library.create({
-          id: draft.id,
-          name: name.trim(),
-          settings: draft.settings,
-          pinned: pinned ?? false,
-        });
+      const preset =
+        draft.target && !asCopy
+          ? await library.update(draft.target.id, {
+              name: name.trim(),
+              settings: draft.settings,
+              ...(pinned === undefined ? {} : { pinned }),
+              expectedRevision: draft.target.revision,
+            })
+          : await library.create({
+              id: draft.id,
+              name: name.trim(),
+              settings: draft.settings,
+              pinned: pinned ?? false,
+            });
       onSaved?.(preset);
       setDraft(null);
       setBusy(null);
@@ -83,7 +107,9 @@ export function PresetSaveDialog({ open, onOpenChange, settings, library, pinned
     } catch (caught) {
       if (caught instanceof PresetStoreError && caught.code === "conflict") {
         void library.refresh();
-        setFormError("This preset changed in another tab. Your settings and name are still here; save a copy or close and reopen to review the latest version.");
+        setFormError(
+          "This preset changed in another tab. Your settings and name are still here; save a copy or close and reopen to review the latest version.",
+        );
       } else {
         setFormError(caught instanceof Error ? caught.message : "Could not save this preset.");
       }
@@ -92,37 +118,104 @@ export function PresetSaveDialog({ open, onOpenChange, settings, library, pinned
     }
   };
 
-  const title = draft?.target ? "Update this preset?" : pinned ? "Save this Quick Look?" : "Save this preset?";
+  const title = draft?.target
+    ? "Update this preset?"
+    : pinned
+      ? "Save this Quick Look?"
+      : "Save this preset?";
   const description = draft?.target
     ? "Confirm the name and visual settings to update this saved look."
     : "Confirm this look before saving it to this browser. Media, images, subtitles, and track names are excluded.";
 
   return (
-    <Dialog open={open} onOpenChange={value => { if (!busy) onOpenChange(value); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(value) => {
+        if (!busy) onOpenChange(value);
+      }}
+    >
       <DialogContent className="preset-confirm-dialog" showCloseButton={!busy}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        {draft && <form onSubmit={event => { event.preventDefault(); void save(); }} className="preset-form">
-          <label>Preset name
-            <input autoFocus required maxLength={80} placeholder="e.g. Neon lake" value={name} onChange={event => setName(event.target.value)} disabled={!!busy}/>
-          </label>
-          <div className="preset-save-summary">
-            <span className="preset-color-preview" aria-hidden="true" style={{ background: `linear-gradient(135deg,${draft.settings.primary},${draft.settings.secondary})` }}/>
-            <div><strong>{visualModeName(draft.settings.mode)}</strong><p>Colors, motion, audio response, logo layout, and text styling.</p></div>
-          </div>
-          {formError && <p className="preset-error" role="alert">{formError}</p>}
-          <div className="preset-form-actions">
-            <button type="button" className="button button-soft" disabled={!!busy} onClick={() => onOpenChange(false)}>Cancel</button>
-            {draft.target && <button type="button" className="button button-soft" disabled={!!busy || !name.trim()} onClick={() => { void save(true); }}>
-              {busy === "copy" ? "Saving copy…" : "Save as copy"}
-            </button>}
-            <button className="button export-button" disabled={!!busy || !name.trim()} type="submit">
-              {busy ? busy === "copy" ? "Saving copy…" : "Saving…" : draft.target ? "Confirm update" : pinned ? "Save Quick Look" : "Confirm save"}
-            </button>
-          </div>
-        </form>}
+        {draft && (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void save();
+            }}
+            className="preset-form"
+          >
+            <label>
+              Preset name
+              <input
+                autoFocus
+                required
+                maxLength={80}
+                placeholder="e.g. Neon lake"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                disabled={!!busy}
+              />
+            </label>
+            <div className="preset-save-summary">
+              <span
+                className="preset-color-preview"
+                aria-hidden="true"
+                style={{
+                  background: `linear-gradient(135deg,${draft.settings.primary},${draft.settings.secondary})`,
+                }}
+              />
+              <div>
+                <strong>{visualModeName(draft.settings.mode)}</strong>
+                <p>Colors, motion, audio response, logo layout, and text styling.</p>
+              </div>
+            </div>
+            {formError && (
+              <p className="preset-error" role="alert">
+                {formError}
+              </p>
+            )}
+            <div className="preset-form-actions">
+              <button
+                type="button"
+                className="button button-soft"
+                disabled={!!busy}
+                onClick={() => onOpenChange(false)}
+              >
+                Cancel
+              </button>
+              {draft.target && (
+                <button
+                  type="button"
+                  className="button button-soft"
+                  disabled={!!busy || !name.trim()}
+                  onClick={() => {
+                    void save(true);
+                  }}
+                >
+                  {busy === "copy" ? "Saving copy…" : "Save as copy"}
+                </button>
+              )}
+              <button
+                className="button export-button"
+                disabled={!!busy || !name.trim()}
+                type="submit"
+              >
+                {busy
+                  ? busy === "copy"
+                    ? "Saving copy…"
+                    : "Saving…"
+                  : draft.target
+                    ? "Confirm update"
+                    : pinned
+                      ? "Save Quick Look"
+                      : "Confirm save"}
+              </button>
+            </div>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   );

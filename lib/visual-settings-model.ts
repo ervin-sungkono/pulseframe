@@ -69,9 +69,13 @@ export const DEFAULT_LOGO_PLACEMENTS: Record<VisualMode, LogoPlacement> = {
 };
 
 export const DEFAULT_LOGO_AUTO_FIT: Record<VisualMode, boolean> = {
-  ring: true, spectrum: true, edges: true,
+  ring: true,
+  spectrum: true,
+  edges: true,
 };
 
 export const DEFAULT_LOGO_FIT_SCALE: Record<VisualMode, number> = {
-  ring: 100, spectrum: 100, edges: 100,
+  ring: 100,
+  spectrum: 100,
+  edges: 100,
 };

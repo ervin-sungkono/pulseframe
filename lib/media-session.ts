@@ -26,11 +26,22 @@ export type MediaSessionSnapshot = {
 
 export type MediaSessionEvent =
   | { type: "loading"; loading: boolean; requestGeneration: number }
-  | { type: "commit"; snapshot: MediaSessionSnapshot; next: File; project?: ProjectContent; range: [number, number] }
+  | {
+      type: "commit";
+      snapshot: MediaSessionSnapshot;
+      next: File;
+      project?: ProjectContent;
+      range: [number, number];
+    }
   | { type: "seek"; snapshot: MediaSessionSnapshot; time: number; source: "api" | "native" }
   | { type: "play" | "pause" | "ended"; snapshot: MediaSessionSnapshot; time: number }
   | { type: "position"; snapshot: MediaSessionSnapshot; time: number }
-  | { type: "assets"; snapshot: MediaSessionSnapshot; kind: MediaAssetKind; asset: LocalImage | null }
+  | {
+      type: "assets";
+      snapshot: MediaSessionSnapshot;
+      kind: MediaAssetKind;
+      asset: LocalImage | null;
+    }
   | { type: "error"; operation: MediaSessionOperation; error: Error }
   | { type: "notice"; message: string };
 
@@ -69,25 +80,39 @@ type MediaResource = {
 };
 
 const abortError = () => new DOMException("Canceled", "AbortError");
-const asError = (value: unknown, fallback: string) => value instanceof Error ? value : new Error(fallback);
+const asError = (value: unknown, fallback: string) =>
+  value instanceof Error ? value : new Error(fallback);
 
 function isMediaFile(file: File) {
   const video = file.type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(file.name);
-  const audio = file.type.startsWith("audio/") || /\.(mp3|wav|m4a|aac|ogg|flac|opus)$/i.test(file.name);
+  const audio =
+    file.type.startsWith("audio/") || /\.(mp3|wav|m4a|aac|ogg|flac|opus)$/i.test(file.name);
   return { video, valid: (audio || video) && file.size > 0 };
 }
 
 function waitForMediaData(element: HTMLMediaElement, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
-    if (signal.aborted) { reject(abortError()); return; }
+    if (signal.aborted) {
+      reject(abortError());
+      return;
+    }
     const cleanup = () => {
       element.removeEventListener("loadeddata", loaded);
       element.removeEventListener("error", failed);
       signal.removeEventListener("abort", canceled);
     };
-    const loaded = () => { cleanup(); resolve(); };
-    const failed = () => { cleanup(); reject(new Error("This browser could not open the media. Try MP3, WAV, MP4, or WebM.")); };
-    const canceled = () => { cleanup(); reject(abortError()); };
+    const loaded = () => {
+      cleanup();
+      resolve();
+    };
+    const failed = () => {
+      cleanup();
+      reject(new Error("This browser could not open the media. Try MP3, WAV, MP4, or WebM."));
+    };
+    const canceled = () => {
+      cleanup();
+      reject(abortError());
+    };
     element.addEventListener("loadeddata", loaded, { once: true });
     element.addEventListener("error", failed, { once: true });
     signal.addEventListener("abort", canceled, { once: true });
@@ -125,11 +150,21 @@ export class MediaSessionOwner {
 
   constructor(private readonly dependencies: MediaSessionDependencies = {}) {}
 
-  get requestGeneration() { return this.requestValue; }
-  get generation() { return this.generationValue; }
-  get logoAsset() { return this.logo; }
-  get backgroundAsset() { return this.background; }
-  get audioContext() { return this.context; }
+  get requestGeneration() {
+    return this.requestValue;
+  }
+  get generation() {
+    return this.generationValue;
+  }
+  get logoAsset() {
+    return this.logo;
+  }
+  get backgroundAsset() {
+    return this.background;
+  }
+  get audioContext() {
+    return this.context;
+  }
 
   get snapshot(): MediaSessionSnapshot {
     return {
@@ -151,22 +186,42 @@ export class MediaSessionOwner {
 
   subscribe(listener: (event: MediaSessionEvent) => void) {
     this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   private emit(event: MediaSessionEvent) {
     for (const listener of [...this.listeners]) {
-      try { listener(event); } catch { /* Subscribers are observers and cannot break an ownership transaction. */ }
+      try {
+        listener(event);
+      } catch {
+        /* Subscribers are observers and cannot break an ownership transaction. */
+      }
     }
-    try { this.dependencies.onEvent?.(event); } catch { /* See above. */ }
+    try {
+      this.dependencies.onEvent?.(event);
+    } catch {
+      /* See above. */
+    }
   }
 
-  private blocked() { return this.disposed || !!this.dependencies.isBlocked?.(); }
-  private objectUrl(blob: Blob) { return (this.dependencies.createObjectURL ?? URL.createObjectURL.bind(URL))(blob); }
-  private revoke(url: string | null | undefined) { if (url) (this.dependencies.revokeObjectURL ?? URL.revokeObjectURL.bind(URL))(url); }
-  private readImage(file: File, kind: MediaAssetKind) { return (this.dependencies.readImage ?? readLocalImage)(file, kind); }
+  private blocked() {
+    return this.disposed || !!this.dependencies.isBlocked?.();
+  }
+  private objectUrl(blob: Blob) {
+    return (this.dependencies.createObjectURL ?? URL.createObjectURL.bind(URL))(blob);
+  }
+  private revoke(url: string | null | undefined) {
+    if (url) (this.dependencies.revokeObjectURL ?? URL.revokeObjectURL.bind(URL))(url);
+  }
+  private readImage(file: File, kind: MediaAssetKind) {
+    return (this.dependencies.readImage ?? readLocalImage)(file, kind);
+  }
 
-  private revokeAsset(asset: LocalImage | null) { if (asset) this.revoke(asset.url); }
+  private revokeAsset(asset: LocalImage | null) {
+    if (asset) this.revoke(asset.url);
+  }
 
   private async prepareAudio(file: File, signal: AbortSignal): Promise<PreparedSound | null> {
     try {
@@ -174,7 +229,8 @@ export class MediaSessionOwner {
       const { decodeMediaAudio } = await import("./media-audio");
       return await prepareSound(await decodeMediaAudio(file, signal), signal);
     } catch (error) {
-      if (signal.aborted || (error instanceof DOMException && error.name === "AbortError")) throw error;
+      if (signal.aborted || (error instanceof DOMException && error.name === "AbortError"))
+        throw error;
       // Native playback and live analysis remain available if PCM decoding fails.
       return null;
     }
@@ -198,7 +254,10 @@ export class MediaSessionOwner {
   private attachMediaHandlers(resource: MediaResource, generation: number) {
     const { media } = resource;
     const current = () => this.media === resource && this.generationValue === generation;
-    media.addEventListener("play", () => { if (current()) this.emit({ type: "play", snapshot: this.snapshot, time: media.currentTime || 0 }); });
+    media.addEventListener("play", () => {
+      if (current())
+        this.emit({ type: "play", snapshot: this.snapshot, time: media.currentTime || 0 });
+    });
     media.addEventListener("pause", () => {
       if (!current()) return;
       resource.live?.reset();
@@ -212,16 +271,27 @@ export class MediaSessionOwner {
     media.addEventListener("seeking", () => {
       if (!current()) return;
       resource.live?.reset();
-      this.emit({ type: "seek", snapshot: this.snapshot, time: media.currentTime || 0, source: "native" });
+      this.emit({
+        type: "seek",
+        snapshot: this.snapshot,
+        time: media.currentTime || 0,
+        source: "native",
+      });
     });
     const stopAtSegmentEnd = () => {
-      if (!current() || this.segmentEnd === null || media.currentTime < this.segmentEnd - 0.04) return;
+      if (!current() || this.segmentEnd === null || media.currentTime < this.segmentEnd - 0.04)
+        return;
       this.segmentEnd = null;
       media.pause();
     };
     media.addEventListener("timeupdate", stopAtSegmentEnd);
     media.addEventListener("error", () => {
-      if (current()) this.emit({ type: "error", operation: "load", error: new Error("Playback failed. Try another media file.") });
+      if (current())
+        this.emit({
+          type: "error",
+          operation: "load",
+          error: new Error("Playback failed. Try another media file."),
+        });
     });
   }
 
@@ -250,7 +320,11 @@ export class MediaSessionOwner {
     if (!next || this.blocked()) return false;
     const { video, valid } = isMediaFile(next);
     if (!valid) {
-      this.emit({ type: "error", operation: "load", error: new Error("Choose a nonempty audio or video file.") });
+      this.emit({
+        type: "error",
+        operation: "load",
+        error: new Error("Choose a nonempty audio or video file."),
+      });
       return false;
     }
 
@@ -270,18 +344,30 @@ export class MediaSessionOwner {
     let committed = false;
     const contextExistedBeforeLoad = !!this.context;
     try {
-      element = (this.dependencies.createMediaElement ?? (isVideo => document.createElement(isVideo ? "video" : "audio")))(video);
+      element = (
+        this.dependencies.createMediaElement ??
+        ((isVideo) => document.createElement(isVideo ? "video" : "audio"))
+      )(video);
       element.preload = "auto";
       if (video && "playsInline" in element) (element as HTMLVideoElement).playsInline = true;
       url = this.objectUrl(next);
       const ready = waitForMediaData(element, controller.signal);
       element.src = url;
 
-      const projectAssets = options.projectAssets ?? (options.project ? { logo: options.project.logo, background: options.project.background } : null);
+      const projectAssets =
+        options.projectAssets ??
+        (options.project
+          ? { logo: options.project.logo, background: options.project.background }
+          : null);
       const prepareAsset = (kind: MediaAssetKind, file: File | null) => {
         if (!file) return Promise.resolve(null);
-        return this.readImage(file, kind).then(asset => {
-          if (controller.signal.aborted || request !== this.requestValue || this.disposed || this.blocked()) {
+        return this.readImage(file, kind).then((asset) => {
+          if (
+            controller.signal.aborted ||
+            request !== this.requestValue ||
+            this.disposed ||
+            this.blocked()
+          ) {
             this.revokeAsset(asset);
             return null;
           }
@@ -291,40 +377,67 @@ export class MediaSessionOwner {
         });
       };
       const assets = projectAssets
-        ? Promise.all([prepareAsset("logo", projectAssets.logo), prepareAsset("background", projectAssets.background)])
+        ? Promise.all([
+            prepareAsset("logo", projectAssets.logo),
+            prepareAsset("background", projectAssets.background),
+          ])
         : Promise.resolve([null, null] as const);
       const soundWork = this.prepareAudio(next, controller.signal);
       const dspWork = initializeDsp();
-      const [, , sound] = await withAbort(Promise.all([ready, assets, soundWork, dspWork]), controller.signal);
-      if (request !== this.requestValue || controller.signal.aborted || this.blocked()) return false;
+      const [, , sound] = await withAbort(
+        Promise.all([ready, assets, soundWork, dspWork]),
+        controller.signal,
+      );
+      if (request !== this.requestValue || controller.signal.aborted || this.blocked())
+        return false;
 
-      const length = Number.isFinite(element.duration) ? element.duration : sound?.audio?.duration ?? 0;
+      const length = Number.isFinite(element.duration)
+        ? element.duration
+        : (sound?.audio?.duration ?? 0);
       if (!(length > 0)) throw new Error("Could not determine the media duration.");
       const { context, monitor } = this.ensureAudioGraph();
-      source = this.dependencies.createSource?.(context, element) ?? context.createMediaElementSource(element);
+      source =
+        this.dependencies.createSource?.(context, element) ??
+        context.createMediaElementSource(element);
       source.connect(monitor);
-      live = sound?.audio ? null : (this.dependencies.createLiveSound?.(context, source) ?? new LiveSound(context, source));
+      live = sound?.audio
+        ? null
+        : (this.dependencies.createLiveSound?.(context, source) ?? new LiveSound(context, source));
       element.loop = this.looping;
 
       const host = this.dependencies.getMediaHost?.();
       host?.appendChild(element);
       features = sound?.audio
-        ? new PcmFeatures(Array.from({ length: sound.audio.numberOfChannels }, (_, i) => sound.audio!.getChannelData(i)), sound.audio.sampleRate)
+        ? new PcmFeatures(
+            Array.from({ length: sound.audio.numberOfChannels }, (_, i) =>
+              sound.audio!.getChannelData(i),
+            ),
+            sound.audio.sampleRate,
+          )
         : null;
       const range = this.normalizeRange(options.range, length);
       const resource: MediaResource = {
-        file: next, media: element, video: video ? element as HTMLVideoElement : null,
-        sound, features, live, duration: length, source, url,
+        file: next,
+        media: element,
+        video: video ? (element as HTMLVideoElement) : null,
+        sound,
+        features,
+        live,
+        duration: length,
+        source,
+        url,
       };
       const previous = this.media;
-      const previousLogo = this.logo, previousBackground = this.background;
+      const previousLogo = this.logo,
+        previousBackground = this.background;
       this.transportRequest++;
       this.media = resource;
       this.segmentEnd = null;
       this.generationValue++;
       this.attachMediaHandlers(resource, this.generationValue);
       if (projectAssets) {
-        ++this.logoRequest; ++this.backgroundRequest;
+        ++this.logoRequest;
+        ++this.backgroundRequest;
         this.logo = candidateLogo;
         this.background = candidateBackground;
       }
@@ -335,11 +448,20 @@ export class MediaSessionOwner {
         this.revokeAsset(previousLogo);
         this.revokeAsset(previousBackground);
       }
-      if (!sound) this.emit({ type: "notice", message: "Playback is ready with live sound response. Export support depends on the file and this browser; choose a short section for large files." });
+      if (!sound)
+        this.emit({
+          type: "notice",
+          message:
+            "Playback is ready with live sound response. Export support depends on the file and this browser; choose a short section for large files.",
+        });
       return true;
     } catch (caught) {
       const error = asError(caught, "Could not open this media.");
-      if (request === this.requestValue && !controller.signal.aborted && error.name !== "AbortError") {
+      if (
+        request === this.requestValue &&
+        !controller.signal.aborted &&
+        error.name !== "AbortError"
+      ) {
         this.emit({ type: "error", operation: "load", error });
       }
       return false;
@@ -358,7 +480,8 @@ export class MediaSessionOwner {
         this.revokeAsset(candidateBackground);
         if (!contextExistedBeforeLoad && !this.media && this.context) {
           void this.context.close();
-          this.context = null; this.monitor = null;
+          this.context = null;
+          this.monitor = null;
         }
       }
       if (request === this.requestValue) {
@@ -380,9 +503,17 @@ export class MediaSessionOwner {
     const resource = this.media;
     if (!resource || this.blocked()) return;
     this.segmentEnd = null;
-    resource.media.currentTime = Math.max(0, Math.min(resource.duration, Number.isFinite(time) ? time : 0));
+    resource.media.currentTime = Math.max(
+      0,
+      Math.min(resource.duration, Number.isFinite(time) ? time : 0),
+    );
     resource.live?.reset();
-    this.emit({ type: "seek", snapshot: this.snapshot, time: resource.media.currentTime || 0, source: "api" });
+    this.emit({
+      type: "seek",
+      snapshot: this.snapshot,
+      time: resource.media.currentTime || 0,
+      source: "api",
+    });
   }
 
   async play() {
@@ -398,7 +529,11 @@ export class MediaSessionOwner {
       return this.isCurrentTransport(resource, request);
     } catch {
       if (!this.isCurrentTransport(resource, request)) return false;
-      this.emit({ type: "error", operation: "play", error: new Error("Playback was blocked. Press play again or try another file.") });
+      this.emit({
+        type: "error",
+        operation: "play",
+        error: new Error("Playback was blocked. Press play again or try another file."),
+      });
       return false;
     }
   }
@@ -440,7 +575,11 @@ export class MediaSessionOwner {
     } catch {
       if (!this.isCurrentTransport(resource, request)) return false;
       this.segmentEnd = null;
-      this.emit({ type: "error", operation: "preview", error: new Error("Could not preview that section.") });
+      this.emit({
+        type: "error",
+        operation: "preview",
+        error: new Error("Could not preview that section."),
+      });
       return false;
     }
   }
@@ -469,7 +608,8 @@ export class MediaSessionOwner {
     this.volume = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
     if (!this.context || !this.monitor) return;
     const gain = this.monitor.gain;
-    if (typeof gain.setTargetAtTime === "function") gain.setTargetAtTime(this.volume, this.context.currentTime, 0.015);
+    if (typeof gain.setTargetAtTime === "function")
+      gain.setTargetAtTime(this.volume, this.context.currentTime, 0.015);
     else gain.value = this.volume;
   }
 
@@ -487,13 +627,23 @@ export class MediaSessionOwner {
     }
     try {
       const asset = await this.readImage(file, kind);
-      const stillCurrent = generation === (kind === "logo" ? this.logoRequest : this.backgroundRequest);
-      if (!stillCurrent || this.blocked()) { this.revokeAsset(asset); return false; }
+      const stillCurrent =
+        generation === (kind === "logo" ? this.logoRequest : this.backgroundRequest);
+      if (!stillCurrent || this.blocked()) {
+        this.revokeAsset(asset);
+        return false;
+      }
       this.updateAsset(kind, asset);
       return true;
     } catch (caught) {
-      const stillCurrent = generation === (kind === "logo" ? this.logoRequest : this.backgroundRequest);
-      if (stillCurrent) this.emit({ type: "error", operation: kind, error: asError(caught, `Could not read that ${kind}.`) });
+      const stillCurrent =
+        generation === (kind === "logo" ? this.logoRequest : this.backgroundRequest);
+      if (stillCurrent)
+        this.emit({
+          type: "error",
+          operation: kind,
+          error: asError(caught, `Could not read that ${kind}.`),
+        });
       return false;
     }
   }
@@ -506,12 +656,16 @@ export class MediaSessionOwner {
     this.activeLoad?.abort();
     this.activeLoad = null;
     this.requestValue++;
-    this.logoRequest++; this.backgroundRequest++;
+    this.logoRequest++;
+    this.backgroundRequest++;
     this.releaseMedia(this.media);
     this.media = null;
-    this.revokeAsset(this.logo); this.logo = null;
-    this.revokeAsset(this.background); this.background = null;
-    this.monitor?.disconnect(); this.monitor = null;
+    this.revokeAsset(this.logo);
+    this.logo = null;
+    this.revokeAsset(this.background);
+    this.background = null;
+    this.monitor?.disconnect();
+    this.monitor = null;
     if (this.context) void this.context.close();
     this.context = null;
     this.listeners.clear();

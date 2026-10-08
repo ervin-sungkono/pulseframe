@@ -13,11 +13,21 @@ import { getInitializedDspModule } from "./loader";
 type BufferKey = "input" | "features" | "bands" | "amplitudes" | "db";
 type BufferLayout = { pointer: number; length: number; bytesPerElement: number };
 
-function checkedLayout(pointer: number, length: number, bytesPerElement: number, bufferBytes: number, key: BufferKey) {
+function checkedLayout(
+  pointer: number,
+  length: number,
+  bytesPerElement: number,
+  bufferBytes: number,
+  key: BufferKey,
+) {
   if (!Number.isSafeInteger(pointer) || pointer < 0 || pointer % bytesPerElement !== 0) {
     throw new RangeError(`The DSP ${key} pointer is invalid.`);
   }
-  if (!Number.isSafeInteger(length) || length < 0 || pointer + length * bytesPerElement > bufferBytes) {
+  if (
+    !Number.isSafeInteger(length) ||
+    length < 0 ||
+    pointer + length * bytesPerElement > bufferBytes
+  ) {
     throw new RangeError(`The DSP ${key} buffer is outside WASM memory.`);
   }
   return { pointer, length, bytesPerElement } satisfies BufferLayout;
@@ -39,25 +49,63 @@ export class WasmFrameBackend {
   } | null = null;
   private disposed = false;
 
-  constructor(readonly sampleRate: number, readonly channelCount: number, bindings = getInitializedDspModule()) {
+  constructor(
+    readonly sampleRate: number,
+    readonly channelCount: number,
+    bindings = getInitializedDspModule(),
+  ) {
     if (!bindings) throw new Error("The DSP WASM bindings are not initialized.");
     if (!Number.isInteger(sampleRate) || sampleRate < 1 || sampleRate > DSP_MAX_SAMPLE_RATE) {
       throw new RangeError(`The DSP sample rate must be between 1 and ${DSP_MAX_SAMPLE_RATE} Hz.`);
     }
-    if (channelCount !== 1 && channelCount !== 2) throw new RangeError("The frame adapter supports mono or stereo audio.");
+    if (channelCount !== 1 && channelCount !== 2)
+      throw new RangeError("The frame adapter supports mono or stereo audio.");
     this.bindings = bindings;
     this.handle = new bindings.FrameDsp(sampleRate, channelCount);
     try {
-      if (this.handle.sample_rate() !== sampleRate || this.handle.channel_count() !== channelCount) {
+      if (
+        this.handle.sample_rate() !== sampleRate ||
+        this.handle.channel_count() !== channelCount
+      ) {
         throw new Error("The DSP handle does not match its requested audio format.");
       }
       const bufferBytes = this.bindings.memory.buffer.byteLength;
       this.layouts = {
-        input: checkedLayout(this.handle.input_ptr(), this.handle.input_len(), Float32Array.BYTES_PER_ELEMENT, bufferBytes, "input"),
-        features: checkedLayout(this.handle.features_ptr(), this.handle.features_len(), Float64Array.BYTES_PER_ELEMENT, bufferBytes, "features"),
-        bands: checkedLayout(this.handle.bands_ptr(), this.handle.bands_len(), Float32Array.BYTES_PER_ELEMENT, bufferBytes, "bands"),
-        amplitudes: checkedLayout(this.handle.amplitudes_ptr(), this.handle.amplitudes_len(), Float64Array.BYTES_PER_ELEMENT, bufferBytes, "amplitudes"),
-        db: checkedLayout(this.handle.db_ptr(), this.handle.db_len(), Float32Array.BYTES_PER_ELEMENT, bufferBytes, "db"),
+        input: checkedLayout(
+          this.handle.input_ptr(),
+          this.handle.input_len(),
+          Float32Array.BYTES_PER_ELEMENT,
+          bufferBytes,
+          "input",
+        ),
+        features: checkedLayout(
+          this.handle.features_ptr(),
+          this.handle.features_len(),
+          Float64Array.BYTES_PER_ELEMENT,
+          bufferBytes,
+          "features",
+        ),
+        bands: checkedLayout(
+          this.handle.bands_ptr(),
+          this.handle.bands_len(),
+          Float32Array.BYTES_PER_ELEMENT,
+          bufferBytes,
+          "bands",
+        ),
+        amplitudes: checkedLayout(
+          this.handle.amplitudes_ptr(),
+          this.handle.amplitudes_len(),
+          Float64Array.BYTES_PER_ELEMENT,
+          bufferBytes,
+          "amplitudes",
+        ),
+        db: checkedLayout(
+          this.handle.db_ptr(),
+          this.handle.db_len(),
+          Float32Array.BYTES_PER_ELEMENT,
+          bufferBytes,
+          "db",
+        ),
       };
       this.expectLength("input", channelCount * DSP_FRAME_SIZE);
       this.expectLength("features", DSP_FEATURE_COUNT);
@@ -66,13 +114,18 @@ export class WasmFrameBackend {
       this.expectLength("db", channelCount * DSP_BIN_COUNT);
       this.refreshViews();
     } catch (error) {
-      try { this.handle.free(); } catch { /* Preserve the binding-validation error. */ }
+      try {
+        this.handle.free();
+      } catch {
+        /* Preserve the binding-validation error. */
+      }
       throw error;
     }
   }
 
   private expectLength(key: BufferKey, expected: number) {
-    if (this.layouts[key].length !== expected) throw new RangeError(`The DSP ${key} buffer has an invalid length.`);
+    if (this.layouts[key].length !== expected)
+      throw new RangeError(`The DSP ${key} buffer has an invalid length.`);
   }
 
   private buffer() {
@@ -90,9 +143,17 @@ export class WasmFrameBackend {
       }
     }
     const input = new Float32Array(buffer, this.layouts.input.pointer, this.layouts.input.length);
-    const features = new Float64Array(buffer, this.layouts.features.pointer, this.layouts.features.length);
+    const features = new Float64Array(
+      buffer,
+      this.layouts.features.pointer,
+      this.layouts.features.length,
+    );
     const bands = new Float32Array(buffer, this.layouts.bands.pointer, this.layouts.bands.length);
-    const amplitudes = new Float64Array(buffer, this.layouts.amplitudes.pointer, this.layouts.amplitudes.length);
+    const amplitudes = new Float64Array(
+      buffer,
+      this.layouts.amplitudes.pointer,
+      this.layouts.amplitudes.length,
+    );
     const db = new Float32Array(buffer, this.layouts.db.pointer, this.layouts.db.length);
     const channels = Array.from({ length: this.channelCount }, (_, channel) => {
       const first = channel * DSP_BIN_COUNT;
@@ -106,7 +167,14 @@ export class WasmFrameBackend {
       return bands.subarray(first, first + DSP_BAND_COUNT);
     });
     this.memoryBuffer = buffer;
-    this.views = { input, features, bands, amplitudes, db, output: { features, channels, bands: bandChannels } };
+    this.views = {
+      input,
+      features,
+      bands,
+      amplitudes,
+      db,
+      output: { features, channels, bands: bandChannels },
+    };
     return this.views;
   }
 
@@ -123,8 +191,9 @@ export class WasmFrameBackend {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    try { this.handle.free(); }
-    finally {
+    try {
+      this.handle.free();
+    } finally {
       this.memoryBuffer = null;
       this.views = null;
     }

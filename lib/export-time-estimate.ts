@@ -81,66 +81,99 @@ type StoredHistory = {
 
 const monotonicNow = () => {
   try {
-    if (typeof performance !== "undefined" && Number.isFinite(performance.now())) return performance.now();
-  } catch { /* Fall back where performance is unavailable. */ }
+    if (typeof performance !== "undefined" && Number.isFinite(performance.now()))
+      return performance.now();
+  } catch {
+    /* Fall back where performance is unavailable. */
+  }
   return Date.now();
 };
 const DEFAULT_NOW = () => Date.now();
 
 function browserStorage(): TimingStorage | null {
-  try { return typeof localStorage === "undefined" ? null : localStorage; }
-  catch { return null; }
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
 }
 
 function finiteNonnegative(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
-function isBoolean(value: unknown): value is boolean { return typeof value === "boolean"; }
-function isText(value: unknown): value is string { return typeof value === "string" && value.length > 0 && value.length < 64; }
+function isBoolean(value: unknown): value is boolean {
+  return typeof value === "boolean";
+}
+function isText(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length < 64;
+}
 
 function validWorkload(value: unknown): value is ExportWorkload {
   if (!value || typeof value !== "object") return false;
   const workload = value as Record<string, unknown>;
-  return isText(workload.durationBucket) && isText(workload.analysisBucket)
-    && isText(workload.mode) && Number.isInteger(workload.ringLayers) && Number(workload.ringLayers) >= 0 && Number(workload.ringLayers) <= 4
-    && ["off", "low", "medium", "high"].includes(String(workload.spectrumReflectionTier))
-    && ["off", "low", "medium", "high"].includes(String(workload.glowTier))
-    && isText(workload.particleMode)
-    && ["off", "low", "medium", "high"].includes(String(workload.particleTier))
-    && isBoolean(workload.trails) && isText(workload.backdrop)
-    && isBoolean(workload.beatEffects) && isBoolean(workload.glitch)
-    && isBoolean(workload.dropEffects) && isBoolean(workload.subtitles)
-    && isBoolean(workload.logo) && isBoolean(workload.background)
-    && isBoolean(workload.videoOverlay) && isBoolean(workload.trackInfo)
-    && isBoolean(workload.reducedMotion);
+  return (
+    isText(workload.durationBucket) &&
+    isText(workload.analysisBucket) &&
+    isText(workload.mode) &&
+    Number.isInteger(workload.ringLayers) &&
+    Number(workload.ringLayers) >= 0 &&
+    Number(workload.ringLayers) <= 4 &&
+    ["off", "low", "medium", "high"].includes(String(workload.spectrumReflectionTier)) &&
+    ["off", "low", "medium", "high"].includes(String(workload.glowTier)) &&
+    isText(workload.particleMode) &&
+    ["off", "low", "medium", "high"].includes(String(workload.particleTier)) &&
+    isBoolean(workload.trails) &&
+    isText(workload.backdrop) &&
+    isBoolean(workload.beatEffects) &&
+    isBoolean(workload.glitch) &&
+    isBoolean(workload.dropEffects) &&
+    isBoolean(workload.subtitles) &&
+    isBoolean(workload.logo) &&
+    isBoolean(workload.background) &&
+    isBoolean(workload.videoOverlay) &&
+    isBoolean(workload.trackInfo) &&
+    isBoolean(workload.reducedMotion)
+  );
 }
 
 export function isValidTimingProfile(value: unknown): value is ExportTimingProfile {
   if (!value || typeof value !== "object") return false;
   const profile = value as Record<string, unknown>;
-  return profile.pipelineVersion === EXPORT_TIMING_PIPELINE_VERSION
-    && finiteNonnegative(profile.width) && profile.width > 0
-    && finiteNonnegative(profile.height) && profile.height > 0
-    && finiteNonnegative(profile.frameRate) && profile.frameRate > 0
-    && isBoolean(profile.videoCompression)
-    && finiteNonnegative(profile.videoQuality) && profile.videoQuality > 0 && profile.videoQuality <= 1
-    && (profile.sourceKind === "audio" || profile.sourceKind === "video")
-    && isBoolean(profile.preparedAudio)
-    && (profile.codec === "avc" || profile.codec === "vp9" || profile.codec === "vp8")
-    && isBoolean(profile.audioIncluded)
-    && validWorkload(profile.workload);
+  return (
+    profile.pipelineVersion === EXPORT_TIMING_PIPELINE_VERSION &&
+    finiteNonnegative(profile.width) &&
+    profile.width > 0 &&
+    finiteNonnegative(profile.height) &&
+    profile.height > 0 &&
+    finiteNonnegative(profile.frameRate) &&
+    profile.frameRate > 0 &&
+    isBoolean(profile.videoCompression) &&
+    finiteNonnegative(profile.videoQuality) &&
+    profile.videoQuality > 0 &&
+    profile.videoQuality <= 1 &&
+    (profile.sourceKind === "audio" || profile.sourceKind === "video") &&
+    isBoolean(profile.preparedAudio) &&
+    (profile.codec === "avc" || profile.codec === "vp9" || profile.codec === "vp8") &&
+    isBoolean(profile.audioIncluded) &&
+    validWorkload(profile.workload)
+  );
 }
 
 function validMeasurement(value: unknown): value is ExportTimingMeasurement {
   if (!value || typeof value !== "object") return false;
   const measurement = value as Record<string, unknown>;
-  return isValidTimingProfile(measurement.profile)
-    && Number.isInteger(measurement.frameCount) && Number(measurement.frameCount) > 0
-    && finiteNonnegative(measurement.preparationMs)
-    && finiteNonnegative(measurement.renderingMs) && measurement.renderingMs > 0
-    && finiteNonnegative(measurement.finalizationMs)
-    && finiteNonnegative(measurement.totalMs) && measurement.totalMs > 0;
+  return (
+    isValidTimingProfile(measurement.profile) &&
+    Number.isInteger(measurement.frameCount) &&
+    Number(measurement.frameCount) > 0 &&
+    finiteNonnegative(measurement.preparationMs) &&
+    finiteNonnegative(measurement.renderingMs) &&
+    measurement.renderingMs > 0 &&
+    finiteNonnegative(measurement.finalizationMs) &&
+    finiteNonnegative(measurement.totalMs) &&
+    measurement.totalMs > 0
+  );
 }
 
 function validRecord(value: unknown): value is StoredRecord {
@@ -153,11 +186,22 @@ function readRecords(storage: TimingStorage | null, now: number): StoredRecord[]
     const serialized = storage.getItem(EXPORT_TIMING_STORAGE_KEY);
     if (!serialized) return [];
     const parsed = JSON.parse(serialized) as Partial<StoredHistory>;
-    if (parsed.schemaVersion !== EXPORT_TIMING_SCHEMA_VERSION || parsed.pipelineVersion !== EXPORT_TIMING_PIPELINE_VERSION || !Array.isArray(parsed.records)) return [];
-    return parsed.records.filter(validRecord)
-      .filter(record => record.completedAt <= now && now - record.completedAt <= EXPORT_TIMING_MAX_AGE_MS)
+    if (
+      parsed.schemaVersion !== EXPORT_TIMING_SCHEMA_VERSION ||
+      parsed.pipelineVersion !== EXPORT_TIMING_PIPELINE_VERSION ||
+      !Array.isArray(parsed.records)
+    )
+      return [];
+    return parsed.records
+      .filter(validRecord)
+      .filter(
+        (record) =>
+          record.completedAt <= now && now - record.completedAt <= EXPORT_TIMING_MAX_AGE_MS,
+      )
       .slice(-EXPORT_TIMING_MAX_RECORDS);
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 function getProfileStorageKey(profile: ExportTimingProfile) {
@@ -172,7 +216,9 @@ function getBaseStorageKey(profile: ExportTimingProfile) {
 }
 
 function median(values: number[]) {
-  const ordered = values.filter(value => Number.isFinite(value) && value >= 0).sort((a, b) => a - b);
+  const ordered = values
+    .filter((value) => Number.isFinite(value) && value >= 0)
+    .sort((a, b) => a - b);
   if (!ordered.length) return null;
   const center = Math.floor(ordered.length / 2);
   return ordered.length % 2 ? ordered[center] : (ordered[center - 1] + ordered[center]) / 2;
@@ -181,10 +227,18 @@ function median(values: number[]) {
 function profileSummary(records: StoredRecord[]) {
   const recent = records.slice(-5);
   if (!recent.length) return null;
-  const secondsPerFrame = median(recent.map(record => record.renderingMs / record.frameCount / 1000));
-  const preparationSeconds = median(recent.map(record => record.preparationMs / 1000));
-  const finalizationSeconds = median(recent.map(record => record.finalizationMs / 1000));
-  if (secondsPerFrame === null || !(secondsPerFrame > 0) || preparationSeconds === null || finalizationSeconds === null) return null;
+  const secondsPerFrame = median(
+    recent.map((record) => record.renderingMs / record.frameCount / 1000),
+  );
+  const preparationSeconds = median(recent.map((record) => record.preparationMs / 1000));
+  const finalizationSeconds = median(recent.map((record) => record.finalizationMs / 1000));
+  if (
+    secondsPerFrame === null ||
+    !(secondsPerFrame > 0) ||
+    preparationSeconds === null ||
+    finalizationSeconds === null
+  )
+    return null;
   return { secondsPerFrame, preparationSeconds, finalizationSeconds };
 }
 
@@ -192,12 +246,14 @@ function rangeAround(seconds: number, lowerFactor = 0.75, upperFactor = 1.4): Ti
   if (!finiteNonnegative(seconds) || seconds <= 0) return null;
   const minSeconds = Math.max(1, seconds * lowerFactor);
   const maxSeconds = Math.max(minSeconds + 1, seconds * upperFactor);
-  return Number.isFinite(minSeconds) && Number.isFinite(maxSeconds) ? { minSeconds, maxSeconds } : null;
+  return Number.isFinite(minSeconds) && Number.isFinite(maxSeconds)
+    ? { minSeconds, maxSeconds }
+    : null;
 }
 
 function exactRecords(profile: ExportTimingProfile, storage: TimingStorage | null, now: number) {
   const key = getProfileStorageKey(profile);
-  return readRecords(storage, now).filter(record => getProfileStorageKey(record.profile) === key);
+  return readRecords(storage, now).filter((record) => getProfileStorageKey(record.profile) === key);
 }
 
 /** A previous-run estimate for an exact profile, including separate end phases. */
@@ -207,14 +263,15 @@ export function getHistoricalProfileEstimate(
   storage: TimingStorage | null = browserStorage(),
   now = DEFAULT_NOW(),
 ) {
-  if (!isValidTimingProfile(profile) || !Number.isInteger(frameCount) || frameCount <= 0) return null;
+  if (!isValidTimingProfile(profile) || !Number.isInteger(frameCount) || frameCount <= 0)
+    return null;
   const summary = profileSummary(exactRecords(profile, storage, now));
   if (!summary) return null;
-  const totalSeconds = summary.preparationSeconds + summary.secondsPerFrame * frameCount + summary.finalizationSeconds;
+  const totalSeconds =
+    summary.preparationSeconds + summary.secondsPerFrame * frameCount + summary.finalizationSeconds;
   const totalRange = rangeAround(totalSeconds);
-  const finalizationRange = summary.finalizationSeconds > 0
-    ? rangeAround(summary.finalizationSeconds, 0.7, 1.5)
-    : null;
+  const finalizationRange =
+    summary.finalizationSeconds > 0 ? rangeAround(summary.finalizationSeconds, 0.7, 1.5) : null;
   if (!totalRange || !finalizationRange) return null;
   return { totalRange, secondsPerFrame: summary.secondsPerFrame, finalizationRange };
 }
@@ -230,25 +287,38 @@ export function getPreExportEstimate(
   now = DEFAULT_NOW(),
 ): TimeRange | null {
   if (!isValidBaseProfile(base) || !Number.isInteger(frameCount) || frameCount <= 0) return null;
-  const candidates = readRecords(storage, now).filter(record => getBaseStorageKey(record.profile) === JSON.stringify(base));
+  const candidates = readRecords(storage, now).filter(
+    (record) => getBaseStorageKey(record.profile) === JSON.stringify(base),
+  );
   const uniqueProfiles = new Map<string, ExportTimingProfile>();
-  for (const record of candidates) uniqueProfiles.set(getProfileStorageKey(record.profile), record.profile);
+  for (const record of candidates)
+    uniqueProfiles.set(getProfileStorageKey(record.profile), record.profile);
   if (uniqueProfiles.size !== 1) return null;
-  return getHistoricalProfileEstimate([...uniqueProfiles.values()][0], frameCount, storage, now)?.totalRange ?? null;
+  return (
+    getHistoricalProfileEstimate([...uniqueProfiles.values()][0], frameCount, storage, now)
+      ?.totalRange ?? null
+  );
 }
 
 function isValidBaseProfile(value: unknown): value is ExportTimingProfileBase {
   if (!value || typeof value !== "object") return false;
   const base = value as Record<string, unknown>;
-  return base.pipelineVersion === EXPORT_TIMING_PIPELINE_VERSION
-    && finiteNonnegative(base.width) && base.width > 0
-    && finiteNonnegative(base.height) && base.height > 0
-    && finiteNonnegative(base.frameRate) && base.frameRate > 0
-    && isBoolean(base.videoCompression)
-    && finiteNonnegative(base.videoQuality) && base.videoQuality > 0 && base.videoQuality <= 1
-    && (base.sourceKind === "audio" || base.sourceKind === "video")
-    && isBoolean(base.preparedAudio)
-    && validWorkload(base.workload);
+  return (
+    base.pipelineVersion === EXPORT_TIMING_PIPELINE_VERSION &&
+    finiteNonnegative(base.width) &&
+    base.width > 0 &&
+    finiteNonnegative(base.height) &&
+    base.height > 0 &&
+    finiteNonnegative(base.frameRate) &&
+    base.frameRate > 0 &&
+    isBoolean(base.videoCompression) &&
+    finiteNonnegative(base.videoQuality) &&
+    base.videoQuality > 0 &&
+    base.videoQuality <= 1 &&
+    (base.sourceKind === "audio" || base.sourceKind === "video") &&
+    isBoolean(base.preparedAudio) &&
+    validWorkload(base.workload)
+  );
 }
 
 /** Storage is best effort: private browsing and quota errors cannot fail export. */
@@ -262,13 +332,18 @@ export function recordSuccessfulExport(
     const records = readRecords(storage, now);
     records.push({ ...measurement, completedAt: now });
     const bounded = records.slice(-EXPORT_TIMING_MAX_RECORDS);
-    storage.setItem(EXPORT_TIMING_STORAGE_KEY, JSON.stringify({
-      schemaVersion: EXPORT_TIMING_SCHEMA_VERSION,
-      pipelineVersion: EXPORT_TIMING_PIPELINE_VERSION,
-      records: bounded,
-    } satisfies StoredHistory));
+    storage.setItem(
+      EXPORT_TIMING_STORAGE_KEY,
+      JSON.stringify({
+        schemaVersion: EXPORT_TIMING_SCHEMA_VERSION,
+        pipelineVersion: EXPORT_TIMING_PIPELINE_VERSION,
+        records: bounded,
+      } satisfies StoredHistory),
+    );
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 /** Frame-throughput estimate fed only by completed encoder submissions. */
@@ -280,7 +355,12 @@ export class LiveFrameEstimator {
   private secondsPerFrame: number | null = null;
 
   observe(completedFrames: number, frameLoopElapsedMs: number) {
-    if (!Number.isInteger(completedFrames) || completedFrames <= 0 || !finiteNonnegative(frameLoopElapsedMs)) return;
+    if (
+      !Number.isInteger(completedFrames) ||
+      completedFrames <= 0 ||
+      !finiteNonnegative(frameLoopElapsedMs)
+    )
+      return;
     if (completedFrames < this.priorFrames || frameLoopElapsedMs < this.priorElapsedMs) return;
     const frameDelta = completedFrames - this.priorFrames;
     const elapsedDeltaMs = frameLoopElapsedMs - this.priorElapsedMs;
@@ -291,7 +371,10 @@ export class LiveFrameEstimator {
     if (this.secondsPerFrame === null) this.secondsPerFrame = sample;
     else {
       // Limit one noisy window while still following sustained slowdown quickly.
-      const bounded = Math.min(this.secondsPerFrame * 2, Math.max(this.secondsPerFrame * 0.5, sample));
+      const bounded = Math.min(
+        this.secondsPerFrame * 2,
+        Math.max(this.secondsPerFrame * 0.5, sample),
+      );
       this.secondsPerFrame = this.secondsPerFrame * 0.65 + bounded * 0.35;
     }
     this.priorFrames = completedFrames;
@@ -304,24 +387,39 @@ export class LiveFrameEstimator {
     return this.validSamples >= 3 && this.validElapsedMs >= 1000 && this.secondsPerFrame !== null;
   }
 
-  get rate() { return this.warmedUp ? this.secondsPerFrame : null; }
+  get rate() {
+    return this.warmedUp ? this.secondsPerFrame : null;
+  }
 
   remaining(
     totalFrames: number,
     completedFrames: number,
     finalizationRange: TimeRange | null = null,
   ): RemainingEstimate | null {
-    if (!this.warmedUp || !Number.isInteger(totalFrames) || totalFrames <= 0
-      || !Number.isInteger(completedFrames) || completedFrames < 0 || completedFrames > totalFrames
-      || this.secondsPerFrame === null) return null;
+    if (
+      !this.warmedUp ||
+      !Number.isInteger(totalFrames) ||
+      totalFrames <= 0 ||
+      !Number.isInteger(completedFrames) ||
+      completedFrames < 0 ||
+      completedFrames > totalFrames ||
+      this.secondsPerFrame === null
+    )
+      return null;
     const framesLeft = totalFrames - completedFrames;
     if (framesLeft <= 0) return null;
     const center = framesLeft * this.secondsPerFrame;
     if (!Number.isFinite(center) || center <= 0) return null;
-    const renderRange = { minSeconds: Math.max(1, center * 0.8), maxSeconds: Math.max(2, center * 1.35) };
-    if (!finalizationRange || !finiteNonnegative(finalizationRange.minSeconds)
-      || !finiteNonnegative(finalizationRange.maxSeconds)
-      || finalizationRange.maxSeconds < finalizationRange.minSeconds) {
+    const renderRange = {
+      minSeconds: Math.max(1, center * 0.8),
+      maxSeconds: Math.max(2, center * 1.35),
+    };
+    if (
+      !finalizationRange ||
+      !finiteNonnegative(finalizationRange.minSeconds) ||
+      !finiteNonnegative(finalizationRange.maxSeconds) ||
+      finalizationRange.maxSeconds < finalizationRange.minSeconds
+    ) {
       return { range: renderRange, scope: "rendering" };
     }
     return {
@@ -336,22 +434,30 @@ export class LiveFrameEstimator {
 
 /** Track actual phase durations from click (including lazy import) to ready Blob. */
 export class ExportRunClock {
-  private activePhase: "Preparing media" | "Rendering frames" | "Finishing file" = "Preparing media";
+  private activePhase: "Preparing media" | "Rendering frames" | "Finishing file" =
+    "Preparing media";
   private phaseStartedAt: number;
   private durations = { preparationMs: 0, renderingMs: 0, finalizationMs: 0 };
 
   private readonly startedAt: number;
 
-  constructor(startedAt: number, private readonly now: () => number = monotonicNow) {
+  constructor(
+    startedAt: number,
+    private readonly now: () => number = monotonicNow,
+  ) {
     const current = this.now();
-    this.startedAt = Number.isFinite(startedAt) ? startedAt : Number.isFinite(current) ? current : Date.now();
+    this.startedAt = Number.isFinite(startedAt)
+      ? startedAt
+      : Number.isFinite(current)
+        ? current
+        : Date.now();
     // The job start comes before lazy module loading, so preparation includes it.
     this.phaseStartedAt = this.startedAt;
   }
 
   private safeNow() {
     const value = this.now();
-    return Number.isFinite(value) ? value : this.phaseStartedAt ?? this.startedAt;
+    return Number.isFinite(value) ? value : (this.phaseStartedAt ?? this.startedAt);
   }
 
   setPhase(phase: "Preparing media" | "Rendering frames" | "Finishing file") {
@@ -364,8 +470,12 @@ export class ExportRunClock {
   private closePhase(at: number) {
     const elapsed = at - this.phaseStartedAt;
     if (!Number.isFinite(elapsed) || elapsed < 0) return;
-    const key = this.activePhase === "Preparing media" ? "preparationMs"
-      : this.activePhase === "Rendering frames" ? "renderingMs" : "finalizationMs";
+    const key =
+      this.activePhase === "Preparing media"
+        ? "preparationMs"
+        : this.activePhase === "Rendering frames"
+          ? "renderingMs"
+          : "finalizationMs";
     this.durations[key] += elapsed;
   }
 
@@ -415,17 +525,34 @@ export function makeExportWorkload(input: {
   reducedMotion: boolean;
 }): ExportWorkload {
   const count = Number.isFinite(input.particleCount) ? Math.max(0, input.particleCount) : 0;
-  const particleTier: ExportWorkload["particleTier"] = !input.particles || count === 0 ? "off"
-    : count <= 100 ? "low" : count <= 200 ? "medium" : "high";
+  const particleTier: ExportWorkload["particleTier"] =
+    !input.particles || count === 0
+      ? "off"
+      : count <= 100
+        ? "low"
+        : count <= 200
+          ? "medium"
+          : "high";
   const glow = Number.isFinite(input.glow) ? Math.max(0, input.glow) : 0;
-  const reflection = Number.isFinite(input.spectrumReflection) ? Math.max(0, input.spectrumReflection) : 0;
+  const reflection = Number.isFinite(input.spectrumReflection)
+    ? Math.max(0, input.spectrumReflection)
+    : 0;
   return {
     durationBucket: timingDurationBucket(input.durationSeconds),
     analysisBucket: input.preparedAudio ? "prepared" : timingDurationBucket(input.analysisSeconds),
     mode: input.mode,
-    ringLayers: input.mode === "ring" && Number.isInteger(input.ringLayers) ? Math.max(1, Math.min(4, input.ringLayers)) : 0,
-    spectrumReflectionTier: input.mode !== "spectrum" || reflection === 0 ? "off"
-      : reflection <= 33 ? "low" : reflection <= 66 ? "medium" : "high",
+    ringLayers:
+      input.mode === "ring" && Number.isInteger(input.ringLayers)
+        ? Math.max(1, Math.min(4, input.ringLayers))
+        : 0,
+    spectrumReflectionTier:
+      input.mode !== "spectrum" || reflection === 0
+        ? "off"
+        : reflection <= 33
+          ? "low"
+          : reflection <= 66
+            ? "medium"
+            : "high",
     glowTier: glow === 0 ? "off" : glow <= 0.75 ? "low" : glow <= 1.5 ? "medium" : "high",
     particleMode: input.particleMode,
     particleTier,

@@ -4,7 +4,10 @@ import type { MediaSessionSnapshot } from "./media-session";
 import { createAudioReactiveState, soundResponse, type AudioReactiveState } from "./visualizer";
 import type { VisualSettings } from "./visual-settings-model";
 
-type Snapshot = Pick<MediaSessionSnapshot, "generation" | "media" | "duration" | "sound" | "features">;
+type Snapshot = Pick<
+  MediaSessionSnapshot,
+  "generation" | "media" | "duration" | "sound" | "features"
+>;
 
 export type PreviewWarmResult = {
   state: AudioReactiveState;
@@ -16,8 +19,11 @@ export const responseSettingsKey = (settings: VisualSettings) =>
   `${settings.sensitivity}|${settings.quietThreshold}|${settings.bassBoost}|${settings.responseStyle}`;
 
 function yieldToBrowser(signal: AbortSignal) {
-  return new Promise<void>(resolve => {
-    if (signal.aborted) { resolve(); return; }
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
     const finish = () => {
       clearTimeout(timer);
       signal.removeEventListener("abort", finish);
@@ -40,8 +46,12 @@ export function advancePreviewResponse(
   if (time <= fromTime) return fromTime;
   const envelopes = snapshot.sound?.envelopes ?? [];
   const silence: SoundEnvelope = {
-    rms: 0, rmsDb: -160, bassDb: -160, middleDb: -160, highDb: -160,
-    bands: (envelopes[0]?.bands ?? []).map(band => new Float32Array(band.length)),
+    rms: 0,
+    rmsDb: -160,
+    bassDb: -160,
+    middleDb: -160,
+    highDb: -160,
+    bands: (envelopes[0]?.bands ?? []).map((band) => new Float32Array(band.length)),
   };
   let lastTime = fromTime;
   const finalFrame = Math.floor(time * ANALYSIS_FPS);
@@ -73,7 +83,10 @@ export function createPreviewResponseWarmer(options: {
     active = null;
   };
 
-  const warm = async (requestedTime: number, generation: number): Promise<PreviewWarmResult | null> => {
+  const warm = async (
+    requestedTime: number,
+    generation: number,
+  ): Promise<PreviewWarmResult | null> => {
     cancel();
     const currentRequest = request;
     const snapshot = options.getSnapshot();
@@ -87,11 +100,13 @@ export function createPreviewResponseWarmer(options: {
     active = controller;
     const isCurrent = () => {
       const latest = options.getSnapshot();
-      return currentRequest === request
-        && !controller.signal.aborted
-        && latest.generation === generation
-        && latest.media === media
-        && responseSettingsKey(options.getSettings()) === key;
+      return (
+        currentRequest === request &&
+        !controller.signal.aborted &&
+        latest.generation === generation &&
+        latest.media === media &&
+        responseSettingsKey(options.getSettings()) === key
+      );
     };
 
     const envelopes: SoundEnvelope[] = snapshot.sound.envelopes;
@@ -102,15 +117,23 @@ export function createPreviewResponseWarmer(options: {
     if (envelopes.length && count <= envelopes.length + 10 * ANALYSIS_FPS) {
       lastTime = count ? (count - 1) / ANALYSIS_FPS : 0;
       const silence: SoundEnvelope = {
-        rms: 0, rmsDb: -160, bassDb: -160, middleDb: -160, highDb: -160,
-        bands: (envelopes[0]?.bands ?? []).map(band => new Float32Array(band.length)),
+        rms: 0,
+        rmsDb: -160,
+        bassDb: -160,
+        middleDb: -160,
+        highDb: -160,
+        bands: (envelopes[0]?.bands ?? []).map((band) => new Float32Array(band.length)),
       };
       for (let start = 0; start < count; start += chunkSize) {
         if (!isCurrent()) return null;
         const end = Math.min(count, start + chunkSize);
         for (let index = start; index < end; index++) {
-          soundResponse(envelopes[index] ?? silence, settings, state,
-            index ? 1000 / ANALYSIS_FPS : 0);
+          soundResponse(
+            envelopes[index] ?? silence,
+            settings,
+            state,
+            index ? 1000 / ANALYSIS_FPS : 0,
+          );
         }
         if (end < count) {
           await (options.yieldControl ?? yieldToBrowser)(controller.signal);

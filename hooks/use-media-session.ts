@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MediaSessionOwner, type MediaSessionEvent, type MediaSessionSnapshot } from "@/lib/media-session";
+import {
+  MediaSessionOwner,
+  type MediaSessionEvent,
+  type MediaSessionSnapshot,
+} from "@/lib/media-session";
 import type { ProjectContent } from "@/lib/project-file";
 
 export type MediaCommitted = {
@@ -18,7 +22,10 @@ export type UseMediaSessionOptions = {
   initialLoop?: boolean;
   onEvent?: (event: MediaSessionEvent) => void;
   onCommitted?: (commit: MediaCommitted) => void;
-  onError?: (failure: { operation: "load" | "play" | "preview" | "logo" | "background"; error: Error }) => void;
+  onError?: (failure: {
+    operation: "load" | "play" | "preview" | "logo" | "background";
+    error: Error;
+  }) => void;
   onNotice?: (message: string) => void;
   onRequestFile?: () => void;
 };
@@ -37,7 +44,11 @@ export type UseMediaSessionResult = {
   backgroundUrl: string | null;
   generation: number;
   requestGeneration: number;
-  loadFile: (next: File | undefined, savedRange?: [number, number], project?: ProjectContent) => Promise<boolean>;
+  loadFile: (
+    next: File | undefined,
+    savedRange?: [number, number],
+    project?: ProjectContent,
+  ) => Promise<boolean>;
   seek: (time: number) => void;
   togglePlay: () => Promise<boolean>;
   previewRange: (range: [number, number]) => Promise<boolean>;
@@ -83,7 +94,12 @@ export function useMediaSession(options: UseMediaSessionOptions = {}): UseMediaS
           break;
         case "commit":
           setPosition(0);
-          latestOptions.current.onCommitted?.({ project: event.project, next: event.next, range: event.range, snapshot: event.snapshot });
+          latestOptions.current.onCommitted?.({
+            project: event.project,
+            next: event.next,
+            range: event.range,
+            snapshot: event.snapshot,
+          });
           break;
         case "seek":
         case "position":
@@ -116,8 +132,11 @@ export function useMediaSession(options: UseMediaSessionOptions = {}): UseMediaS
     };
   }, [session]);
 
-  const loadFile = useCallback((next: File | undefined, savedRange?: [number, number], project?: ProjectContent) =>
-    session.load(next, { range: savedRange, project }), [session]);
+  const loadFile = useCallback(
+    (next: File | undefined, savedRange?: [number, number], project?: ProjectContent) =>
+      session.load(next, { range: savedRange, project }),
+    [session],
+  );
   const seek = useCallback((time: number) => session.seek(time), [session]);
   const togglePlay = useCallback(() => {
     if (!session.snapshot.media) {
@@ -126,15 +145,25 @@ export function useMediaSession(options: UseMediaSessionOptions = {}): UseMediaS
     }
     return session.togglePlay();
   }, [session]);
-  const previewRange = useCallback((range: [number, number]) => session.previewRange(range), [session]);
+  const previewRange = useCallback(
+    (range: [number, number]) => session.previewRange(range),
+    [session],
+  );
   const pollPosition = useCallback((force = false) => session.pollPosition(force), [session]);
-  const changeLogo = useCallback((file: File | null) => session.changeImage("logo", file), [session]);
-  const changeBackground = useCallback((file: File | null) => session.changeImage("background", file), [session]);
+  const changeLogo = useCallback(
+    (file: File | null) => session.changeImage("logo", file),
+    [session],
+  );
+  const changeBackground = useCallback(
+    (file: File | null) => session.changeImage("background", file),
+    [session],
+  );
   const setVolume = useCallback((volume: number) => session.setVolume(volume), [session]);
   const setLoop = useCallback((looping: boolean) => session.setLoop(looping), [session]);
 
   return {
-    session, snapshot,
+    session,
+    snapshot,
     file: snapshot.file,
     duration: snapshot.duration,
     position,
@@ -146,6 +175,14 @@ export function useMediaSession(options: UseMediaSessionOptions = {}): UseMediaS
     backgroundUrl: snapshot.background?.url ?? null,
     generation: snapshot.generation,
     requestGeneration: session.requestGeneration,
-    loadFile, seek, togglePlay, previewRange, pollPosition, changeLogo, changeBackground, setVolume, setLoop,
+    loadFile,
+    seek,
+    togglePlay,
+    previewRange,
+    pollPosition,
+    changeLogo,
+    changeBackground,
+    setVolume,
+    setLoop,
   };
 }

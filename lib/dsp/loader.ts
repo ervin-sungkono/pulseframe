@@ -20,10 +20,12 @@ function isBrowserRuntime() {
     location?: { href?: string };
     postMessage?: (...args: unknown[]) => void;
   };
-  return typeof document === "undefined" &&
+  return (
+    typeof document === "undefined" &&
     typeof workerGlobal.location?.href === "string" &&
     typeof workerGlobal.postMessage === "function" &&
-    /WorkerGlobalScope$/.test(workerGlobal.constructor?.name ?? "");
+    /WorkerGlobalScope$/.test(workerGlobal.constructor?.name ?? "")
+  );
 }
 
 function runtimeBaseUrl() {
@@ -37,7 +39,7 @@ async function loadModule(): Promise<DspModule> {
   const wasmUrl = new URL(WASM_URL, base);
   moduleUrl.searchParams.set("v", DSP_CORE_VERSION);
   wasmUrl.searchParams.set("v", DSP_CORE_VERSION);
-  const imported = await import(/* @vite-ignore */ moduleUrl.href) as DspModuleBindings;
+  const imported = (await import(/* @vite-ignore */ moduleUrl.href)) as DspModuleBindings;
   if (typeof imported.default !== "function" || typeof imported.FrameDsp !== "function") {
     throw new Error("The DSP WASM module is missing required bindings.");
   }
@@ -60,13 +62,17 @@ async function initializeOnce() {
     const dspModule = await Promise.race([
       loadModule(),
       new Promise<never>((_, reject) => {
-        timeout = setTimeout(() => reject(new Error("The DSP WASM module did not initialize in time.")), INIT_TIMEOUT_MS);
+        timeout = setTimeout(
+          () => reject(new Error("The DSP WASM module did not initialize in time.")),
+          INIT_TIMEOUT_MS,
+        );
       }),
     ]);
     initializedModule = dspModule;
     return true;
   } catch (caught) {
-    initializationError = caught instanceof Error ? caught : new Error("The DSP WASM module could not be initialized.");
+    initializationError =
+      caught instanceof Error ? caught : new Error("The DSP WASM module could not be initialized.");
     return false;
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);
@@ -74,14 +80,17 @@ async function initializeOnce() {
 }
 
 /** Internal rollback/benchmark switch; never stored in projects or exposed as a UI setting. */
-export function getDspBackendPreference(): 'auto' | 'js' {
-  try { return new URL(globalThis.location.href).searchParams.get('dsp') === 'js' ? 'js' : 'auto'; }
-  catch { return 'auto'; }
+export function getDspBackendPreference(): "auto" | "js" {
+  try {
+    return new URL(globalThis.location.href).searchParams.get("dsp") === "js" ? "js" : "auto";
+  } catch {
+    return "auto";
+  }
 }
 
 /** Initialize the browser/worker WASM bindings once; callers can continue with JS when it fails. */
 export function initializeDsp(): Promise<boolean> {
-  if (getDspBackendPreference() === 'js') return Promise.resolve(false);
+  if (getDspBackendPreference() === "js") return Promise.resolve(false);
   if (initializedModule) return Promise.resolve(true);
   if (!initialization) initialization = initializeOnce();
   return initialization;

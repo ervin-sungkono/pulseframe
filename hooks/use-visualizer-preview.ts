@@ -4,19 +4,36 @@ import { useCallback, useEffect, useRef, type RefObject } from "react";
 import { audibleMediaTime, dropEnvelope, type SoundFrame } from "@/lib/audio-features";
 import { ANALYSIS_FPS, ANALYSIS_SIZE } from "@/lib/audio-analysis-config";
 import { exportDimensions, type ExportAspect } from "@/lib/export-settings";
-import type { MediaSessionOwner, MediaSessionEvent, MediaSessionSnapshot } from "@/lib/media-session";
-import { advancePreviewResponse, createPreviewResponseWarmer, responseSettingsKey, type PreviewWarmResult } from "@/lib/preview-state";
+import type {
+  MediaSessionOwner,
+  MediaSessionEvent,
+  MediaSessionSnapshot,
+} from "@/lib/media-session";
+import {
+  advancePreviewResponse,
+  createPreviewResponseWarmer,
+  responseSettingsKey,
+  type PreviewWarmResult,
+} from "@/lib/preview-state";
 import type { SubtitleCue } from "@/lib/subtitles";
-import { createAudioReactiveState, drawVisualization, makeParticles, soundResponse, type AudioReactiveState, type Particle } from "@/lib/visualizer";
+import {
+  createAudioReactiveState,
+  drawVisualization,
+  makeParticles,
+  soundResponse,
+  type AudioReactiveState,
+  type Particle,
+} from "@/lib/visualizer";
 import type { VisualSettings } from "@/lib/visual-settings-model";
 
-const previewDimensions = (format: ExportAspect) => exportDimensions(format, format === "square" ? 1080 : 720);
+const previewDimensions = (format: ExportAspect) =>
+  exportDimensions(format, format === "square" ? 1080 : 720);
 
 function cloneAudioState(state: AudioReactiveState): AudioReactiveState {
   return {
     ...state,
-    bands: state.bands.map(channel => new Float32Array(channel)),
-    ringBands: state.ringBands.map(layer => layer.map(channel => new Float32Array(channel))),
+    bands: state.bands.map((channel) => new Float32Array(channel)),
+    ringBands: state.ringBands.map((layer) => layer.map((channel) => new Float32Array(channel))),
   };
 }
 
@@ -33,7 +50,14 @@ export type UseVisualizerPreviewOptions = {
 
 /** Owns the display-only visualization loop and a full-size still-frame capture. */
 export function useVisualizerPreview({
-  session, canvasRef, settings, subtitles, format, lockedRef, onError, onNotice,
+  session,
+  canvasRef,
+  settings,
+  subtitles,
+  format,
+  lockedRef,
+  onError,
+  onNotice,
 }: UseVisualizerPreviewOptions) {
   const settingsRef = useRef(settings);
   const subtitlesRef = useRef(subtitles);
@@ -50,7 +74,12 @@ export function useVisualizerPreview({
   const dropRef = useRef(0);
   const lastAudioRef = useRef(0);
   const requestRef = useRef(0);
-  const pendingWarmRef = useRef<{ time: number; generation: number; media: HTMLMediaElement; request: number } | null>(null);
+  const pendingWarmRef = useRef<{
+    time: number;
+    generation: number;
+    media: HTMLMediaElement;
+    request: number;
+  } | null>(null);
   const responseCacheRef = useRef(new Map<string, AudioReactiveState>());
   const responseWarmerRef = useRef<{
     warm: (time: number, generation: number) => Promise<PreviewWarmResult | null>;
@@ -61,11 +90,15 @@ export function useVisualizerPreview({
     const warmer = createPreviewResponseWarmer({
       getSnapshot: () => session.snapshot,
       getSettings: () => settingsRef.current,
-      apply: result => {
+      apply: (result) => {
         const current = session.snapshot;
         let time = result.time;
         if (current.generation === result.generation && current.media && !current.media.paused) {
-          const audibleTime = Math.floor(audibleMediaTime(current.media, current.audioContext, performance.now()) * ANALYSIS_FPS) / ANALYSIS_FPS;
+          const audibleTime =
+            Math.floor(
+              audibleMediaTime(current.media, current.audioContext, performance.now()) *
+                ANALYSIS_FPS,
+            ) / ANALYSIS_FPS;
           time = Math.max(result.time, audibleTime);
           if (current.sound && time > result.time) {
             advancePreviewResponse(result.state, current, settingsRef.current, result.time, time);
@@ -97,71 +130,79 @@ export function useVisualizerPreview({
     responseWarmerRef.current?.cancel();
   }, []);
 
-  const queueWarm = useCallback((requestedTime: number, generation: number) => {
-    cancelWarm();
-    const request = requestRef.current;
-    const snapshot = session.snapshot;
-    const media = snapshot?.media;
-    if (!snapshot || !media || snapshot.generation !== generation) return;
+  const queueWarm = useCallback(
+    (requestedTime: number, generation: number) => {
+      cancelWarm();
+      const request = requestRef.current;
+      const snapshot = session.snapshot;
+      const media = snapshot?.media;
+      if (!snapshot || !media || snapshot.generation !== generation) return;
 
-    const time = Math.max(0, Math.min(snapshot.duration, requestedTime));
-    const settingsAtStart = settingsRef.current;
-    const responseKey = responseSettingsKey(settingsAtStart);
-    const cacheKey = `${generation}:${Math.round(time * ANALYSIS_FPS)}:${responseKey}`;
-    pendingWarmRef.current = { time, generation, media, request };
-    const isCurrent = () => {
-      const latest = session.snapshot;
-      return requestRef.current === request
-        && latest?.generation === generation
-        && latest.media === media
-        && responseSettingsKey(settingsRef.current) === responseKey;
-    };
+      const time = Math.max(0, Math.min(snapshot.duration, requestedTime));
+      const settingsAtStart = settingsRef.current;
+      const responseKey = responseSettingsKey(settingsAtStart);
+      const cacheKey = `${generation}:${Math.round(time * ANALYSIS_FPS)}:${responseKey}`;
+      pendingWarmRef.current = { time, generation, media, request };
+      const isCurrent = () => {
+        const latest = session.snapshot;
+        return (
+          requestRef.current === request &&
+          latest?.generation === generation &&
+          latest.media === media &&
+          responseSettingsKey(settingsRef.current) === responseKey
+        );
+      };
 
-    const sound = snapshot.sound;
+      const sound = snapshot.sound;
 
-    if (sound) {
-      const cached = responseCacheRef.current.get(cacheKey);
-      if (cached) {
-        if (isCurrent()) {
-          // Rendering advances its state in place, so cached history always
-          // gets a private copy before it becomes the active response state.
-          responseCacheRef.current.delete(cacheKey);
-          responseCacheRef.current.set(cacheKey, cached);
-          audioStateRef.current = cloneAudioState(cached);
-          lastAudioRef.current = time;
-          pendingWarmRef.current = null;
+      if (sound) {
+        const cached = responseCacheRef.current.get(cacheKey);
+        if (cached) {
+          if (isCurrent()) {
+            // Rendering advances its state in place, so cached history always
+            // gets a private copy before it becomes the active response state.
+            responseCacheRef.current.delete(cacheKey);
+            responseCacheRef.current.set(cacheKey, cached);
+            audioStateRef.current = cloneAudioState(cached);
+            lastAudioRef.current = time;
+            pendingWarmRef.current = null;
+          }
+          return;
         }
+      }
+
+      // Live analysis has no retained history. Match the old paused-settings path
+      // by restarting from the held frame; full PCM audio is replayed below.
+      if (!sound) {
+        const state = createAudioReactiveState();
+        const frame = soundFrameRef.current;
+        if (frame) soundResponse(frame, settingsAtStart, state, 1000);
+        if (!isCurrent()) return;
+        audioStateRef.current = state;
+        lastAudioRef.current = time;
+        pendingWarmRef.current = null;
         return;
       }
-    }
-
-    // Live analysis has no retained history. Match the old paused-settings path
-    // by restarting from the held frame; full PCM audio is replayed below.
-    if (!sound) {
-      const state = createAudioReactiveState();
-      const frame = soundFrameRef.current;
-      if (frame) soundResponse(frame, settingsAtStart, state, 1000);
-      if (!isCurrent()) return;
-      audioStateRef.current = state;
-      lastAudioRef.current = time;
-      pendingWarmRef.current = null;
-      return;
-    }
-    const warmer = responseWarmerRef.current;
-    if (!warmer) { pendingWarmRef.current = null; return; }
-    void warmer.warm(time, generation).then(result => {
-      if (result) {
-        const appliedCacheKey = `${generation}:${Math.round(lastAudioRef.current * ANALYSIS_FPS)}:${responseKey}`;
-        responseCacheRef.current.set(appliedCacheKey, cloneAudioState(result.state));
-        if (responseCacheRef.current.size > 8) {
-          const oldest = responseCacheRef.current.keys().next().value;
-          if (oldest !== undefined) responseCacheRef.current.delete(oldest);
-        }
-      } else if (pendingWarmRef.current?.request === request) {
+      const warmer = responseWarmerRef.current;
+      if (!warmer) {
         pendingWarmRef.current = null;
+        return;
       }
-    });
-  }, [cancelWarm, session]);
+      void warmer.warm(time, generation).then((result) => {
+        if (result) {
+          const appliedCacheKey = `${generation}:${Math.round(lastAudioRef.current * ANALYSIS_FPS)}:${responseKey}`;
+          responseCacheRef.current.set(appliedCacheKey, cloneAudioState(result.state));
+          if (responseCacheRef.current.size > 8) {
+            const oldest = responseCacheRef.current.keys().next().value;
+            if (oldest !== undefined) responseCacheRef.current.delete(oldest);
+          }
+        } else if (pendingWarmRef.current?.request === request) {
+          pendingWarmRef.current = null;
+        }
+      });
+    },
+    [cancelWarm, session],
+  );
 
   const captureImage = useCallback(() => {
     const target = previewDimensions(formatRef.current);
@@ -175,13 +216,28 @@ export function useVisualizerPreview({
     }
     const snapshot = session.snapshot;
     const sound = soundFrameRef.current;
-    drawVisualization(context, settingsRef.current, frequencyRef.current, waveRef.current,
-      particleRef.current, frameTimeRef.current, 0, snapshot?.video ?? null,
-      snapshot?.logo?.image ?? null, audioStateRef.current, sound?.sampleRate ?? 48000,
-      snapshot?.duration ?? 0, subtitlesRef.current,
-      { sound, background: snapshot?.background?.image ?? null, drop: dropRef.current,
-        reducedMotion: reducedMotionRef.current });
-    imageCanvas.toBlob(blob => {
+    drawVisualization(
+      context,
+      settingsRef.current,
+      frequencyRef.current,
+      waveRef.current,
+      particleRef.current,
+      frameTimeRef.current,
+      0,
+      snapshot?.video ?? null,
+      snapshot?.logo?.image ?? null,
+      audioStateRef.current,
+      sound?.sampleRate ?? 48000,
+      snapshot?.duration ?? 0,
+      subtitlesRef.current,
+      {
+        sound,
+        background: snapshot?.background?.image ?? null,
+        drop: dropRef.current,
+        reducedMotion: reducedMotionRef.current,
+      },
+    );
+    imageCanvas.toBlob((blob) => {
       if (!blob) {
         onErrorRef.current("Could not create the image.");
         return;
@@ -198,7 +254,9 @@ export function useVisualizerPreview({
 
   useEffect(() => {
     const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => { reducedMotionRef.current = preference.matches; };
+    const update = () => {
+      reducedMotionRef.current = preference.matches;
+    };
     update();
     preference.addEventListener("change", update);
     return () => preference.removeEventListener("change", update);
@@ -242,21 +300,26 @@ export function useVisualizerPreview({
         const visualTime = media ? audibleMediaTime(media, snapshot.audioContext, now) : now / 1000;
         const analysisTime = Math.floor(visualTime * ANALYSIS_FPS) / ANALYSIS_FPS;
         const pendingWarm = pendingWarmRef.current;
-        const warmingCurrentSeek = !!media && pendingWarm?.generation === snapshot.generation && pendingWarm.media === media;
+        const warmingCurrentSeek =
+          !!media && pendingWarm?.generation === snapshot.generation && pendingWarm.media === media;
         if (analysisTime < lastAudioRef.current && !warmingCurrentSeek) {
           audioStateRef.current = createAudioReactiveState();
           snapshot.live?.reset();
         }
         const audioDelta = media
-          ? (media.paused || warmingCurrentSeek ? 0 : Math.max(0, Math.min(.25, analysisTime - lastAudioRef.current)) * 1000)
+          ? media.paused || warmingCurrentSeek
+            ? 0
+            : Math.max(0, Math.min(0.25, analysisTime - lastAudioRef.current)) * 1000
           : delta;
         lastAudioRef.current = analysisTime;
         let frequency: Uint8Array = demoFrequency;
         let wave: Uint8Array = demoWave;
-        const live = snapshot.live && media && !media.paused ? snapshot.live.at(analysisTime) : null;
-        const sound = snapshot.features?.at(analysisTime)
-          ?? live?.sound
-          ?? (snapshot.live ? soundFrameRef.current : null);
+        const live =
+          snapshot.live && media && !media.paused ? snapshot.live.at(analysisTime) : null;
+        const sound =
+          snapshot.features?.at(analysisTime) ??
+          live?.sound ??
+          (snapshot.live ? soundFrameRef.current : null);
         if (sound) {
           frequency = sound.frequency;
           wave = sound.wave;
@@ -265,26 +328,51 @@ export function useVisualizerPreview({
           demoWave.fill(128);
         } else {
           for (let i = 0; i < demoFrequency.length; i++) {
-            demoFrequency[i] = Math.max(0, Math.min(255,
-              (73 + 49 * Math.sin(i * .065 + now * .0017) + 26 * Math.sin(i * .015 - now * .0012)) * Math.exp(-i / 180)));
+            demoFrequency[i] = Math.max(
+              0,
+              Math.min(
+                255,
+                (73 +
+                  49 * Math.sin(i * 0.065 + now * 0.0017) +
+                  26 * Math.sin(i * 0.015 - now * 0.0012)) *
+                  Math.exp(-i / 180),
+              ),
+            );
           }
           for (let i = 0; i < demoWave.length; i++) {
-            demoWave[i] = 128 + 32 * Math.sin(i * .033 + now * .002) * Math.sin(i * .009 - now * .0007);
+            demoWave[i] =
+              128 + 32 * Math.sin(i * 0.033 + now * 0.002) * Math.sin(i * 0.009 - now * 0.0007);
           }
         }
         soundFrameRef.current = sound;
-        dropRef.current = media && !media.paused
-          ? (live?.drop ?? dropEnvelope(snapshot.sound?.events ?? [], visualTime))
-          : 0;
+        dropRef.current =
+          media && !media.paused
+            ? (live?.drop ?? dropEnvelope(snapshot.sound?.events ?? [], visualTime))
+            : 0;
         frequencyRef.current.set(frequency);
         waveRef.current.set(wave);
         frameTimeRef.current = visualTime;
-        drawVisualization(context, settingsRef.current, frequency, wave, particleRef.current,
-          visualTime, audioDelta, snapshot.video, snapshot.logo?.image ?? null,
-          audioStateRef.current, sound?.sampleRate ?? 48000, snapshot.duration,
+        drawVisualization(
+          context,
+          settingsRef.current,
+          frequency,
+          wave,
+          particleRef.current,
+          visualTime,
+          audioDelta,
+          snapshot.video,
+          snapshot.logo?.image ?? null,
+          audioStateRef.current,
+          sound?.sampleRate ?? 48000,
+          snapshot.duration,
           subtitlesRef.current,
-          { sound, background: snapshot.background?.image ?? null, drop: dropRef.current,
-            reducedMotion: reducedMotionRef.current });
+          {
+            sound,
+            background: snapshot.background?.image ?? null,
+            drop: dropRef.current,
+            reducedMotion: reducedMotionRef.current,
+          },
+        );
       }
       if (snapshot.media && now - lastUi > 150) {
         session.pollPosition();
@@ -314,8 +402,14 @@ export function useVisualizerPreview({
       } else if (event.type === "pause") {
         event.snapshot.live?.reset();
         const pending = pendingWarmRef.current;
-        if (pending?.generation === event.snapshot.generation && pending.media === event.snapshot.media) {
-          queueWarm(Math.floor(event.time * ANALYSIS_FPS) / ANALYSIS_FPS, event.snapshot.generation);
+        if (
+          pending?.generation === event.snapshot.generation &&
+          pending.media === event.snapshot.media
+        ) {
+          queueWarm(
+            Math.floor(event.time * ANALYSIS_FPS) / ANALYSIS_FPS,
+            event.snapshot.generation,
+          );
         }
       }
     });
@@ -333,14 +427,20 @@ export function useVisualizerPreview({
     const media = snapshot?.media;
     if (!snapshot || !media) return;
     const pending = pendingWarmRef.current;
-    if (!media.paused && !(pending?.generation === snapshot.generation && pending.media === media)) return;
-    const requestedTime = pending?.generation === snapshot.generation && pending.media === media
-      ? pending.time
-      : Math.floor(media.currentTime * ANALYSIS_FPS) / ANALYSIS_FPS;
+    if (!media.paused && !(pending?.generation === snapshot.generation && pending.media === media))
+      return;
+    const requestedTime =
+      pending?.generation === snapshot.generation && pending.media === media
+        ? pending.time
+        : Math.floor(media.currentTime * ANALYSIS_FPS) / ANALYSIS_FPS;
     queueWarm(requestedTime, snapshot.generation);
   }, [
-    session, queueWarm,
-    settings.sensitivity, settings.quietThreshold, settings.bassBoost, settings.responseStyle,
+    session,
+    queueWarm,
+    settings.sensitivity,
+    settings.quietThreshold,
+    settings.bassBoost,
+    settings.responseStyle,
   ]);
 
   return { captureImage, reducedMotionRef };

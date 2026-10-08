@@ -31,13 +31,15 @@ function isAbortError(error: unknown) {
 }
 
 function yieldToBrowser() {
-  const scheduler = (globalThis as typeof globalThis & { scheduler?: { yield?: () => Promise<void> } }).scheduler;
+  const scheduler = (
+    globalThis as typeof globalThis & { scheduler?: { yield?: () => Promise<void> } }
+  ).scheduler;
   if (scheduler?.yield) return scheduler.yield();
-  return new Promise<void>(resolve => setTimeout(resolve, 0));
+  return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
 function frameCount(samples: Float32Array[], sampleRate: number) {
-  return Math.ceil((samples[0]?.length ?? 0) / sampleRate * ANALYSIS_FPS);
+  return Math.ceil(((samples[0]?.length ?? 0) / sampleRate) * ANALYSIS_FPS);
 }
 
 function createAnalysisWorker() {
@@ -92,10 +94,17 @@ function runWorkerScan(
     };
     const resetTimeout = (duration: number, phase: string) => {
       clearTimeout(timer);
-      timer = setTimeout(() => finish(new Error(`Audio analysis worker timed out during ${phase}.`)), duration);
+      timer = setTimeout(
+        () => finish(new Error(`Audio analysis worker timed out during ${phase}.`)),
+        duration,
+      );
     };
     const onAbort = () => {
-      try { worker.postMessage({ type: "cancel", generation, jobId } satisfies DspScanWorkerRequest); } catch { /* Termination below is authoritative. */ }
+      try {
+        worker.postMessage({ type: "cancel", generation, jobId } satisfies DspScanWorkerRequest);
+      } catch {
+        /* Termination below is authoritative. */
+      }
       finish(abortError());
     };
 
@@ -108,7 +117,11 @@ function runWorkerScan(
       const chunkStart = sampleCursor;
       const sampleEnd = Math.min(totalSamples, chunkStart + chunkSamples);
       let frameEnd = nextFrame;
-      while (frameEnd < totalFrames && Math.round(frameEnd / ANALYSIS_FPS * sampleRate) < sampleEnd) frameEnd += 1;
+      while (
+        frameEnd < totalFrames &&
+        Math.round((frameEnd / ANALYSIS_FPS) * sampleRate) < sampleEnd
+      )
+        frameEnd += 1;
       // The final timestamp can round onto the sample just beyond a very short buffer.
       if (sampleEnd === totalSamples) frameEnd = totalFrames;
       if (frameEnd === nextFrame) {
@@ -117,13 +130,18 @@ function runWorkerScan(
       }
 
       const sourceOffsetSamples = Math.max(0, chunkStart - historySamples);
-      const chunkData = samples.map(channel => channel.slice(sourceOffsetSamples, sampleEnd));
-      const buffers = chunkData.map(channel => channel.buffer as ArrayBuffer);
+      const chunkData = samples.map((channel) => channel.slice(sourceOffsetSamples, sampleEnd));
+      const buffers = chunkData.map((channel) => channel.buffer as ArrayBuffer);
       expectedBatchFrame = nextFrame;
       expectedChunk = { sampleEnd, frameEnd };
       const message: DspScanWorkerRequest = {
-        type: "chunk", generation, jobId, sourceOffsetSamples,
-        frameStart: nextFrame, frameEnd, samples: buffers,
+        type: "chunk",
+        generation,
+        jobId,
+        sourceOffsetSamples,
+        frameStart: nextFrame,
+        frameEnd,
+        samples: buffers,
       };
       try {
         worker.postMessage(message, buffers);
@@ -134,14 +152,17 @@ function runWorkerScan(
       resetTimeout(WORKER_PROGRESS_TIMEOUT_MS, "a PCM chunk");
     };
 
-    worker.onmessage = event => {
+    worker.onmessage = (event) => {
       if (settled) return;
       const message = event.data as DspScanWorkerResponse;
       if (!message || message.generation !== generation || message.jobId !== jobId) return;
       if (message.type === "ready") {
         if (ready) return;
-        if (message.protocolVersion !== DSP_SCAN_PROTOCOL_VERSION || message.featureSchemaVersion !== DSP_FEATURE_SCHEMA_VERSION ||
-            (message.backend !== "js" && message.backend !== "wasm")) {
+        if (
+          message.protocolVersion !== DSP_SCAN_PROTOCOL_VERSION ||
+          message.featureSchemaVersion !== DSP_FEATURE_SCHEMA_VERSION ||
+          (message.backend !== "js" && message.backend !== "wasm")
+        ) {
           finish(new Error("Audio analysis worker protocol does not match this application."));
           return;
         }
@@ -161,7 +182,13 @@ function runWorkerScan(
       if (message.type === "batch") {
         const start = message.frameStart;
         const count = message.frameCount;
-        if (!Number.isInteger(start) || !Number.isInteger(count) || start !== expectedBatchFrame || count! < 1 || count! > DSP_SCAN_BATCH_FRAMES) {
+        if (
+          !Number.isInteger(start) ||
+          !Number.isInteger(count) ||
+          start !== expectedBatchFrame ||
+          count! < 1 ||
+          count! > DSP_SCAN_BATCH_FRAMES
+        ) {
           finish(new Error("Audio analysis worker returned an invalid frame batch."));
           return;
         }
@@ -178,26 +205,43 @@ function runWorkerScan(
           events.push(frame / ANALYSIS_FPS);
         }
         if (retain) {
-          if (!(message.metrics instanceof ArrayBuffer) || !(message.bands instanceof ArrayBuffer)) {
+          if (
+            !(message.metrics instanceof ArrayBuffer) ||
+            !(message.bands instanceof ArrayBuffer)
+          ) {
             finish(new Error("Audio analysis worker omitted retained envelope data."));
             return;
           }
           const metricValues = new Float64Array(message.metrics);
           const bandValues = new Float32Array(message.bands);
           const channelCount = samples.length;
-          if (metricValues.length !== count! * DSP_FEATURE_COUNT || bandValues.length !== count! * channelCount * DSP_BAND_COUNT) {
+          if (
+            metricValues.length !== count! * DSP_FEATURE_COUNT ||
+            bandValues.length !== count! * channelCount * DSP_BAND_COUNT
+          ) {
             finish(new Error("Audio analysis worker returned malformed envelope data."));
             return;
           }
-          if (metricValues.some(value => !Number.isFinite(value)) || bandValues.some(value => !Number.isFinite(value))) {
+          if (
+            metricValues.some((value) => !Number.isFinite(value)) ||
+            bandValues.some((value) => !Number.isFinite(value))
+          ) {
             finish(new Error("Audio analysis worker returned non-finite envelope data."));
             return;
           }
           for (let localFrame = 0; localFrame < count!; localFrame += 1) {
             const metricOffset = localFrame * DSP_FEATURE_COUNT;
             const bandOffset = localFrame * channelCount * DSP_BAND_COUNT;
-            const bands = Array.from({ length: channelCount }, (_, channel) =>
-              new Float32Array(bandValues.buffer, bandValues.byteOffset + (bandOffset + channel * DSP_BAND_COUNT) * Float32Array.BYTES_PER_ELEMENT, DSP_BAND_COUNT));
+            const bands = Array.from(
+              { length: channelCount },
+              (_, channel) =>
+                new Float32Array(
+                  bandValues.buffer,
+                  bandValues.byteOffset +
+                    (bandOffset + channel * DSP_BAND_COUNT) * Float32Array.BYTES_PER_ELEMENT,
+                  DSP_BAND_COUNT,
+                ),
+            );
             envelopes.push({
               rms: metricValues[metricOffset],
               rmsDb: metricValues[metricOffset + 1],
@@ -215,7 +259,11 @@ function runWorkerScan(
         return;
       }
       if (message.type === "chunk-done") {
-        if (!expectedChunk || expectedBatchFrame !== expectedChunk.frameEnd || message.nextFrame !== expectedChunk.frameEnd) {
+        if (
+          !expectedChunk ||
+          expectedBatchFrame !== expectedChunk.frameEnd ||
+          message.nextFrame !== expectedChunk.frameEnd
+        ) {
           finish(new Error("Audio analysis worker ended a chunk before all frames were returned."));
           return;
         }
@@ -226,8 +274,10 @@ function runWorkerScan(
         else sendNextChunk();
       }
     };
-    worker.onerror = event => finish(new Error(event.message || "Audio analysis worker crashed."));
-    worker.onmessageerror = () => finish(new Error("Audio analysis worker returned an unreadable message."));
+    worker.onerror = (event) =>
+      finish(new Error(event.message || "Audio analysis worker crashed."));
+    worker.onmessageerror = () =>
+      finish(new Error("Audio analysis worker returned an unreadable message."));
 
     signal?.addEventListener("abort", onAbort, { once: true });
     if (signal?.aborted) {
@@ -237,9 +287,17 @@ function runWorkerScan(
     resetTimeout(WORKER_START_TIMEOUT_MS, "startup");
     try {
       worker.postMessage({
-        type: "start", generation, jobId, protocolVersion: DSP_SCAN_PROTOCOL_VERSION,
-        featureSchemaVersion: DSP_FEATURE_SCHEMA_VERSION, sampleRate, channelCount: samples.length,
-        totalSamples, totalFrames, retain, backendPreference: getDspBackendPreference(),
+        type: "start",
+        generation,
+        jobId,
+        protocolVersion: DSP_SCAN_PROTOCOL_VERSION,
+        featureSchemaVersion: DSP_FEATURE_SCHEMA_VERSION,
+        sampleRate,
+        channelCount: samples.length,
+        totalSamples,
+        totalFrames,
+        retain,
+        backendPreference: getDspBackendPreference(),
       } satisfies DspScanWorkerRequest);
     } catch (error) {
       finish(error);
@@ -263,10 +321,19 @@ async function scanInline(
     for (let index = 0; index < count; index += 1) {
       if (signal?.aborted) throw abortError();
       const frame = analyzer.at(index / ANALYSIS_FPS, false);
-      if (detector.observe({ time: frame.time, bassDb: frame.bassDb, levelDb: frame.rmsDb }) === 1) events.push(frame.time);
-      if (retain) envelopes.push({ rms: frame.rms, rmsDb: frame.rmsDb, bassDb: frame.bassDb,
-        bassHitDb: frame.bassHitDb, ringBassDb: frame.ringBassDb, middleDb: frame.middleDb,
-        highDb: frame.highDb, bands: frame.bands.map(channel => channel.slice()) });
+      if (detector.observe({ time: frame.time, bassDb: frame.bassDb, levelDb: frame.rmsDb }) === 1)
+        events.push(frame.time);
+      if (retain)
+        envelopes.push({
+          rms: frame.rms,
+          rmsDb: frame.rmsDb,
+          bassDb: frame.bassDb,
+          bassHitDb: frame.bassHitDb,
+          ringBassDb: frame.ringBassDb,
+          middleDb: frame.middleDb,
+          highDb: frame.highDb,
+          bands: frame.bands.map((channel) => channel.slice()),
+        });
       if (index % DSP_SCAN_BATCH_FRAMES === DSP_SCAN_BATCH_FRAMES - 1) await yieldToBrowser();
     }
     return { events, envelopes };
