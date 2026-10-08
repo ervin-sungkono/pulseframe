@@ -34,7 +34,7 @@ flowchart LR
 | Preview orchestration | `hooks/use-visualizer-preview.ts`, `lib/preview-state.ts` | Frame loop, sizing, reduced motion, seek response replay and PNG capture |
 | Canvas rendering | `lib/visualizer.ts`, `lib/track-overlay.ts`, `lib/beat-lighting.ts`, `lib/glitch.ts` | Existing visual composition and response equations |
 | Export orchestration | `hooks/use-export-controller.ts`, `lib/export-job.ts`, `lib/export-time-estimate.ts` | Input snapshot, shared lock, measured progress and estimates, successful-run history, cancellation and download cleanup |
-| Persistence | `hooks/use-presets.ts`, `lib/preset-store.ts`, `lib/preset-api.ts`, `app/api/presets/*` | Authenticated, per-user preset persistence |
+| Persistence | `hooks/use-presets.ts`, `lib/preset-store.ts` | Validated browser-local preset persistence and cross-tab refresh |
 
 The browser session snapshot exposes resource handles for preview and export.
 It is an infrastructure API, not a persisted project or a UI-independent model.
@@ -66,6 +66,8 @@ Settings, presets and serializers must not import controller hooks or components
 
 ## Scope and checks
 
+The application is a Vite/React static site on Vercel. Quick Looks use browser-local storage; there is no preset API or database service.
+
 The application still edits one track at a time. Five-minute tracks are the
 current target; a future playlist can sequence track sessions without introducing
 playlist state into this refactor. Browser codecs and memory still determine
@@ -73,6 +75,6 @@ which export sizes and track lengths a device can process.
 
 Run regression checks with `node --test tests/*.test.mjs`, type checking with
 `node_modules/.bin/tsc --noEmit --incremental false`, and the project build with
-`npm run build`. Browser verification should cover both desktop and mobile
+`pnpm build`. Browser verification should cover both desktop and mobile
 viewports, long seeks, preset metadata/reset behavior, project restoration,
 PNG capture, and successful/canceled short video exports.

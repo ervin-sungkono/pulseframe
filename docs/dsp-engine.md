@@ -16,7 +16,7 @@ flowchart LR
 
 The scan client transfers copies of bounded PCM chunks, with enough trailing history for the 4096-point FFT and 20 ms RMS. It never transfers an AudioBuffer channel or a WASM memory buffer. One chunk is outstanding at a time. The worker uses 15-frame batches and cooperative scheduling, retains the existing bass-return detector state across chunks, and transfers compact owned results. Jobs validate protocol/schema versions and reject late results. Abort terminates the worker; failure discards partial results and restarts a complete cooperative scan. Only complete scans reach the media owner.
 
-Vite resolves the worker through a static `?worker&url` import. During development only, the pinned Vinext beta's `vinext:typeof-window-scan` optimization is excluded because it removes Vite's worker-HMR runtime guards and accesses `window` inside a worker. Production retains the full framework plugin set.
+Vite resolves the module worker through a static `?worker&url` import. Development and production use the same React/Vite configuration; no server framework or worker-HMR workaround is required. Vercel serves the emitted worker and the public WASM assets as static files.
 
 Frame handles are freed on track replacement, failed candidate preparation, live graph disposal, and export completion/failure. Retained bands are copied out of WASM; short-lived spectrum views are refreshed after memory growth. The browser still owns one full decoded PCM buffer. Scratch and transferred PCM are bounded independently of track duration, while the existing feature history scales with duration under the decoder's cache budget.
 

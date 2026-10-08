@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import type { CSSProperties } from "react";
 import { Bookmark, Check, Plus, PinOff, RotateCcw, Undo2, Redo2 } from "lucide-react";
@@ -46,18 +44,15 @@ export function QuickLookStrip({ settings, library, active, modified, disabled, 
       return <button key={look.id} className={`look-card ${selected ? "selected" : ""}`} aria-pressed={selected} disabled={disabled} onClick={() => onApplyBuiltin(look)}>
         <LookArt settings={look.settings}/><strong>{look.name}</strong><small>{look.caption}</small>{selected && <Check className="look-check" size={14}/>}</button>;
     })}</div> : <>
-      {library.signin ? <div className="quick-look-empty"><strong>Your looks, across devices</strong><p>Open the preset library to sign in and save your own Quick Looks.</p><button className="button button-soft" disabled={disabled} onClick={onManage}>Open preset library</button></div> : <>
-        <div className="look-strip" role="group" aria-label="My Quick Looks" aria-busy={library.pinnedLoading}>{library.pinnedPresets.map(preset => {
-          const selected = active?.id === preset.id && !modified;
-          return <div className="personal-look" key={preset.id}><button className={`look-card ${selected ? "selected" : ""}`} aria-pressed={selected} disabled={disabled || busy !== null} onClick={() => onApplyPreset(preset)}>
-            <LookArt settings={preset.settings}/><strong>{preset.name}</strong><small>{visualModeName(preset.settings.mode)} · {preset.settings.particles ? "Particles" : "Clean"}</small>{selected && <Check className="look-check" size={14}/>}</button>
-            <button className="look-unpin" aria-label={`Remove ${preset.name} from Quick Looks`} title="Remove shortcut; keep saved preset" disabled={disabled || busy !== null} onClick={() => { void unpin(preset); }}><PinOff size={14}/></button></div>;
-        })}</div>
-        {!library.pinnedPresets.length && !library.pinnedLoading && <div className="quick-look-empty"><strong>Keep a favorite close</strong><p>Save your current settings, or pin an existing preset from the library.</p></div>}
-        {library.pinnedLoading && <p className="preset-status" role="status">Loading Quick Looks…</p>}
-        {library.pinnedCursor && <button className="button button-soft preset-more" disabled={disabled || library.pinnedLoading} onClick={() => { void library.loadMorePinned(); }}>More Quick Looks</button>}
-        {library.error && <div className="preset-error" role="alert"><span>{library.error}</span><button disabled={disabled || library.pinnedLoading} onClick={() => { void library.refreshPinned(); }}>Retry</button></div>}
-      </>}
+      <div className="look-strip" role="group" aria-label="My Quick Looks" aria-busy={library.loading}>{library.pinnedPresets.map(preset => {
+        const selected = active?.id === preset.id && !modified;
+        return <div className="personal-look" key={preset.id}><button className={`look-card ${selected ? "selected" : ""}`} aria-pressed={selected} disabled={disabled || busy !== null} onClick={() => onApplyPreset(preset)}>
+          <LookArt settings={preset.settings}/><strong>{preset.name}</strong><small>{visualModeName(preset.settings.mode)} · {preset.settings.particles ? "Particles" : "Clean"}</small>{selected && <Check className="look-check" size={14}/>}</button>
+          <button className="look-unpin" aria-label={`Remove ${preset.name} from Quick Looks`} title="Remove shortcut; keep saved preset" disabled={disabled || busy !== null} onClick={() => { void unpin(preset); }}><PinOff size={14}/></button></div>;
+      })}</div>
+      {!library.pinnedPresets.length && !library.loading && <div className="quick-look-empty"><strong>Keep a favorite close</strong><p>Save your current settings, or pin an existing preset from the library.</p></div>}
+      {library.loading && <p className="preset-status" role="status">Loading Quick Looks…</p>}
+      {library.error && <div className="preset-error" role="alert"><span>{library.error}</span><button disabled={disabled || library.loading} onClick={() => { void library.refresh(); }}>Retry</button></div>}
     </>}
     {error && <p className="preset-error" role="alert">{error}</p>}
     <div className="quick-look-current" aria-live="polite"><span>{active ? active.name : `Custom ${visualModeName(settings.mode)}`}{active && modified && <em>Modified</em>}</span>

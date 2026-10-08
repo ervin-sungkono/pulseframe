@@ -1,29 +1,8 @@
-name: DSP parity and generated assets
+name: Application checks and DSP parity
 on:
   pull_request:
-    paths: &dsp_paths
-      - 'crates/pulseframe-dsp/**'
-      - 'rust-toolchain.toml'
-      - 'scripts/build-dsp.mjs'
-      - 'public/dsp/**'
-      - 'lib/dsp/**'
-      - 'lib/audio-*.ts'
-      - 'lib/audio-dsp.mjs'
-      - 'lib/pcm-features.ts'
-      - 'lib/art-reactivity.mjs'
-      - 'lib/drop-detector.mjs'
-      - 'lib/media-session.ts'
-      - 'lib/live-sound.ts'
-      - 'lib/export-video.ts'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'vite.config.ts'
-      - 'vite-env.d.ts'
-      - 'tests/**'
-      - '.github/workflows/dsp.yml'
   push:
     branches: [main]
-    paths: *dsp_paths
 permissions:
   contents: read
 jobs:
@@ -55,5 +34,7 @@ jobs:
       - run: cargo test --locked --manifest-path crates/pulseframe-dsp/Cargo.toml
       - run: pnpm dsp:build
       - run: git diff --exit-code -- public/dsp
-      - run: node --test tests/*.test.mjs
+      - run: pnpm test
+      - run: pnpm lint
+      - run: pnpm build
       - run: pnpm exec tsc --noEmit --incremental false

@@ -1,214 +1,140 @@
-import { presetStyle, type SavedPreset, type PresetStyle } from './presets';
+import { z } from 'zod';
+import {
+  presetIdSchema, presetNameSchema, presetRevisionSchema, presetStyle,
+  quickLookOrderSchema, type PresetStyle, type SavedPreset,
+} from './presets';
 
-type StoredPreset = {
+export const PRESET_STORAGE_KEY = 'pulseframe.presets.v1';
+
+export type CreatePresetInput = {
   id: string;
   name: string;
-  settings: string;
-  created_at: number;
-  updated_at: number;
-  pinned: number;
-  quick_look_order: number;
-  revision: number;
+  settings: PresetStyle;
+  pinned?: boolean;
+  quickLookOrder?: number;
 };
-
-export type PresetCursor = { value: number; id: string };
-export type PresetMutation = {
+export type UpdatePresetInput = {
   name?: string;
   settings?: PresetStyle;
   pinned?: boolean;
   quickLookOrder?: number;
   expectedRevision: number;
 };
-export type PresetUpdateResult =
-  | { status: 'updated'; preset: SavedPreset }
-  | { status: 'conflict'; preset: SavedPreset }
-  | { status: 'missing' };
-export type PresetReorderResult =
-  | { status: 'updated'; presets: [SavedPreset, SavedPreset] }
-  | { status: 'conflict' }
-  | { status: 'missing' };
 
-const unpack = (row: StoredPreset): SavedPreset => ({
-  id: row.id,
-  name: row.name,
-  settings: presetStyle(JSON.parse(row.settings)),
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-  pinned: row.pinned === 1,
-  quickLookOrder: row.quick_look_order,
-  revision: row.revision,
+export class PresetStoreError extends Error {
+  constructor(message: string, readonly code: 'invalid' | 'conflict' | 'missing' | 'storage') {
+    super(message);
+    this.name = 'PresetStoreError';
+  }
+}
+
+const timestampSchema = z.number().finite().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const storedSchema = z.object({
+  id: presetIdSchema, name: presetNameSchema, settings: z.unknown(),
+  createdAt: timestampSchema, updatedAt: timestampSchema,
+  pinned: z.boolean(), quickLookOrder: quickLookOrderSchema, revision: presetRevisionSchema,
+}).strict();
+const createSchema = storedSchema.pick({ id: true, name: true, settings: true }).extend({
+  pinned: z.boolean().optional(), quickLookOrder: quickLookOrderSchema.optional(),
 });
+const updateSchema = storedSchema.pick({ name: true, settings: true, pinned: true, quickLookOrder: true })
+  .partial().extend({ expectedRevision: presetRevisionSchema }).strict();
 
-const tryUnpack = (row: StoredPreset): SavedPreset | null => {
-  try {
-    return unpack(row);
-  } catch (error) {
-    console.error('Skipping invalid saved preset', row.id, error);
-    return null;
-  }
-};
-
-const selectedColumns = 'id,name,settings,created_at,updated_at,pinned,quick_look_order,revision';
-
-/** All queries include the platform user key; shared site viewers never share presets. */
+/** Browser persistence adapter. Settings validation stays in the shared model. */
 export class PresetStore {
-  constructor(private db: D1Database) {}
+  constructor(private getStorage: () => Pick<Storage, 'getItem' | 'setItem'> = () => localStorage) {}
 
-  async list(userId: string, search = '', cursor?: PresetCursor, pinnedOnly = false) {
-    const like = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
-    const hasCursor = cursor ? 1 : 0;
-    const position = cursor?.value ?? 0;
-    const cursorId = cursor?.id ?? '';
-    const orderColumn = pinnedOnly ? 'quick_look_order' : 'updated_at';
-    const comparison = pinnedOnly ? '>' : '<';
-    const rows = await this.db.prepare(`
-      SELECT ${selectedColumns} FROM visual_presets
-      WHERE user_id = ? AND name LIKE ? ESCAPE '\\'${pinnedOnly ? ' AND pinned = 1' : ''}
-        AND (? = 0 OR ${orderColumn} ${comparison} ? OR (${orderColumn} = ? AND id ${comparison} ?))
-      ORDER BY ${orderColumn} ${pinnedOnly ? 'ASC' : 'DESC'},id ${pinnedOnly ? 'ASC' : 'DESC'}
-      LIMIT 41`)
-      .bind(userId, like, hasCursor, position, position, cursorId)
-      .all<StoredPreset>();
-
-    const page = rows.results.slice(0, 40);
-    const last = page.at(-1);
-    const value = last ? (pinnedOnly ? last.quick_look_order : last.updated_at) : null;
-    return {
-      presets: page.map(tryUnpack).filter((preset): preset is SavedPreset => preset !== null),
-      cursor: rows.results.length > 40 && last ? `${value}:${last.id}` : null,
-    };
-  }
-
-  async get(userId: string, id: string) {
-    const row = await this.db.prepare(`SELECT ${selectedColumns} FROM visual_presets WHERE user_id = ? AND id = ?`)
-      .bind(userId, id)
-      .first<StoredPreset>();
-    return row ? unpack(row) : null;
-  }
-
-  /** Repeating a create with the same id for the same owner returns the original row unchanged. */
-  async saveWithStatus(
-    userId: string,
-    id: string,
-    name: string,
-    settings: PresetStyle,
-    options: { pinned: boolean; quickLookOrder: number } = { pinned: false, quickLookOrder: 0 },
-  ) {
-    const now = Date.now();
-    const result = await this.db.prepare(`
-      INSERT INTO visual_presets
-        (id,user_id,name,settings,created_at,updated_at,pinned,quick_look_order,revision)
-      VALUES (?,?,?,?,?,?,?,?,1)
-      ON CONFLICT(id) DO NOTHING`)
-      .bind(id, userId, name, JSON.stringify(settings), now, now, options.pinned ? 1 : 0, options.quickLookOrder)
-      .run();
-    const preset = await this.get(userId, id);
-    if (!preset) return null;
-    return { preset, created: result.meta.changes > 0 };
-  }
-
-  async save(
-    userId: string,
-    id: string,
-    name: string,
-    settings: PresetStyle,
-    options: { pinned: boolean; quickLookOrder: number } = { pinned: false, quickLookOrder: 0 },
-  ) {
-    const result = await this.saveWithStatus(userId, id, name, settings, options);
-    if (!result) throw new Error('Could not save this preset.');
-    return result.preset;
-  }
-
-  async update(userId: string, id: string, mutation: PresetMutation): Promise<PresetUpdateResult> {
-    const settings = mutation.settings === undefined ? null : JSON.stringify(mutation.settings);
-    const pinned = mutation.pinned === undefined ? null : mutation.pinned ? 1 : 0;
-    const result = await this.db.prepare(`
-      UPDATE visual_presets SET
-        name = COALESCE(?,name),
-        settings = COALESCE(?,settings),
-        pinned = COALESCE(?,pinned),
-        quick_look_order = COALESCE(?,quick_look_order),
-        updated_at = ?,
-        revision = revision + 1
-      WHERE user_id = ? AND id = ? AND revision = ?`)
-      .bind(
-        mutation.name ?? null,
-        settings,
-        pinned,
-        mutation.quickLookOrder ?? null,
-        Date.now(),
-        userId,
-        id,
-        mutation.expectedRevision,
-      )
-      .run();
-
-    if (result.meta.changes > 0) {
-      const preset = await this.get(userId, id);
-      return preset ? { status: 'updated', preset } : { status: 'missing' };
+  list(): SavedPreset[] {
+    try {
+      const raw = this.getStorage().getItem(PRESET_STORAGE_KEY);
+      if (raw === null) return [];
+      const envelope = z.object({ schemaVersion: z.literal(1), presets: z.array(storedSchema) }).strict().parse(JSON.parse(raw));
+      const seen = new Set<string>();
+      const presets = envelope.presets.map(row => {
+        if (seen.has(row.id)) throw new Error('Duplicate preset ID.');
+        seen.add(row.id);
+        return { ...row, settings: presetStyle(row.settings) };
+      });
+      return presets.sort((a, b) => b.updatedAt - a.updatedAt || b.id.localeCompare(a.id));
+    } catch {
+      // Never overwrite unreadable or unsupported stored data with an empty list.
+      throw new PresetStoreError('Could not read your saved looks. Browser storage may be blocked or contain invalid data.', 'storage');
     }
-
-    const current = await this.get(userId, id);
-    return current ? { status: 'conflict', preset: current } : { status: 'missing' };
   }
 
-  async reorder(
-    userId: string,
-    first: { id: string; expectedRevision: number },
-    second: { id: string; expectedRevision: number },
-  ): Promise<PresetReorderResult> {
-    const now = Date.now();
-    const rows = await this.db.prepare(`
-      WITH pair AS MATERIALIZED (
-        SELECT id,quick_look_order FROM visual_presets
-        WHERE user_id = ? AND pinned = 1
-          AND ((id = ? AND revision = ?) OR (id = ? AND revision = ?))
-      ), matched AS MATERIALIZED (
-        SELECT COUNT(*) AS row_count FROM pair
-      )
-      UPDATE visual_presets SET
-        quick_look_order = CASE id
-          WHEN ? THEN (SELECT quick_look_order FROM pair WHERE id = ?)
-          WHEN ? THEN (SELECT quick_look_order FROM pair WHERE id = ?)
-          ELSE quick_look_order
-        END,
-        updated_at = ?,
-        revision = revision + 1
-      WHERE user_id = ? AND pinned = 1
-        AND (SELECT row_count FROM matched) = 2
-        AND id IN (?,?)
-        AND ((id = ? AND revision = ?) OR (id = ? AND revision = ?))
-      RETURNING ${selectedColumns}`)
-      .bind(
-        userId,
-        first.id, first.expectedRevision,
-        second.id, second.expectedRevision,
-        first.id, second.id,
-        second.id, first.id,
-        now,
-        userId,
-        first.id, second.id,
-        first.id, first.expectedRevision,
-        second.id, second.expectedRevision,
-      )
-      .all<StoredPreset>();
-
-    if (rows.results.length === 2) {
-      const updated = new Map<string, SavedPreset>();
-      for (const row of rows.results) updated.set(row.id, unpack(row));
-      const firstPreset = updated.get(first.id);
-      const secondPreset = updated.get(second.id);
-      if (firstPreset && secondPreset) return { status: 'updated', presets: [firstPreset, secondPreset] };
+  private write(presets: SavedPreset[]) {
+    try {
+      this.getStorage().setItem(PRESET_STORAGE_KEY, JSON.stringify({ schemaVersion: 1, presets }));
+    } catch {
+      throw new PresetStoreError('Could not save your looks. Browser storage may be full or blocked; your previous saved looks are unchanged.', 'storage');
     }
-
-    const owned = await this.db.prepare('SELECT id FROM visual_presets WHERE user_id = ? AND id IN (?,?)')
-      .bind(userId, first.id, second.id)
-      .all<{ id: string }>();
-    return owned.results.length === 2 ? { status: 'conflict' } : { status: 'missing' };
   }
 
-  async remove(userId: string, id: string) {
-    const result = await this.db.prepare('DELETE FROM visual_presets WHERE user_id = ? AND id = ?').bind(userId, id).run();
-    return result.meta.changes > 0;
+  private mutate<T>(operation: () => T): Promise<T> {
+    // Serialize read/modify/write across same-origin tabs when Web Locks exists.
+    if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && navigator.locks) {
+      return navigator.locks.request(PRESET_STORAGE_KEY, operation);
+    }
+    return Promise.resolve().then(operation);
+  }
+
+  create(input: CreatePresetInput): Promise<SavedPreset> {
+    return this.mutate(() => {
+      const parsed = createSchema.safeParse(input);
+      if (!parsed.success) throw new PresetStoreError('Enter a name of 1–80 characters and valid settings.', 'invalid');
+      const settings = presetStyle(parsed.data.settings);
+      const presets = this.list();
+      const existing = presets.find(preset => preset.id === parsed.data.id);
+      if (existing) return existing; // Stable dialog IDs make save retries idempotent.
+      const now = Date.now();
+      const quickLookOrder = parsed.data.quickLookOrder ?? presets.reduce((order, preset) => Math.max(order, preset.quickLookOrder + 1), now);
+      if (!quickLookOrderSchema.safeParse(quickLookOrder).success) throw new PresetStoreError('Quick Look order is invalid.', 'invalid');
+      const preset = { ...parsed.data, settings, pinned: parsed.data.pinned ?? false, quickLookOrder, createdAt: now, updatedAt: now, revision: 1 };
+      this.write([...presets, preset]);
+      return preset;
+    });
+  }
+
+  update(id: string, input: UpdatePresetInput): Promise<SavedPreset> {
+    return this.mutate(() => {
+      const parsed = updateSchema.safeParse(input);
+      if (!presetIdSchema.safeParse(id).success || !parsed.success) throw new PresetStoreError('This preset update is invalid.', 'invalid');
+      const presets = this.list();
+      const current = presets.find(preset => preset.id === id);
+      if (!current) throw new PresetStoreError('This preset no longer exists.', 'missing');
+      if (current.revision !== parsed.data.expectedRevision) throw new PresetStoreError('This preset changed in another tab. Review its latest version or save a copy.', 'conflict');
+      const { expectedRevision: _revision, settings, ...patch } = parsed.data;
+      void _revision;
+      if (!presetRevisionSchema.safeParse(current.revision + 1).success) throw new PresetStoreError('This preset cannot be updated again. Save a copy.', 'invalid');
+      const updated = { ...current, name: patch.name ?? current.name, pinned: patch.pinned ?? current.pinned, quickLookOrder: patch.quickLookOrder ?? current.quickLookOrder, settings: settings === undefined ? current.settings : presetStyle(settings), updatedAt: Date.now(), revision: current.revision + 1 };
+      this.write(presets.map(preset => preset.id === id ? updated : preset));
+      return updated;
+    });
+  }
+
+  reorder(first: SavedPreset, second: SavedPreset): Promise<[SavedPreset, SavedPreset]> {
+    return this.mutate(() => {
+      const presets = this.list();
+      const a = presets.find(preset => preset.id === first.id);
+      const b = presets.find(preset => preset.id === second.id);
+      if (!a || !b) throw new PresetStoreError('A Quick Look no longer exists.', 'missing');
+      if (a.id === b.id || !a.pinned || !b.pinned || a.revision !== first.revision || b.revision !== second.revision) {
+        throw new PresetStoreError('These Quick Looks changed in another tab. Refresh and try again.', 'conflict');
+      }
+      if (![a, b].every(preset => presetRevisionSchema.safeParse(preset.revision + 1).success)) throw new PresetStoreError('These Quick Looks cannot be reordered again.', 'invalid');
+      const now = Date.now();
+      const moved = { ...a, quickLookOrder: b.quickLookOrder, revision: a.revision + 1, updatedAt: now };
+      const shifted = { ...b, quickLookOrder: a.quickLookOrder, revision: b.revision + 1, updatedAt: now };
+      this.write(presets.map(preset => preset.id === a.id ? moved : preset.id === b.id ? shifted : preset));
+      return [moved, shifted];
+    });
+  }
+
+  remove(id: string): Promise<void> {
+    return this.mutate(() => {
+      const presets = this.list();
+      if (!presets.some(preset => preset.id === id)) throw new PresetStoreError('This preset no longer exists.', 'missing');
+      this.write(presets.filter(preset => preset.id !== id));
+    });
   }
 }
