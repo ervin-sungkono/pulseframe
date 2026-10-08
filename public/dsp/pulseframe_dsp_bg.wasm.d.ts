@@ -1,0 +1,33 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const __wbg_temporaldsp_free: (a: number, b: number) => void;
+export const temporaldsp_new: (a: number) => [number, number, number];
+export const temporaldsp_input_ptr: (a: number) => number;
+export const temporaldsp_input_len: (a: number) => number;
+export const temporaldsp_output_ptr: (a: number) => number;
+export const temporaldsp_sample_rate: (a: number) => number;
+export const temporaldsp_observe: (a: number, b: number) => void;
+export const temporaldsp_reset: (a: number) => void;
+export const core_version: () => [number, number];
+export const feature_schema_version: () => number;
+export const __wbg_framedsp_free: (a: number, b: number) => void;
+export const framedsp_new: (a: number, b: number) => [number, number, number];
+export const framedsp_input_ptr: (a: number) => number;
+export const framedsp_input_len: (a: number) => number;
+export const framedsp_features_ptr: (a: number) => number;
+export const framedsp_features_len: (a: number) => number;
+export const framedsp_bands_ptr: (a: number) => number;
+export const framedsp_bands_len: (a: number) => number;
+export const framedsp_amplitudes_ptr: (a: number) => number;
+export const framedsp_amplitudes_len: (a: number) => number;
+export const framedsp_db_ptr: (a: number) => number;
+export const framedsp_db_len: (a: number) => number;
+export const framedsp_sample_rate: (a: number) => number;
+export const framedsp_channel_count: (a: number) => number;
+export const framedsp_analyze: (a: number) => void;
+export const temporaldsp_output_len: (a: number) => number;
+export const __wbindgen_export_0: WebAssembly.Table;
+export const __externref_table_dealloc: (a: number) => void;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __wbindgen_start: () => void;

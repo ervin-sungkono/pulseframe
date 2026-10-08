@@ -46,3 +46,5 @@ next-env.d.ts
 /work/
 
 /build/
+/crates/pulseframe-dsp/target/
+/public/.dsp-build/

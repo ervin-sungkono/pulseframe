@@ -1,4 +1,6 @@
-import { PcmFeatures, prepareSound, type PreparedSound } from "./audio-features";
+import { prepareSound, type PreparedSound } from "./audio-features";
+import { initializeDsp } from "./dsp/loader";
+import { PcmFeatures } from "./pcm-features";
 import { LiveSound } from "./live-sound";
 import { readLocalImage, type LocalImage } from "./local-image";
 import type { ProjectContent } from "./project-file";
@@ -230,6 +232,7 @@ export class MediaSessionOwner {
     resource.media.load();
     resource.media.remove();
     resource.source.disconnect();
+    resource.features?.dispose();
     resource.live?.dispose();
     this.revoke(resource.url);
   }
@@ -263,6 +266,7 @@ export class MediaSessionOwner {
     let candidateBackground: LocalImage | null = null;
     let source: MediaElementAudioSourceNode | null = null;
     let live: LiveSound | null = null;
+    let features: PcmFeatures | null = null;
     let committed = false;
     const contextExistedBeforeLoad = !!this.context;
     try {
@@ -290,7 +294,8 @@ export class MediaSessionOwner {
         ? Promise.all([prepareAsset("logo", projectAssets.logo), prepareAsset("background", projectAssets.background)])
         : Promise.resolve([null, null] as const);
       const soundWork = this.prepareAudio(next, controller.signal);
-      const sound = (await withAbort(Promise.all([ready, assets, soundWork]), controller.signal))[2];
+      const dspWork = initializeDsp();
+      const [, , sound] = await withAbort(Promise.all([ready, assets, soundWork, dspWork]), controller.signal);
       if (request !== this.requestValue || controller.signal.aborted || this.blocked()) return false;
 
       const length = Number.isFinite(element.duration) ? element.duration : sound?.audio?.duration ?? 0;
@@ -303,7 +308,7 @@ export class MediaSessionOwner {
 
       const host = this.dependencies.getMediaHost?.();
       host?.appendChild(element);
-      const features = sound?.audio
+      features = sound?.audio
         ? new PcmFeatures(Array.from({ length: sound.audio.numberOfChannels }, (_, i) => sound.audio!.getChannelData(i)), sound.audio.sampleRate)
         : null;
       const range = this.normalizeRange(options.range, length);
@@ -346,6 +351,7 @@ export class MediaSessionOwner {
         element?.load();
         element?.remove();
         source?.disconnect();
+        features?.dispose();
         live?.dispose();
         this.revoke(url);
         this.revokeAsset(candidateLogo);

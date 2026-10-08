@@ -128,6 +128,31 @@ test('project commit exposes all replacement resources before releasing the old 
   owner.dispose();
 });
 
+test('media replacement and owner disposal free each prepared frame analyzer once', async () => {
+  const audio = {
+    sampleRate: 48000, numberOfChannels: 1, length: 48000, duration: 1,
+    getChannelData: () => new Float32Array(48000),
+  };
+  const f = fixture({ prepareAudio: async () => ({ audio, events: [], envelopes: [], overview: [] }) });
+  assert.equal(await f.owner.load(file('with-pcm.wav')), true);
+  const oldFeatures = f.owner.snapshot.features;
+  let oldDisposals = 0;
+  const oldDispose = oldFeatures.dispose.bind(oldFeatures);
+  oldFeatures.dispose = () => { oldDisposals++; oldDispose(); };
+
+  assert.equal(await f.owner.load(file('replacement-with-pcm.wav')), true);
+  assert.equal(oldDisposals, 1);
+  assert.equal(oldFeatures.samples.length, 0);
+  const currentFeatures = f.owner.snapshot.features;
+  let currentDisposals = 0;
+  const currentDispose = currentFeatures.dispose.bind(currentFeatures);
+  currentFeatures.dispose = () => { currentDisposals++; currentDispose(); };
+  f.owner.dispose();
+  f.owner.dispose();
+  assert.equal(currentDisposals, 1);
+  assert.equal(currentFeatures.samples.length, 0);
+});
+
 test('a newer load cancels a stale candidate and only successful commits advance snapshot generation', async () => {
   const slow = deferred(), f = fixture({ prepareAudio: current => current.name === 'slow.wav' ? slow.promise : Promise.resolve(null) });
   const first = f.owner.load(file('slow.wav'));

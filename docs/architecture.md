@@ -33,7 +33,7 @@ flowchart LR
 | Browser resource ownership | `lib/media-session.ts`, `hooks/use-media-session.ts` | Media elements, audio graph, decoded sound, image assets and transport |
 | Preview orchestration | `hooks/use-visualizer-preview.ts`, `lib/preview-state.ts` | Frame loop, sizing, reduced motion, seek response replay and PNG capture |
 | Canvas rendering | `lib/visualizer.ts`, `lib/track-overlay.ts`, `lib/beat-lighting.ts`, `lib/glitch.ts` | Existing visual composition and response equations |
-| Export orchestration | `hooks/use-export-controller.ts`, `lib/export-job.ts` | Input snapshot, shared lock, progress, cancellation and download cleanup |
+| Export orchestration | `hooks/use-export-controller.ts`, `lib/export-job.ts`, `lib/export-time-estimate.ts` | Input snapshot, shared lock, measured progress and estimates, successful-run history, cancellation and download cleanup |
 | Persistence | `hooks/use-presets.ts`, `lib/preset-store.ts`, `lib/preset-api.ts`, `app/api/presets/*` | Authenticated, per-user preset persistence |
 
 The browser session snapshot exposes resource handles for preview and export.
@@ -55,6 +55,12 @@ Settings, presets and serializers must not import controller hooks or components
   PCM and image resources remain referenced while the shared lock prevents media
   replacement. Cancel keeps the lock until encoding settles and suppresses late
   progress and downloads. Teardown aborts work and releases retained URLs.
+- Export timing counts frame work only after each awaited encoder submission.
+  The controller measures from the click through lazy loading and preparation,
+  then keeps rendering and finalization timings separate. It learns live rates
+  after a warmup and stores only bounded, expiring timings for successful,
+  compatible runs in browser storage. The pipeline version scopes history so a
+  future renderer can invalidate it without affecting export output.
 - Preset metadata updates preserve the originally applied appearance snapshot.
   Applying or saving a look deliberately establishes a new reset baseline.
 

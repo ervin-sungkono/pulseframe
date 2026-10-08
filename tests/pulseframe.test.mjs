@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadSources } from './load-source.mjs';
-import { generateDemo } from '../lib/audio-dsp.mjs';
+import { FFTAnalyzer, generateDemo } from '../lib/audio-dsp.mjs';
 const modules = await loadSources();
 const { PcmFeatures, findDropEvents, dropEnvelope, audibleMediaTime, prepareSound } = modules['audio-features'];
 const { ANALYSIS_FPS, ANALYSIS_SIZE } = modules['audio-analysis-config'];
@@ -71,8 +71,11 @@ test('live fallback uses pre-volume stereo PCM and disconnects its analysis grap
 
 test('shared causal PCM is calibrated at 44.1 and 48 kHz', () => {
   for (const rate of [44100, 48000]) {
-    const frame = new PcmFeatures([tone(rate, 1000)], rate).at(1);
-    close(frame.channels[0].peakDb, -6.0206); close(frame.rmsDb, -9.0309);
+    const samples = tone(rate, 1000);
+    const frame = new PcmFeatures([samples], rate).at(1);
+    // Diagnostic peak fitting is explicit; production frames retain calibrated bins.
+    const diagnostic = new FFTAnalyzer(ANALYSIS_SIZE).analyze(samples, rate - ANALYSIS_SIZE / 2, rate);
+    close(diagnostic.peakDb, -6.0206); close(frame.rmsDb, -9.0309);
     assert.ok(frame.middleDb > frame.bassDb + 35);
   }
 });

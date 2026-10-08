@@ -5,9 +5,13 @@ import type { ExportFrameRate } from "./export-timeline";
 import type { SubtitleCue } from "./subtitles";
 import type { VisualSettings } from "./visual-settings-model";
 import type { LogoLayer } from "./visualizer";
+import type { ExportSourceKind, ExportTimingMeasurement } from "./export-time-estimate";
 
 export type ExportSource = {
   file: File;
+  /** Non-persisted media-session generation and source kind for profile scoping. */
+  generation?: number;
+  sourceKind: ExportSourceKind;
   duration: number;
   range: [number, number];
   format: ExportAspect;
@@ -23,12 +27,12 @@ export type ExportSource = {
 };
 
 export type ExportJobProgress = ExportProgress;
-export type ExportJobOutput = { blob: Blob; extension: "mp4" | "webm" };
+export type ExportJobOutput = { blob: Blob; extension: "mp4" | "webm"; timing?: ExportTimingMeasurement };
 
 type ExportJobOptions = {
   lockedRef: { current: boolean };
   pausePlayback: () => void;
-  execute: (source: ExportSource, signal: AbortSignal, onProgress: (progress: ExportJobProgress) => void) => Promise<ExportJobOutput>;
+  execute: (source: ExportSource, signal: AbortSignal, onProgress: (progress: ExportJobProgress) => void, startedAt: number) => Promise<ExportJobOutput>;
   download: (result: ExportJobOutput, source: ExportSource) => (() => void) | void;
   onStart?: () => void;
   onState: (exporting: boolean, progress: ExportJobProgress | null) => void;
@@ -36,6 +40,7 @@ type ExportJobOptions = {
   onNotice: (message: string) => void;
   onComplete?: (result: ExportJobOutput, source: ExportSource) => void;
   scheduleRevoke?: (revoke: () => void, delayMs: number) => () => void;
+  now?: () => number;
 };
 
 export type ExportJobController = {
@@ -48,7 +53,7 @@ const ERROR_FALLBACK = "Could not export this file.";
 
 /** Owns the export lock until encoding settles, including after cancellation. */
 export function createExportJobController(options: ExportJobOptions): ExportJobController {
-  let active: { controller: AbortController; source: ExportSource } | null = null;
+  let active: { controller: AbortController; source: ExportSource; startedAt: number; timer: ReturnType<typeof setInterval> | null } | null = null;
   let disposed = false;
   const retainedDownloads = new Set<() => void>();
 
@@ -78,20 +83,67 @@ export function createExportJobController(options: ExportJobOptions): ExportJobC
   const start = (source: ExportSource): Promise<void> | null => {
     if (disposed || active || options.lockedRef.current) return null;
     const controller = new AbortController();
-    const job = { controller, source };
+    const now = options.now ?? (() => performance.now());
+    const startedAt = now();
+    const job = { controller, source, startedAt, timer: null as ReturnType<typeof setInterval> | null };
     options.lockedRef.current = true;
     active = job;
 
-    notify(() => options.onState(true, { phase: "Preparing media", percent: 0 }));
+    let lastProgress: ExportJobProgress = { phase: "Preparing media", percent: 0, elapsedMs: 0, phaseElapsedMs: 0 };
+    let lastInputProgress = lastProgress;
+    let lastPhase = lastProgress.phase;
+    let phaseStartedAt = startedAt;
+    let lastPublishedAt = startedAt;
+    let estimateStartedAt = startedAt;
+    const publish = (progress: ExportJobProgress) => {
+      if (disposed || controller.signal.aborted || active !== job) return;
+      const at = now();
+      if (progress.phase !== lastPhase) {
+        lastPhase = progress.phase;
+        phaseStartedAt = at;
+      }
+      lastInputProgress = { ...progress };
+      estimateStartedAt = at;
+      lastProgress = {
+        ...lastInputProgress,
+        elapsedMs: Math.max(0, at - startedAt),
+        phaseElapsedMs: Math.max(0, at - phaseStartedAt),
+      };
+      lastPublishedAt = at;
+      notify(() => options.onState(true, lastProgress));
+    };
+    notify(() => options.onState(true, lastProgress));
     notify(() => options.onStart?.());
+
+    job.timer = setInterval(() => {
+      if (disposed || controller.signal.aborted || active !== job) return;
+      const at = now();
+      if (at - lastPublishedAt < 750) return;
+      const estimate = lastInputProgress.remainingEstimate;
+      const estimateAge = Math.max(0, at - estimateStartedAt) / 1000;
+      const remainingEstimate = estimate && estimateAge < estimate.range.maxSeconds
+        ? {
+          ...estimate,
+          range: {
+            minSeconds: Math.max(1, estimate.range.minSeconds - estimateAge),
+            maxSeconds: Math.max(1, estimate.range.maxSeconds - estimateAge),
+          },
+        }
+        : undefined;
+      lastProgress = {
+        ...lastInputProgress,
+        elapsedMs: Math.max(0, at - startedAt),
+        phaseElapsedMs: Math.max(0, at - phaseStartedAt),
+        remainingEstimate,
+      };
+      lastPublishedAt = at;
+      notify(() => options.onState(true, lastProgress));
+    }, 750);
 
     const task = (async () => {
       try {
         options.pausePlayback();
-        const output = await options.execute(source, controller.signal, progress => {
-          if (disposed || controller.signal.aborted || active !== job) return;
-          notify(() => options.onState(true, { phase: progress.phase, percent: progress.percent }));
-        });
+        const output = await options.execute(source, controller.signal, publish, startedAt);
         if (disposed || controller.signal.aborted || active !== job) return;
         const revoke = options.download(output, source);
         retainDownload(revoke);
@@ -102,6 +154,8 @@ export function createExportJobController(options: ExportJobOptions): ExportJobC
           notify(() => options.onError(message || ERROR_FALLBACK));
         }
       } finally {
+        if (job.timer) clearInterval(job.timer);
+        job.timer = null;
         if (active === job) {
           active = null;
           options.lockedRef.current = false;
@@ -122,6 +176,7 @@ export function createExportJobController(options: ExportJobOptions): ExportJobC
     if (disposed) return;
     disposed = true;
     active?.controller.abort();
+    if (active?.timer) clearInterval(active.timer);
     options.lockedRef.current = false;
     for (const release of [...retainedDownloads]) release();
   };

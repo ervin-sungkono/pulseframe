@@ -6,12 +6,28 @@ import {
 import { drawVisualization, warmSoundResponse, makeParticles, type LogoLayer } from "./visualizer";
 import type { VisualSettings } from "./visual-settings-model";
 import type { SubtitleCue } from "./subtitles";
-import { PcmFeatures, dropEnvelope, prepareSound, type PreparedSound } from "./audio-features";
+import { dropEnvelope, prepareSound, type PreparedSound } from "./audio-features";
+import { initializeDsp } from "./dsp/loader";
+import { PcmFeatures } from "./pcm-features";
 import { decodeMediaAudio, audioSections } from "./media-audio";
 import { COMPRESSED_VIDEO_QUALITY } from "./export-settings";
 import { exportFrames, exportSoundAt, type ExportFrameRate } from "./export-timeline";
+import {
+  ExportRunClock, makeExportTimingProfileBase, makeExportWorkloadForExport,
+  type ExportTimingMeasurement, type ExportTimingProfile, type RemainingEstimate,
+} from "./export-time-estimate";
 
-export type ExportProgress = { phase: "Preparing media" | "Rendering frames" | "Finishing file"; percent: number };
+export type ExportProgress = {
+  phase: "Preparing media" | "Rendering frames" | "Finishing file";
+  percent: number;
+  elapsedMs?: number;
+  phaseElapsedMs?: number;
+  completedFrames?: number;
+  totalFrames?: number;
+  frameLoopElapsedMs?: number;
+  timingProfile?: ExportTimingProfile;
+  remainingEstimate?: RemainingEstimate;
+};
 export type ExportOptions = {
   file: File;
   start: number;
@@ -27,6 +43,7 @@ export type ExportOptions = {
   background?: LogoLayer | null;
   prepared?: PreparedSound;
   reducedMotion?: boolean;
+  startedAt: number;
   signal: AbortSignal;
   onProgress: (progress: ExportProgress) => void;
 };
@@ -36,25 +53,33 @@ function checkCanceled(signal: AbortSignal) {
 }
 
 export async function exportVisualVideo({
-  file, start, end, width, height, settings, subtitles, duration, videoCompression = false, frameRate = 30, logo, background, prepared, reducedMotion, signal, onProgress,
-}: ExportOptions): Promise<{ blob: Blob; extension: "mp4" | "webm" }> {
+  file, start, end, width, height, settings, subtitles, duration, videoCompression = false, frameRate = 30, logo, background, prepared, reducedMotion, startedAt, signal, onProgress,
+}: ExportOptions): Promise<{ blob: Blob; extension: "mp4" | "webm"; timing: ExportTimingMeasurement }> {
+  const runClock = new ExportRunClock(startedAt);
+  const report = (progress: Omit<ExportProgress, "elapsedMs" | "phaseElapsedMs">) => {
+    const timing = runClock.snapshot();
+    onProgress({ ...progress, elapsedMs: timing.elapsedMs, phaseElapsedMs: timing.phaseElapsedMs });
+  };
   if (!(end > start + .05)) throw new Error("Select at least 0.1 seconds to export.");
   if (typeof VideoEncoder === "undefined") throw new Error("Fast video export needs WebCodecs. Try an up-to-date browser.");
   // Validate the frame rate before decoder/encoder resources are allocated.
   exportFrames(end - start, frameRate).next();
   checkCanceled(signal);
-  onProgress({ phase: "Preparing media", percent: 2 });
+  report({ phase: "Preparing media", percent: 2 });
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   let output: Output<Mp4OutputFormat | WebMOutputFormat, BufferTarget> | null = null;
+  let features: PcmFeatures | null = null;
   try {
     const analysisStart = prepared ? 0 : Math.max(0, start - 10);
+    const dspReady = initializeDsp();
     const sound = prepared ?? await prepareSound(await decodeMediaAudio(file, signal, analysisStart, end), signal);
+    await dspReady;
     // A bounded fallback supports long-file range exports. Omit automatic drop
     // accents when full-track musical history is unavailable.
     const events = prepared ? sound.events : [];
     const audio = sound.audio && start - analysisStart < sound.audio.duration ? sound.audio : null;
     checkCanceled(signal);
-    onProgress({ phase: "Preparing media", percent: 10 });
+    report({ phase: "Preparing media", percent: 10 });
     const videoTrack = await input.getPrimaryVideoTrack();
     if (videoTrack && !await videoTrack.canDecode()) throw new Error("The video track cannot be decoded for export on this device.");
     const videoSink = videoTrack ? new CanvasSink(videoTrack, { width: Math.min(width, 1280) }) : null;
@@ -91,8 +116,29 @@ export async function exportVisualVideo({
       checkCanceled(signal); await audioSource.add(section);
     }
 
+    const workload = makeExportWorkloadForExport({
+      durationSeconds: end - start,
+      analysisSeconds: Math.max(0, end - analysisStart),
+      preparedAudio: !!prepared,
+      settings,
+      subtitles: subtitles.length > 0,
+      logo: !!logo,
+      background: !!background,
+      videoOverlay: !!videoTrack,
+      reducedMotion: !!reducedMotion,
+    });
+    const timingProfile: ExportTimingProfile = {
+      ...makeExportTimingProfileBase({
+        width, height, frameRate, videoCompression, sourceKind: videoTrack ? "video" : "audio",
+        preparedAudio: !!prepared, workload,
+      }),
+      codec: mp4 ? "avc" : webmVideo!,
+      audioIncluded: !!audioSource,
+    };
+
     const sourceAudio = sound.audio;
-    const features = sourceAudio ? new PcmFeatures(Array.from({ length: sourceAudio.numberOfChannels }, (_, i) => sourceAudio.getChannelData(i)), sourceAudio.sampleRate) : null;
+    features = sourceAudio ? new PcmFeatures(Array.from({ length: sourceAudio.numberOfChannels }, (_, i) => sourceAudio.getChannelData(i)), sourceAudio.sampleRate) : null;
+    const frameFeatures = features;
     const history = warmSoundResponse(sound.envelopes, settings, start - analysisStart), audioState = history.state;
     let lastAnalysisTime = history.lastTime;
     const particles = makeParticles(300);
@@ -104,11 +150,15 @@ export async function exportVisualVideo({
     };
     const videoIterator = videoSink?.canvasesAtTimestamps(timestamps());
     let lastVideoFrame: HTMLCanvasElement | OffscreenCanvas | null = null;
+    runClock.setPhase("Rendering frames");
+    const renderStartedAt = performance.now();
+    let lastProgressAt = renderStartedAt;
+    report({ phase: "Rendering frames", percent: 12, completedFrames: 0, totalFrames: frames, frameLoopElapsedMs: 0, timingProfile });
     for (const { index: frame, time: localTime, duration: frameDuration, keyFrame } of exportFrames(length, frameRate)) {
       checkCanceled(signal);
       const absoluteTime = start + localTime;
       const analysisTime = absoluteTime - analysisStart;
-      const frameData = features ? exportSoundAt(sound.envelopes, analysisTime, time => features.at(time, false)) : null;
+      const frameData = frameFeatures ? exportSoundAt(sound.envelopes, analysisTime, time => frameFeatures.at(time, false)) : null;
       if (videoIterator) {
         const next = await videoIterator.next();
         lastVideoFrame = next.value?.canvas ?? lastVideoFrame;
@@ -118,21 +168,41 @@ export async function exportVisualVideo({
         duration, subtitles, { sound: frameData, background, reducedMotion, drop: dropEnvelope(events, absoluteTime) });
       lastAnalysisTime = analysisTime;
       await videoSource.add(localTime, frameDuration, { keyFrame });
-      if (frame % 10 === 0 || frame === frames - 1) {
-        onProgress({ phase: "Rendering frames", percent: 12 + Math.round((frame + 1) / frames * 83) });
-        await new Promise(resolve => setTimeout(resolve, 0));
+      const completedFrames = frame + 1;
+      const now = performance.now();
+      if (now - lastProgressAt >= 750 || completedFrames === frames) {
+        report({
+          phase: "Rendering frames",
+          percent: 12 + Math.round(completedFrames / frames * 83),
+          completedFrames,
+          totalFrames: frames,
+          frameLoopElapsedMs: Math.max(0, now - renderStartedAt),
+          timingProfile,
+        });
+        lastProgressAt = now;
       }
+      if (completedFrames % 10 === 0) await new Promise(resolve => setTimeout(resolve, 0));
     }
     checkCanceled(signal);
-    onProgress({ phase: "Finishing file", percent: 96 });
-    await output.finalize();
+    runClock.setPhase("Finishing file");
+    report({ phase: "Finishing file", percent: 96, completedFrames: frames, totalFrames: frames, frameLoopElapsedMs: Math.max(0, performance.now() - renderStartedAt), timingProfile });
+    const finishPulse = setInterval(() => {
+      if (!signal.aborted) report({ phase: "Finishing file", percent: 96, completedFrames: frames, totalFrames: frames, frameLoopElapsedMs: Math.max(0, performance.now() - renderStartedAt), timingProfile });
+    }, 750);
+    try { await output.finalize(); }
+    finally { clearInterval(finishPulse); }
+    checkCanceled(signal);
     if (!target.buffer) throw new Error("The output file was empty.");
-    onProgress({ phase: "Finishing file", percent: 100 });
-    return { blob: new Blob([target.buffer], { type: mp4 ? "video/mp4" : "video/webm" }), extension: mp4 ? "mp4" : "webm" };
+    const blob = new Blob([target.buffer], { type: mp4 ? "video/mp4" : "video/webm" });
+    const elapsed = runClock.complete();
+    const timing: ExportTimingMeasurement = { profile: timingProfile, frameCount: frames, ...elapsed };
+    report({ phase: "Finishing file", percent: 100, completedFrames: frames, totalFrames: frames, frameLoopElapsedMs: Math.max(0, performance.now() - renderStartedAt), timingProfile });
+    return { blob, extension: mp4 ? "mp4" : "webm", timing };
   } catch (error) {
     if (output && output.state !== "finalized" && output.state !== "canceled") await output.cancel().catch(() => {});
     throw error;
   } finally {
+    features?.dispose();
     input.dispose();
   }
 }

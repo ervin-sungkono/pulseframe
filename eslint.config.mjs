@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "public/dsp/**", // Reproducible wasm-bindgen output; checked by DSP CI.
+    "crates/pulseframe-dsp/target/**",
   ]),
   {
     files: ["components/ui/**/*.{ts,tsx}", "hooks/use-mobile.ts"],
