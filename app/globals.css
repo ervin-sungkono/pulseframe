@@ -398,8 +398,6 @@ h2 { font-size: 22px; letter-spacing: -.045em; margin: 0; }
   .preset-form-actions { justify-content: stretch; }.preset-form-actions .button { flex: 1; }
 }
 
-.preset-signin-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: baseline; }
-.preset-signin-recovery p { font-size: 14px; color: #c2cce0; line-height: 1.5; margin-bottom: 12px; }
 
 /* Grouped customizer controls and direct numeric slider values. */
 /* Fieldset's anonymous content box prevents its child from shrinking in flex

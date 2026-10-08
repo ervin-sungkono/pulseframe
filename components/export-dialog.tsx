@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { Download, Play, RotateCcw, Scissors } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";

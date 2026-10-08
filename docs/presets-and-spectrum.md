@@ -1,3 +1,7 @@
+# Historical feature notes
+
+The account-backed preset implementation described below was replaced during the Vercel migration. Current behavior is documented in [Personal Quick Looks](personal-quick-looks.md).
+
 # Presets, Spectrum and track overlays
 
 Spectrum has adjustable rounded caps and a separate fading reflection, defaulting to 45% opacity at its waterline. Upper glow is clipped away from the reflection. Its midpoint remains centered, with bounds that reserve room for fitted logos, subtitles and track overlays.

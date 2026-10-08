@@ -125,7 +125,7 @@ const presetComponentMocks = id => {
   if (id === '@/components/ui/dialog') return uiDialog;
   if (id === '@/components/ui/alert-dialog') return uiAlertDialog;
   if (id === '@/components/preset-save-dialog') return { PresetSaveDialog: presetSaveDialogStub };
-  if (id === '@/hooks/use-presets') return { PresetRequestError: class PresetRequestError extends Error {} };
+  if (id === '@/lib/preset-store') return { PresetStoreError: class PresetStoreError extends Error {} };
   if (id === '@/lib/presets') return { visualModeName: () => 'Pulse Ring' };
   throw new Error(`Unexpected PresetDialog import: ${id}`);
 };
