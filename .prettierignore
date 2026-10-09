@@ -1,0 +1,9 @@
+build/
+coverage/
+crates/pulseframe-dsp/target/
+dist/
+node_modules/
+pnpm-lock.yaml
+public/dsp/
+vendor/
+*.tsbuildinfo

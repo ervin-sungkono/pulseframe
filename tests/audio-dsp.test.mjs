@@ -62,11 +62,7 @@ test("normalizes DC and Nyquist bins without one-sided doubling", () => {
     alternating[index] = index % 2 === 0 ? 0.5 : -0.5;
   }
   const dc = new FFTAnalyzer(FFT_SIZE).analyze(constant, FFT_SIZE / 2, SAMPLE_RATE);
-  const nyquist = new FFTAnalyzer(FFT_SIZE).analyze(
-    alternating,
-    FFT_SIZE / 2,
-    SAMPLE_RATE,
-  );
+  const nyquist = new FFTAnalyzer(FFT_SIZE).analyze(alternating, FFT_SIZE / 2, SAMPLE_RATE);
   closeTo(dc.amplitudes[0], 0.25, 2e-6, "DC amplitude");
   closeTo(nyquist.amplitudes[FFT_SIZE / 2], 0.5, 2e-6, "Nyquist amplitude");
 });

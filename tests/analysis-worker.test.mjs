@@ -15,7 +15,9 @@ class TestAudioBuffer {
     this.channels = channels;
   }
 
-  getChannelData(index) { return this.channels[index]; }
+  getChannelData(index) {
+    return this.channels[index];
+  }
 }
 
 class FakeWorker {
@@ -35,8 +37,16 @@ class FakeWorker {
     if (message.type === "start") {
       this.retain = message.retain;
       if (FakeWorker.mode !== "no-ready") {
-        queueMicrotask(() => this.emit({ type: "ready", generation: message.generation, jobId: message.jobId,
-          protocolVersion: message.protocolVersion, featureSchemaVersion: message.featureSchemaVersion, backend: "js" }));
+        queueMicrotask(() =>
+          this.emit({
+            type: "ready",
+            generation: message.generation,
+            jobId: message.jobId,
+            protocolVersion: message.protocolVersion,
+            featureSchemaVersion: message.featureSchemaVersion,
+            backend: "js",
+          }),
+        );
       }
       return;
     }
@@ -48,9 +58,15 @@ class FakeWorker {
       const firstCount = FakeWorker.mode === "fail-after-batch" ? 1 : 15;
       let frameStart = workerMessage.frameStart;
       let batchCount = Math.min(firstCount, workerMessage.frameEnd - frameStart);
-      const eventFrames = [frameStart].filter(frame => frame % 60 === 0);
-      const response = { type: "batch", generation: workerMessage.generation, jobId: workerMessage.jobId,
-        frameStart, frameCount: batchCount, eventFrames };
+      const eventFrames = [frameStart].filter((frame) => frame % 60 === 0);
+      const response = {
+        type: "batch",
+        generation: workerMessage.generation,
+        jobId: workerMessage.jobId,
+        frameStart,
+        frameCount: batchCount,
+        eventFrames,
+      };
       if (FakeWorker.mode === "fail-after-batch") {
         const metrics = new Float64Array(batchCount * 7).fill(123456);
         const bands = new Float32Array(batchCount * workerMessage.samples.length * 96).fill(0.75);
@@ -63,19 +79,29 @@ class FakeWorker {
 
       while (frameStart < workerMessage.frameEnd) {
         batchCount = Math.min(15, workerMessage.frameEnd - frameStart);
-        const batch = { ...response, frameStart, frameCount: batchCount,
-          eventFrames: frameStart % 60 === 0 ? [frameStart] : [] };
+        const batch = {
+          ...response,
+          frameStart,
+          frameCount: batchCount,
+          eventFrames: frameStart % 60 === 0 ? [frameStart] : [],
+        };
         if (this.retain) {
           const metrics = new Float64Array(batchCount * 7);
           for (let local = 0; local < batchCount; local += 1) {
             const frame = frameStart + local;
-            metrics.set([frame + 1, frame + 2, frame + 3, frame + 4, frame + 5, frame + 6, frame + 7], local * 7);
+            metrics.set(
+              [frame + 1, frame + 2, frame + 3, frame + 4, frame + 5, frame + 6, frame + 7],
+              local * 7,
+            );
           }
           const bandValues = new Float32Array(batchCount * workerMessage.samples.length * 96);
           for (let local = 0; local < batchCount; local += 1) {
             for (let channel = 0; channel < workerMessage.samples.length; channel += 1) {
-              bandValues.fill(channel + (frameStart + local) / 1000, (local * workerMessage.samples.length + channel) * 96,
-                (local * workerMessage.samples.length + channel + 1) * 96);
+              bandValues.fill(
+                channel + (frameStart + local) / 1000,
+                (local * workerMessage.samples.length + channel) * 96,
+                (local * workerMessage.samples.length + channel + 1) * 96,
+              );
             }
           }
           batch.metrics = metrics.buffer;
@@ -84,14 +110,22 @@ class FakeWorker {
         this.emit(batch);
         frameStart += batchCount;
       }
-      this.emit({ type: "chunk-done", generation: workerMessage.generation, jobId: workerMessage.jobId,
-        nextFrame: workerMessage.frameEnd });
+      this.emit({
+        type: "chunk-done",
+        generation: workerMessage.generation,
+        jobId: workerMessage.jobId,
+        nextFrame: workerMessage.frameEnd,
+      });
     };
     queueMicrotask(emitChunk);
   }
 
-  emit(data) { this.onmessage?.({ data }); }
-  terminate() { this.terminated = true; }
+  emit(data) {
+    this.onmessage?.({ data });
+  }
+  terminate() {
+    this.terminated = true;
+  }
 }
 
 function withFakeWorker(mode, action) {
@@ -99,20 +133,25 @@ function withFakeWorker(mode, action) {
   FakeWorker.instances = [];
   FakeWorker.mode = mode;
   globalThis.Worker = FakeWorker;
-  return Promise.resolve().then(action).finally(() => {
-    if (original === undefined) delete globalThis.Worker;
-    else globalThis.Worker = original;
-  });
+  return Promise.resolve()
+    .then(action)
+    .finally(() => {
+      if (original === undefined) delete globalThis.Worker;
+      else globalThis.Worker = original;
+    });
 }
 
 test("prepared scans transfer only bounded PCM copies and keep AudioBuffer channel data attached", async () => {
   await withFakeWorker("success", async () => {
     const sampleRate = 48_000;
-    const channels = [new Float32Array(sampleRate * 8).fill(0.1), new Float32Array(sampleRate * 8).fill(-0.1)];
-    const originalBuffers = channels.map(channel => channel.buffer);
+    const channels = [
+      new Float32Array(sampleRate * 8).fill(0.1),
+      new Float32Array(sampleRate * 8).fill(-0.1),
+    ];
+    const originalBuffers = channels.map((channel) => channel.buffer);
     const events = await findDropEvents(channels, sampleRate);
     const worker = FakeWorker.instances[0];
-    const chunks = worker.messages.filter(item => item.message.type === "chunk");
+    const chunks = worker.messages.filter((item) => item.message.type === "chunk");
 
     assert.equal(chunks.length, 3);
     assert.deepEqual(events, [0, 2, 4, 6]);
@@ -120,10 +159,18 @@ test("prepared scans transfer only bounded PCM copies and keep AudioBuffer chann
       assert.equal(message.samples.length, 2);
       assert.equal(transfer.length, 2);
       assert.ok(message.samples.every((buffer, index) => buffer !== originalBuffers[index]));
-      assert.ok(message.samples.every(buffer => buffer.byteLength <= (sampleRate * 3 + 4096) * Float32Array.BYTES_PER_ELEMENT));
-      assert.ok(transfer.every(buffer => message.samples.includes(buffer)));
+      assert.ok(
+        message.samples.every(
+          (buffer) => buffer.byteLength <= (sampleRate * 3 + 4096) * Float32Array.BYTES_PER_ELEMENT,
+        ),
+      );
+      assert.ok(transfer.every((buffer) => message.samples.includes(buffer)));
     }
-    assert.ok(originalBuffers.every(buffer => buffer.byteLength === sampleRate * 8 * Float32Array.BYTES_PER_ELEMENT));
+    assert.ok(
+      originalBuffers.every(
+        (buffer) => buffer.byteLength === sampleRate * 8 * Float32Array.BYTES_PER_ELEMENT,
+      ),
+    );
     assert.equal(worker.options.type, "module");
     assert.equal(worker.terminated, true);
   });
@@ -132,7 +179,10 @@ test("prepared scans transfer only bounded PCM copies and keep AudioBuffer chann
 test("prepared scan keeps returned envelope storage and exact 30 Hz frame positions", async () => {
   await withFakeWorker("success", async () => {
     const sampleRate = 24_000;
-    const audio = new TestAudioBuffer(sampleRate, [new Float32Array(sampleRate), new Float32Array(sampleRate)]);
+    const audio = new TestAudioBuffer(sampleRate, [
+      new Float32Array(sampleRate),
+      new Float32Array(sampleRate),
+    ]);
     const prepared = await prepareSound(audio);
 
     assert.equal(prepared.envelopes.length, 30);
@@ -140,8 +190,10 @@ test("prepared scan keeps returned envelope storage and exact 30 Hz frame positi
     assert.equal(prepared.envelopes[29].highDb, 36);
     assert.equal(prepared.envelopes[17].bands[0].length, 96);
     assert.equal(prepared.envelopes[17].bands[1].length, 96);
-    assert.ok(prepared.envelopes[17].bands[0].every(value => Math.abs(value - 17 / 1000) < 1e-7));
-    assert.ok(prepared.envelopes[17].bands[1].every(value => Math.abs(value - (1 + 17 / 1000)) < 1e-7));
+    assert.ok(prepared.envelopes[17].bands[0].every((value) => Math.abs(value - 17 / 1000) < 1e-7));
+    assert.ok(
+      prepared.envelopes[17].bands[1].every((value) => Math.abs(value - (1 + 17 / 1000)) < 1e-7),
+    );
     assert.equal(prepared.audio, audio);
   });
 });
@@ -151,12 +203,17 @@ test("chunk overlap grows enough to preserve the recent RMS window at high sampl
     const sampleRate = 384_000;
     const samples = new Float32Array(sampleRate * 3);
     await findDropEvents([samples], sampleRate);
-    const chunks = FakeWorker.instances[0].messages.filter(item => item.message.type === "chunk");
+    const chunks = FakeWorker.instances[0].messages.filter((item) => item.message.type === "chunk");
 
     assert.equal(chunks.length, 2);
-    assert.equal(chunks[1].message.sourceOffsetSamples, sampleRate * 2 - Math.round(sampleRate * 0.02));
-    assert.equal(chunks[1].message.samples[0].byteLength,
-      (sampleRate + Math.round(sampleRate * 0.02)) * Float32Array.BYTES_PER_ELEMENT);
+    assert.equal(
+      chunks[1].message.sourceOffsetSamples,
+      sampleRate * 2 - Math.round(sampleRate * 0.02),
+    );
+    assert.equal(
+      chunks[1].message.samples[0].byteLength,
+      (sampleRate + Math.round(sampleRate * 0.02)) * Float32Array.BYTES_PER_ELEMENT,
+    );
   });
 });
 

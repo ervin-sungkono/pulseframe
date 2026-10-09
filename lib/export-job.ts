@@ -27,12 +27,21 @@ export type ExportSource = {
 };
 
 export type ExportJobProgress = ExportProgress;
-export type ExportJobOutput = { blob: Blob; extension: "mp4" | "webm"; timing?: ExportTimingMeasurement };
+export type ExportJobOutput = {
+  blob: Blob;
+  extension: "mp4" | "webm";
+  timing?: ExportTimingMeasurement;
+};
 
 type ExportJobOptions = {
   lockedRef: { current: boolean };
   pausePlayback: () => void;
-  execute: (source: ExportSource, signal: AbortSignal, onProgress: (progress: ExportJobProgress) => void, startedAt: number) => Promise<ExportJobOutput>;
+  execute: (
+    source: ExportSource,
+    signal: AbortSignal,
+    onProgress: (progress: ExportJobProgress) => void,
+    startedAt: number,
+  ) => Promise<ExportJobOutput>;
   download: (result: ExportJobOutput, source: ExportSource) => (() => void) | void;
   onStart?: () => void;
   onState: (exporting: boolean, progress: ExportJobProgress | null) => void;
@@ -53,12 +62,21 @@ const ERROR_FALLBACK = "Could not export this file.";
 
 /** Owns the export lock until encoding settles, including after cancellation. */
 export function createExportJobController(options: ExportJobOptions): ExportJobController {
-  let active: { controller: AbortController; source: ExportSource; startedAt: number; timer: ReturnType<typeof setInterval> | null } | null = null;
+  let active: {
+    controller: AbortController;
+    source: ExportSource;
+    startedAt: number;
+    timer: ReturnType<typeof setInterval> | null;
+  } | null = null;
   let disposed = false;
   const retainedDownloads = new Set<() => void>();
 
   const notify = (callback: () => void) => {
-    try { callback(); } catch { /* User-facing callbacks must not strand the lock. */ }
+    try {
+      callback();
+    } catch {
+      /* User-facing callbacks must not strand the lock. */
+    }
   };
 
   const retainDownload = (revoke: (() => void) | void) => {
@@ -70,14 +88,24 @@ export function createExportJobController(options: ExportJobOptions): ExportJobC
       retained = false;
       retainedDownloads.delete(release);
       cancelTimer();
-      try { revoke(); } catch { /* Revocation is best effort during teardown. */ }
+      try {
+        revoke();
+      } catch {
+        /* Revocation is best effort during teardown. */
+      }
     };
     retainedDownloads.add(release);
-    const schedule = options.scheduleRevoke ?? ((callback, delayMs) => {
-      const timer = setTimeout(callback, delayMs);
-      return () => clearTimeout(timer);
-    });
-    try { cancelTimer = schedule(release, 60_000); } catch { /* dispose() still owns cleanup. */ }
+    const schedule =
+      options.scheduleRevoke ??
+      ((callback, delayMs) => {
+        const timer = setTimeout(callback, delayMs);
+        return () => clearTimeout(timer);
+      });
+    try {
+      cancelTimer = schedule(release, 60_000);
+    } catch {
+      /* dispose() still owns cleanup. */
+    }
   };
 
   const start = (source: ExportSource): Promise<void> | null => {
@@ -85,11 +113,21 @@ export function createExportJobController(options: ExportJobOptions): ExportJobC
     const controller = new AbortController();
     const now = options.now ?? (() => performance.now());
     const startedAt = now();
-    const job = { controller, source, startedAt, timer: null as ReturnType<typeof setInterval> | null };
+    const job = {
+      controller,
+      source,
+      startedAt,
+      timer: null as ReturnType<typeof setInterval> | null,
+    };
     options.lockedRef.current = true;
     active = job;
 
-    let lastProgress: ExportJobProgress = { phase: "Preparing media", percent: 0, elapsedMs: 0, phaseElapsedMs: 0 };
+    let lastProgress: ExportJobProgress = {
+      phase: "Preparing media",
+      percent: 0,
+      elapsedMs: 0,
+      phaseElapsedMs: 0,
+    };
     let lastInputProgress = lastProgress;
     let lastPhase = lastProgress.phase;
     let phaseStartedAt = startedAt;
@@ -121,15 +159,16 @@ export function createExportJobController(options: ExportJobOptions): ExportJobC
       if (at - lastPublishedAt < 750) return;
       const estimate = lastInputProgress.remainingEstimate;
       const estimateAge = Math.max(0, at - estimateStartedAt) / 1000;
-      const remainingEstimate = estimate && estimateAge < estimate.range.maxSeconds
-        ? {
-          ...estimate,
-          range: {
-            minSeconds: Math.max(1, estimate.range.minSeconds - estimateAge),
-            maxSeconds: Math.max(1, estimate.range.maxSeconds - estimateAge),
-          },
-        }
-        : undefined;
+      const remainingEstimate =
+        estimate && estimateAge < estimate.range.maxSeconds
+          ? {
+              ...estimate,
+              range: {
+                minSeconds: Math.max(1, estimate.range.minSeconds - estimateAge),
+                maxSeconds: Math.max(1, estimate.range.maxSeconds - estimateAge),
+              },
+            }
+          : undefined;
       lastProgress = {
         ...lastInputProgress,
         elapsedMs: Math.max(0, at - startedAt),

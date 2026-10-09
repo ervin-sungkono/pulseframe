@@ -47,7 +47,10 @@ export type DspModuleBindings = {
   FrameDsp: FrameDspConstructor;
   core_version(): string;
   feature_schema_version(): number;
-  default(input?: { module_or_path?: string | URL | Request | Response | WebAssembly.Module | ArrayBuffer | ArrayBufferView }): Promise<{ memory: WebAssembly.Memory }>;
+  default(input?: {
+    module_or_path?:
+      string | URL | Request | Response | WebAssembly.Module | ArrayBuffer | ArrayBufferView;
+  }): Promise<{ memory: WebAssembly.Memory }>;
 };
 
 export type DspModule = DspModuleBindings & { memory: WebAssembly.Memory };
@@ -69,7 +72,7 @@ export type DspScanStartMessage = {
   jobId: number;
   protocolVersion: number;
   featureSchemaVersion: number;
-  backendPreference?: 'auto' | 'js';
+  backendPreference?: "auto" | "js";
   sampleRate: number;
   channelCount: number;
   totalSamples: number;

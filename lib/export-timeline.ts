@@ -2,7 +2,7 @@ import { ANALYSIS_FPS } from "./audio-analysis-config";
 import type { SoundEnvelope } from "./audio-features";
 
 export const EXPORT_FRAME_RATES = [24, 30, 60] as const;
-export type ExportFrameRate = typeof EXPORT_FRAME_RATES[number];
+export type ExportFrameRate = (typeof EXPORT_FRAME_RATES)[number];
 
 /** Exact timestamps keep audio, subtitles and video on the selected timeline. */
 export function* exportFrames(length: number, frameRate: ExportFrameRate) {
@@ -17,9 +17,13 @@ export function* exportFrames(length: number, frameRate: ExportFrameRate) {
 }
 
 /** Reuse only exact analysis samples. Interpolation can blur short bass hits. */
-export function exportSoundAt(envelopes: SoundEnvelope[], time: number,
-  analyze: (time: number) => SoundEnvelope): SoundEnvelope {
-  const position = time * ANALYSIS_FPS, index = Math.round(position);
+export function exportSoundAt(
+  envelopes: SoundEnvelope[],
+  time: number,
+  analyze: (time: number) => SoundEnvelope,
+): SoundEnvelope {
+  const position = time * ANALYSIS_FPS,
+    index = Math.round(position);
   if (index >= 0 && Math.abs(position - index) < 1e-7 && envelopes[index]) return envelopes[index];
   return analyze(time);
 }
