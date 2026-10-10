@@ -279,3 +279,14 @@
     min-height: 44px;
   }
 }
+
+.look-render-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+.rendered-look {
+  overflow: hidden;
+}

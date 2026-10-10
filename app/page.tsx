@@ -61,7 +61,33 @@ import { SubtitleDialog } from "@/components/subtitle-dialog";
 import type { ExportFrameRate } from "@/lib/export-timeline";
 import { makeProjectFile, readProjectFile } from "@/lib/project-file";
 import type { SubtitleCue } from "@/lib/subtitles";
-import { useMediaSession } from "@/hooks/use-media-session";
+import { useStudioProject } from "@/hooks/use-studio-project";
+import { useArtistProfiles } from "@/hooks/use-artist-profiles";
+import { useExportQueue } from "@/hooks/use-export-queue";
+import { ArtistProfileDialog } from "@/components/artist-profile-dialog";
+import { ArtworkPalette } from "@/components/artwork-palette";
+import { PlaylistPanel } from "@/components/playlist-panel";
+import { ClipSuggestions } from "@/components/clip-suggestions";
+import { CompositionEditor } from "@/components/composition-editor";
+import { CompositionInspector } from "@/components/composition-inspector";
+import { ReleaseDialog } from "@/components/release-dialog";
+import { BatchExportDialog } from "@/components/batch-export-dialog";
+import { GettingStarted } from "@/components/getting-started";
+import { useReleasePreview } from "@/hooks/use-release-preview";
+import { createDefaultReleaseRecipe } from "@/lib/release-recipe";
+import { useStudioBranding } from "@/hooks/use-studio-branding";
+import { createExportRequest, snapshotExportSource } from "@/lib/export-request";
+import type { ExportSource } from "@/lib/export-job";
+import type { ExportPreflightResult } from "@/lib/export-preflight";
+import { visualizationCompositionGeometry } from "@/lib/visualizer";
+import {
+  pixelsToBounds,
+  resolveCompositionBounds,
+  type CompositionBounds,
+  type CompositionElement,
+} from "@/lib/composition";
+import "./studio-features.css";
+import "./composition.css";
 import { useVisualizerPreview } from "@/hooks/use-visualizer-preview";
 import { TrackWaveform } from "@/components/track-waveform";
 import type { VisualSettings } from "@/lib/visual-settings-model";
@@ -80,9 +106,10 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
   const exportingRef = useRef(false);
+  const artworkInputRef = useRef<HTMLInputElement>(null);
 
   const {
-    value: settings,
+    value: appearanceSettings,
     setValue: setSettings,
     resetValue: resetSettings,
     undo,
@@ -94,12 +121,32 @@ export default function Home() {
   const [activeLook, setActiveLook] = useState<ActiveLook | null>(null);
   const [lookSaveOpen, setLookSaveOpen] = useState(false);
   const [lookSaveTarget, setLookSaveTarget] = useState<SavedPreset | null>(null);
-  const [subtitles, setSubtitles] = useState<SubtitleCue[]>([]);
+  const artistLibrary = useArtistProfiles();
+  const [artistOpen, setArtistOpen] = useState(false);
+  const [releaseOpen, setReleaseOpen] = useState(false);
+  const [releaseSource, setReleaseSource] = useState<ExportSource | null>(null);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [startedOpen, setStartedOpen] = useState(false);
+  const [editingCanvas, setEditingCanvas] = useState(false);
+  const [selectedElement, setSelectedElement] = useState<CompositionElement | null>(null);
+  const [selectedBounds, setSelectedBounds] = useState<CompositionBounds>({
+    x: 0.1,
+    y: 0.1,
+    width: 0.5,
+    height: 0.2,
+  });
+  const [previewDraft, setPreviewDraft] = useState<VisualSettings | null>(null);
+  const [singleExtension, setSingleExtension] = useState<{
+    key: string;
+    extension: "mp4" | "webm";
+  } | null>(null);
+  const [preflights, setPreflights] = useState<Map<string, ExportPreflightResult | null>>(
+    new Map(),
+  );
   const [format, setFormat] = useState<Format>("landscape");
   const [frameRate, setFrameRate] = useState<ExportFrameRate>(30);
   const [videoCompression, setVideoCompression] = useState(false);
   const [resolution, setResolution] = useState<ExportResolution>(720);
-  const [range, setRange] = useState<[number, number]>([0, 0]);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -116,7 +163,7 @@ export default function Home() {
   const [looping, setLooping] = useState(false);
   const [focusView, setFocusView] = useState(false);
 
-  const mediaSession = useMediaSession({
+  const project = useStudioProject({
     getMediaHost: () => mediaHostRef.current,
     isBlocked: () => exportingRef.current,
     initialVolume: muted ? 0 : volume,
@@ -124,23 +171,14 @@ export default function Home() {
     onError: ({ error: failure }) => setError(failure.message),
     onNotice: (message) => setNotice(message),
     onRequestFile: () => fileInputRef.current?.click(),
-    onCommitted: ({ project, next, range: committedRange }) => {
-      setRange(committedRange);
+    onCommitted: ({ project }) => {
       if (project) {
         setFormat(project.format);
         setResolution(project.resolution ?? 720);
         setFrameRate(project.frameRate ?? 30);
         setVideoCompression(project.videoCompression ?? false);
         resetSettings(project.settings);
-        setSubtitles(project.subtitles);
         setActiveLook(null);
-      } else {
-        setSubtitles([]);
-        resetSettings((current) => ({
-          ...current,
-          trackTitle: next.name.replace(/\.[^.]+$/, "").slice(0, 120),
-          trackArtist: "",
-        }));
       }
     },
     onEvent: (event) => {
@@ -150,6 +188,19 @@ export default function Home() {
       }
     },
   });
+  const { media: mediaSession, tracks, activeTrack, range, setRange } = project;
+  const settings = activeTrack
+    ? {
+        ...appearanceSettings,
+        trackTitle: activeTrack.title,
+        trackArtist: activeTrack.artist,
+      }
+    : appearanceSettings;
+  const subtitles = activeTrack?.subtitles ?? [];
+  const setSubtitles = (cues: SubtitleCue[]) => {
+    if (activeTrack && !exportingRef.current)
+      tracks.updateTrack(activeTrack.id, { subtitles: cues });
+  };
   const { session } = mediaSession;
   const file = mediaSession.file;
   const duration = mediaSession.duration;
@@ -168,42 +219,109 @@ export default function Home() {
   const { captureImage, reducedMotionRef } = useVisualizerPreview({
     session,
     canvasRef,
-    settings,
+    settings: previewDraft ?? settings,
     subtitles,
     format,
     lockedRef: exportingRef,
     onError: setError,
     onNotice: setNotice,
   });
-  const { exporting, progress, estimateBeforeExport, exportVideo, cancelExport } =
-    useExportController({
-      lockedRef: exportingRef,
-      getSource: () => {
-        const current = session.snapshot;
-        if (loadingMedia || openingProject || !current.file || !current.duration) return null;
-        return {
-          file: current.file,
-          generation: current.generation,
-          sourceKind: current.video ? "video" : "audio",
-          duration: current.duration,
-          range,
-          format,
-          resolution,
-          frameRate,
-          videoCompression,
-          settings,
-          subtitles,
-          logo: current.logo?.image ?? null,
-          background: current.background?.image ?? null,
-          prepared: current.sound ?? undefined,
-          reducedMotion: reducedMotionRef.current,
-        };
-      },
-      pausePlayback: () => session.pause(),
-      onError: setError,
-      onNotice: setNotice,
-      onComplete: () => setExportOpen(false),
-    });
+  const getSource = (): ExportSource | null => {
+    const current = session.snapshot;
+    if (
+      loadingMedia ||
+      openingProject ||
+      tracks.importing ||
+      !activeTrack ||
+      !current.file ||
+      !current.duration
+    )
+      return null;
+    const playlist = tracks.tracks.length > 1;
+    return {
+      file: current.file,
+      generation: current.generation,
+      sourceKind: current.video ? "video" : "audio",
+      duration: project.exportDuration,
+      range,
+      format,
+      resolution,
+      frameRate,
+      videoCompression,
+      settings,
+      subtitles,
+      logo: current.logo?.image ?? null,
+      background: current.background?.image ?? null,
+      artwork: current.artwork?.image ?? null,
+      logoFile: current.logo?.file ?? null,
+      backgroundFile: current.background?.file ?? null,
+      artworkFile: current.artwork?.file ?? null,
+      prepared: playlist ? undefined : (current.sound ?? undefined),
+      snapshot: playlist ? undefined : current,
+      tracks: playlist ? tracks.tracks : undefined,
+      reducedMotion: reducedMotionRef.current,
+    };
+  };
+  const exports = useExportController({
+    lockedRef: exportingRef,
+    getSource,
+    pausePlayback: () => {
+      project.stopPlaylist();
+      session.pause();
+    },
+    onError: setError,
+    onNotice: setNotice,
+    onComplete: () => setExportOpen(false),
+  });
+  const { exporting, progress, estimateBeforeExport, exportVideo, cancelExport } = exports;
+  const queue = useExportQueue(exports);
+  const { preflightRequests, preflightSource } = exports;
+  useEffect(() => {
+    if (!batchOpen || !queue.requests.length) return;
+    let canceled = false;
+    preflightRequests(queue.requests)
+      .then((results) => {
+        if (!canceled) setPreflights(results);
+      })
+      .catch((caught) => {
+        if (!canceled)
+          setError(caught instanceof Error ? caught.message : "Export preflight failed.");
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [batchOpen, queue.requests, preflightRequests]);
+  const singlePreflightKey = JSON.stringify([
+    mediaSession.generation,
+    format,
+    resolution,
+    frameRate,
+    videoCompression,
+    tracks.tracks.map((track) => [track.id, track.range]),
+    range,
+  ]);
+  useEffect(() => {
+    if (!exportOpen) return;
+    let canceled = false;
+    const source = getSource();
+    if (source)
+      preflightSource(source)
+        .then((ready) => {
+          if (!canceled)
+            setSingleExtension({ key: singlePreflightKey, extension: ready.extension });
+        })
+        .catch((caught) => {
+          if (!canceled) {
+            setSingleExtension(null);
+            setError(caught instanceof Error ? caught.message : "Export preflight failed.");
+          }
+        });
+    return () => {
+      canceled = true;
+    };
+    // All values defining the source recipe are included; preparation stays in the controller.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exportOpen, singlePreflightKey, preflightSource]);
   useEffect(() => {
     setMediaVolume(muted ? 0 : volume);
   }, [volume, muted, setMediaVolume]);
@@ -212,7 +330,13 @@ export default function Home() {
   }, [looping, setMediaLoop]);
 
   const update = <K extends keyof VisualSettings>(key: K, value: VisualSettings[K]) => {
-    if (!exportingRef.current) setSettings((current) => ({ ...current, [key]: value }), key);
+    if (exportingRef.current) return;
+    if (activeTrack && (key === "trackTitle" || key === "trackArtist")) {
+      tracks.updateTrack(
+        activeTrack.id,
+        key === "trackTitle" ? { title: value as string } : { artist: value as string },
+      );
+    } else setSettings((current) => ({ ...current, [key]: value }), key);
   };
   const applyLook = (changes: Partial<VisualSettings>) => {
     if (!exportingRef.current) setSettings((current) => ({ ...current, ...changes }));
@@ -295,13 +419,13 @@ export default function Home() {
       onPresetChanged={lookMetadataChanged}
     />
   );
-  const loadFile = mediaSession.loadFile;
+  const loadFile = project.loadFile;
   const seek = mediaSession.seek;
   const togglePlay = mediaSession.togglePlay;
   const changeLogo = mediaSession.changeLogo;
   const changeBackground = mediaSession.changeBackground;
   const previewRange = async () => {
-    if (await mediaSession.previewRange(range)) setExportOpen(false);
+    if (await project.previewProjectRange(range)) setExportOpen(false);
   };
 
   const saveProject = () => {
@@ -318,7 +442,12 @@ export default function Home() {
         resolution,
         frameRate,
         videoCompression,
-        range,
+        range: activeTrack?.range ?? range,
+        tracks: tracks.tracks,
+        activeTrackId: activeTrack?.id,
+        artwork: current.artwork?.file ?? null,
+        globalExportRange: tracks.tracks.length > 1 ? range : undefined,
+        releaseRecipe: project.globalReleaseRecipe ?? undefined,
       });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -361,6 +490,11 @@ export default function Home() {
         return;
       }
       if (
+        artistOpen ||
+        releaseOpen ||
+        batchOpen ||
+        startedOpen ||
+        editingCanvas ||
         customizerOpen ||
         exportOpen ||
         subtitleOpen ||
@@ -391,6 +525,11 @@ export default function Home() {
     window.addEventListener("keydown", keys);
     return () => window.removeEventListener("keydown", keys);
   }, [
+    artistOpen,
+    releaseOpen,
+    batchOpen,
+    startedOpen,
+    editingCanvas,
     customizerOpen,
     exportOpen,
     subtitleOpen,
@@ -412,6 +551,10 @@ export default function Home() {
         event.altKey ||
         exporting ||
         loadingMedia ||
+        artistOpen ||
+        releaseOpen ||
+        batchOpen ||
+        startedOpen ||
         presetOpen ||
         lookSaveOpen ||
         exportOpen ||
@@ -435,6 +578,10 @@ export default function Home() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [
+    artistOpen,
+    releaseOpen,
+    batchOpen,
+    startedOpen,
     exporting,
     loadingMedia,
     presetOpen,
@@ -447,6 +594,72 @@ export default function Home() {
     redo,
   ]);
 
+  const branding = useStudioBranding({
+    media: mediaSession,
+    tracks,
+    activeTrack,
+    commitSettings: setSettings,
+    isBlocked: () => exportingRef.current,
+  });
+  const selectElement = (element: CompositionElement | null) => {
+    setSelectedElement(element);
+    const target = canvasRef.current;
+    const context = target?.getContext("2d");
+    if (element && target && context) {
+      const geometry = visualizationCompositionGeometry(
+        context,
+        target.width,
+        target.height,
+        settings,
+        snapshot.logo?.image ?? null,
+        snapshot.artwork?.image ?? null,
+        subtitles,
+        position,
+      );
+      setSelectedBounds(pixelsToBounds(geometry[element], target.width, target.height));
+    }
+  };
+  const selectedProjectTime =
+    tracks.tracks.length > 1
+      ? (project.timeline.segments.find((part) => part.trackId === activeTrack?.id)?.start ?? 0) +
+        position -
+        (activeTrack?.range[0] ?? 0)
+      : position;
+  const releasePreview = useReleasePreview(() => {
+    session.pause();
+    mediaSession.suspendPreparedSound();
+  });
+  const openRelease = () => {
+    const source = getSource();
+    if (!source) return;
+    try {
+      setReleaseSource(snapshotExportSource(source, { keepRuntime: false }));
+      if (!project.releaseRecipe)
+        project.setReleaseRecipe(createDefaultReleaseRecipe(source, selectedProjectTime));
+      setReleaseOpen(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not create a release package.");
+    }
+  };
+  const addCurrentToBatch = () => {
+    const source = getSource();
+    if (!source) return;
+    queue.addRequest(
+      createExportRequest(source, {
+        label:
+          tracks.tracks.length > 1
+            ? `Playlist (${tracks.tracks.length} tracks)`
+            : settings.trackTitle || "Video",
+        filename: `${source.file.name.replace(/\.[^.]+$/, "")}-pulseframe-${format}-${resolution}p`,
+        kind: "video",
+      }),
+    );
+    setBatchOpen(true);
+  };
+  const trySample = async () => {
+    const { makeDemoFile } = await import("@/lib/demo-file");
+    await loadFile(makeDemoFile());
+  };
   const canvas = dimensions[format];
   const outputDimensions = exportDimensions(format, resolution);
   return (
@@ -465,7 +678,7 @@ export default function Home() {
           <span className="eyebrow-line" />
         </div>
         <div className="topbar-actions">
-          <button className="text-button help-button" onClick={() => setHelpOpen(true)}>
+          <button className="text-button help-button" onClick={() => setStartedOpen(true)}>
             <CircleHelp size={17} />
             <span>How it works</span>
           </button>
@@ -533,6 +746,24 @@ export default function Home() {
                 height={720}
                 aria-label="Audio reactive visualization"
               />
+              {editingCanvas && (
+                <CompositionEditor
+                  canvasRef={canvasRef}
+                  settings={settings}
+                  logo={snapshot.logo?.image ?? null}
+                  artwork={snapshot.artwork?.image ?? null}
+                  subtitles={subtitles}
+                  time={position}
+                  selectedElement={selectedElement}
+                  onSelect={selectElement}
+                  onPreview={setPreviewDraft}
+                  onCommit={(next) => {
+                    setPreviewDraft(null);
+                    setSettings(next);
+                  }}
+                  disabled={exporting || loadingMedia}
+                />
+              )}
               <div className="stage-corner top-left">
                 <span className="stage-indicator" /> {file ? "AUDIO REACTIVE" : "DEMO MODE"}
               </div>
@@ -562,7 +793,11 @@ export default function Home() {
                 <button
                   key={key}
                   className={format === key ? "active" : ""}
-                  onClick={() => setFormat(key)}
+                  onClick={() => {
+                    setFormat(key);
+                    setSelectedElement(null);
+                    setPreviewDraft(null);
+                  }}
                   disabled={exporting}
                   aria-pressed={format === key}
                 >
@@ -595,6 +830,122 @@ export default function Home() {
               <span>Save frame</span>
             </button>
           </div>
+          <div className="studio-feature-toolbar" aria-label="Creative and release tools">
+            <button
+              className="button button-soft"
+              aria-pressed={editingCanvas}
+              onClick={() => {
+                setEditingCanvas(!editingCanvas);
+                setPreviewDraft(null);
+              }}
+              disabled={exporting}
+            >
+              Edit canvas
+            </button>
+            <button
+              className="button button-soft"
+              onClick={() => setArtistOpen(true)}
+              disabled={exporting || loadingMedia}
+            >
+              Artist profiles
+            </button>
+            <button
+              className="button button-soft"
+              onClick={openRelease}
+              disabled={!activeTrack || exporting || loadingMedia}
+            >
+              Release package
+            </button>
+            <button
+              className="button button-soft"
+              onClick={addCurrentToBatch}
+              disabled={!activeTrack || exporting || loadingMedia}
+            >
+              Add export to batch
+            </button>
+            <button className="button button-soft" onClick={() => setBatchOpen(true)}>
+              Batch ({queue.requests.length})
+            </button>
+          </div>
+          {editingCanvas && (
+            <section className="composition-tools" aria-label="Composition controls">
+              <p>
+                Select an element on the canvas, then drag or resize it. Each aspect ratio keeps its
+                own layout.
+              </p>
+              <div className="studio-feature-toolbar">
+                {(
+                  [
+                    "background",
+                    "artwork",
+                    "logo",
+                    "trackInfo",
+                    "promo",
+                    "captions",
+                  ] as CompositionElement[]
+                ).map((element) => (
+                  <button
+                    key={element}
+                    className="button button-soft"
+                    aria-pressed={selectedElement === element}
+                    disabled={exporting}
+                    onClick={() => selectElement(element)}
+                  >
+                    {element === "trackInfo" ? "Track info" : element}
+                  </button>
+                ))}
+                <button
+                  className="button button-soft"
+                  onClick={() => artworkInputRef.current?.click()}
+                  disabled={!activeTrack || exporting}
+                >
+                  Upload artwork
+                </button>
+                {activeTrack?.artwork && (
+                  <button
+                    className="text-button"
+                    disabled={exporting}
+                    onClick={() => void project.updateTrack(activeTrack.id, { artwork: null })}
+                  >
+                    Remove artwork
+                  </button>
+                )}
+              </div>
+              {selectedElement && (
+                <CompositionInspector
+                  settings={settings}
+                  aspect={format}
+                  selectedElement={selectedElement}
+                  bounds={resolveCompositionBounds(
+                    settings.composition,
+                    format,
+                    selectedElement,
+                    selectedBounds,
+                  )}
+                  onChange={setSettings}
+                  disabled={exporting}
+                />
+              )}
+              <ArtworkPalette
+                image={snapshot.artwork?.image ?? snapshot.background?.image ?? null}
+                imageKey={mediaSession.artworkUrl ?? mediaSession.backgroundUrl}
+                currentSettings={settings}
+                onApply={(suggestion) => applyLook(suggestion.colors)}
+              />
+            </section>
+          )}
+          <input
+            ref={artworkInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(event) => {
+              const image = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (image && activeTrack)
+                void project.updateTrack(activeTrack.id, { artwork: image });
+            }}
+          />
           <div className="transport-card">
             <div className="track-details">
               <div className="track-icon">
@@ -637,6 +988,7 @@ export default function Home() {
                 duration={duration}
                 audioDuration={preparedSound.audio?.duration ?? duration}
                 onSeek={seek}
+                cues={subtitles}
                 disabled={exporting || loadingMedia}
               />
             ) : null}
@@ -711,6 +1063,61 @@ export default function Home() {
               <output className="volume-readout">{Math.round((muted ? 0 : volume) * 100)}%</output>
             </div>
           </div>
+          <details className="studio-feature-section" open={tracks.tracks.length > 1 || undefined}>
+            <summary>
+              Playlist · {tracks.tracks.length} track{tracks.tracks.length === 1 ? "" : "s"}
+            </summary>
+            <p>
+              A playlist is one project and one continuous exported video. Batch exports are
+              separate output requests.
+            </p>
+            <PlaylistPanel
+              tracks={tracks.tracks}
+              activeTrackId={tracks.activeTrackId}
+              selectedTrackId={tracks.selectedTrackId}
+              disabled={exporting || loadingMedia}
+              importing={tracks.importing}
+              importError={tracks.importError}
+              onAddFiles={async (files) => {
+                try {
+                  const added = await tracks.addFiles(files);
+                  if (!activeTrack && added[0]) await project.activateTrack(added[0].id);
+                } catch (caught) {
+                  setError(caught instanceof Error ? caught.message : "Could not add tracks.");
+                }
+              }}
+              onSelectTrack={tracks.selectTrack}
+              onActivateTrack={project.activateTrack}
+              onUpdateTrack={(id, patch) => void project.updateTrack(id, patch)}
+              onMoveTrack={tracks.moveTrack}
+              onRemoveTrack={project.removeTrack}
+            />
+            {tracks.tracks.length > 1 && (
+              <button
+                className="button button-soft"
+                disabled={exporting || loadingMedia}
+                onClick={() => {
+                  if (project.playlistPlaying) {
+                    session.pause();
+                    project.stopPlaylist();
+                  } else void project.previewProjectRange([0, project.timeline.duration]);
+                }}
+              >
+                {project.playlistPlaying ? "Stop playlist preview" : "Preview continuous playlist"}
+              </button>
+            )}
+          </details>
+          {activeTrack && (
+            <details className="studio-feature-section">
+              <summary>Promotional clip suggestions</summary>
+              <ClipSuggestions
+                sound={preparedSound}
+                duration={duration}
+                onSelectRange={(next) => tracks.updateTrack(activeTrack.id, { range: next })}
+                onPreviewRange={(next) => void mediaSession.previewRange(next)}
+              />
+            </details>
+          )}
           <div className="privacy-note">
             <Sparkles size={15} />
             <span>Made in your browser. Your media is never uploaded to a server.</span>
@@ -854,7 +1261,7 @@ export default function Home() {
       <ExportDialog
         open={exportOpen}
         onOpenChange={setExportOpen}
-        duration={duration}
+        duration={project.exportDuration}
         range={range}
         onRangeChange={setRange}
         dimensions={outputDimensions}
@@ -868,14 +1275,115 @@ export default function Home() {
         progress={progress}
         estimateBeforeExport={estimateBeforeExport}
         onExport={exportVideo}
+        cachedExtension={
+          singleExtension?.key === singlePreflightKey ? singleExtension.extension : null
+        }
+        suggestedFilename={`${file?.name.replace(/\.[^.]+$/, "") ?? "pulseframe"}-pulseframe`}
+        onExportToFile={(destination) => void exports.exportVideoToFile(destination)}
         onCancel={cancelExport}
         onPreview={previewRange}
       />
+      <ArtistProfileDialog
+        open={artistOpen}
+        onOpenChange={setArtistOpen}
+        settings={settings}
+        currentAssets={branding.assets}
+        defaultArtist={settings.trackArtist}
+        library={artistLibrary}
+        onApply={async (profile) => {
+          await branding.apply(profile);
+          setArtistOpen(false);
+          setNotice(`Applied artist profile “${profile.name}”.`);
+        }}
+      />
+      <ReleaseDialog
+        open={releaseOpen}
+        onOpenChange={setReleaseOpen}
+        source={releaseSource}
+        recipe={project.releaseRecipe}
+        onRecipeChange={project.setReleaseRecipe}
+        onInspect={(request) => void releasePreview.inspect(request)}
+        selectedTime={selectedProjectTime}
+        onCreateRequests={queue.addRequests}
+        onOpenBatch={() => setBatchOpen(true)}
+      />
+      <BatchExportDialog
+        open={batchOpen}
+        onOpenChange={setBatchOpen}
+        requests={queue.requests}
+        queueError={queue.queueError}
+        onDismissQueueError={queue.clearQueueError}
+        preflights={preflights}
+        runState={queue.runState}
+        progress={queue.progress}
+        exporting={queue.exporting}
+        pendingDownload={queue.pendingDownload}
+        onRun={(destination) => {
+          mediaSession.suspendPreparedSound();
+          void queue.run(destination);
+        }}
+        onDownloadPending={() => queue.downloadPending()}
+        onRetryPending={() => {
+          mediaSession.suspendPreparedSound();
+          void queue.retryPending();
+        }}
+        onClear={queue.clearRequests}
+        onRemove={queue.removeRequest}
+        onMove={queue.moveRequest}
+        onRename={queue.renameRequest}
+        onPause={queue.pause}
+        onResume={queue.resume}
+        onCancel={queue.stop}
+      />
+      <GettingStarted
+        open={startedOpen}
+        onOpenChange={setStartedOpen}
+        hasMedia={!!file}
+        onTrySample={() => void trySample()}
+        onChooseLook={() => setPresetOpen(true)}
+        onOpenArtist={() => setArtistOpen(true)}
+        onOpenComposition={() => {
+          setEditingCanvas(true);
+          selectElement("trackInfo");
+        }}
+        onOpenExport={() => setExportOpen(true)}
+        onOpenRelease={openRelease}
+      />
+      <Dialog
+        open={!!releasePreview.preview}
+        onOpenChange={(open) => {
+          if (!open) releasePreview.close();
+        }}
+      >
+        <DialogContent className="release-preview-dialog">
+          <DialogHeader>
+            <DialogTitle>{releasePreview.preview?.label} · layout preview</DialogTitle>
+            <DialogDescription>
+              A frame rendered with this output's exact aspect and resolution. Video previews show
+              the selected range's first frame.
+            </DialogDescription>
+          </DialogHeader>
+          {releasePreview.preview?.url ? (
+            <img
+              src={releasePreview.preview.url}
+              alt={`${releasePreview.preview.label} composition`}
+              style={{ maxWidth: "100%", maxHeight: "65dvh", objectFit: "contain" }}
+            />
+          ) : (
+            <p role="status">{releasePreview.preview?.error || "Preparing preview…"}</p>
+          )}
+          <button className="button button-soft" onClick={releasePreview.close}>
+            Close preview
+          </button>
+        </DialogContent>
+      </Dialog>
       <SubtitleDialog
         open={subtitleOpen}
         onOpenChange={setSubtitleOpen}
         cues={subtitles}
         onChange={setSubtitles}
+        trackFile={file}
+        selectedRange={activeTrack?.range}
         position={position}
         duration={duration}
         onSeek={(time) => {

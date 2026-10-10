@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 import type { PreparedSound } from "@/lib/audio-features";
+import type { SubtitleCue } from "@/lib/subtitles";
 export function TrackWaveform({
   overview,
   position,
@@ -8,6 +9,7 @@ export function TrackWaveform({
   audioDuration,
   onSeek,
   disabled,
+  cues = [],
 }: {
   overview: PreparedSound["overview"];
   position: number;
@@ -15,6 +17,7 @@ export function TrackWaveform({
   audioDuration: number;
   onSeek: (time: number) => void;
   disabled: boolean;
+  cues?: SubtitleCue[];
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -85,6 +88,31 @@ export function TrackWaveform({
       }}
     >
       <canvas ref={ref} aria-hidden="true" />
+      {duration > 0 && cues.length > 0 && (
+        <span aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+          {cues.map((cue, index) => {
+            const start = Math.max(0, Math.min(duration, cue.start));
+            const end = Math.max(start, Math.min(duration, cue.end));
+            if (end <= start) return null;
+            return (
+              <span
+                key={cue.id}
+                title={`Subtitle ${index + 1}: ${cue.text}`}
+                style={{
+                  position: "absolute",
+                  left: `${(start / duration) * 100}%`,
+                  width: `${Math.max(0.2, ((end - start) / duration) * 100)}%`,
+                  bottom: 0,
+                  height: 4,
+                  background: "#d4a8ff",
+                  opacity: 0.9,
+                  borderRadius: 2,
+                }}
+              />
+            );
+          })}
+        </span>
+      )}
       <span
         className="waveform-playhead"
         style={{ left: `${duration ? Math.min(100, (position / duration) * 100) : 0}%` }}

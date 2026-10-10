@@ -1,3 +1,4 @@
+import { LookPreview } from "./look-preview";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   ArrowDown,
@@ -271,14 +272,8 @@ export function PresetDialog({
                 : -1;
               return (
                 <article className="preset-card" key={preset.id}>
-                  <div
-                    className="preset-color-preview"
-                    aria-hidden="true"
-                    style={{
-                      background: `linear-gradient(135deg,${preset.settings.primary},${preset.settings.secondary})`,
-                    }}
-                  >
-                    <span style={{ background: preset.settings.background }} />
+                  <div className="preset-color-preview">
+                    <LookPreview settings={preset.settings} />
                   </div>
                   <div className="preset-copy">
                     <strong>{preset.name}</strong>

@@ -1,0 +1,186 @@
+.composition-editor-overlay {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.composition-editor-overlay.is-disabled {
+  pointer-events: none;
+}
+
+.composition-selection-box {
+  stroke: #d8caff;
+  stroke-width: 2;
+  stroke-dasharray: 7 5;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 1px 5px #080b18cc);
+  cursor: move;
+}
+
+.composition-resize-handle {
+  fill: #fff;
+  stroke: #7e5de4;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  cursor: nwse-resize;
+}
+
+.composition-resize-handle[data-resize="ne"],
+.composition-resize-handle[data-resize="sw"] {
+  cursor: nesw-resize;
+}
+
+.composition-snap-guide {
+  stroke: #8fe8ff;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.composition-inspector {
+  display: grid;
+  gap: 17px;
+  padding: 18px;
+  border: 1px solid #29344b;
+  border-radius: 13px;
+  background: linear-gradient(145deg, #121b2c, #0d1423);
+}
+
+.composition-inspector-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.composition-inspector-eyebrow {
+  color: #9580d9;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.composition-inspector-heading h3 {
+  margin: 4px 0 0;
+  font-size: 17px;
+  letter-spacing: -0.03em;
+}
+
+.composition-aspect-chip {
+  padding: 5px 9px;
+  border: 1px solid #3c4660;
+  border-radius: 999px;
+  color: #cbd2e3;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.composition-bounds-grid,
+.composition-style-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.composition-number-control,
+.composition-style-controls > label {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  color: #a7b1c6;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.composition-number-control > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.composition-number-control input,
+.composition-style-controls select,
+.composition-promo-text input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #37425b;
+  border-radius: 8px;
+  outline: none;
+  background: #0b1220;
+  color: #edf0f9;
+  font: inherit;
+  font-size: 12px;
+}
+
+.composition-number-control small {
+  color: #79859e;
+  font-size: 10px;
+}
+
+.composition-style-controls select {
+  cursor: pointer;
+}
+
+.composition-style-controls {
+  padding-top: 14px;
+  border-top: 1px solid #252f44;
+}
+
+.composition-color-control {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.composition-color-control input {
+  width: 43px;
+  height: 33px;
+  padding: 2px;
+  border: 1px solid #37425b;
+  border-radius: 7px;
+  background: #0b1220;
+}
+
+.composition-promo-text {
+  grid-column: 1 / -1;
+}
+
+.composition-check-control {
+  display: flex !important;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.composition-check-control input {
+  accent-color: #9b72ff;
+}
+
+.composition-control-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #78849c;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 620px) {
+  .composition-inspector {
+    padding: 14px;
+  }
+
+  .composition-bounds-grid,
+  .composition-style-controls {
+    gap: 9px;
+  }
+}

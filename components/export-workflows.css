@@ -1,0 +1,288 @@
+.batch-export-dialog,
+.release-dialog,
+.getting-started-dialog {
+  width: min(760px, calc(100vw - 28px));
+  max-width: 760px;
+  max-height: min(90vh, 900px);
+  overflow: auto;
+  border-color: #29364c;
+  background: #101827;
+  color: #f3f5fb;
+}
+
+.batch-export-list,
+.release-output-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.batch-export-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid #29364c;
+  border-radius: 10px;
+  background: #0c1422;
+}
+
+.batch-export-number,
+.getting-started-number {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 1px solid #544879;
+  border-radius: 50%;
+  color: #c5b6ff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.batch-export-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.batch-export-copy > strong {
+  font-size: 13px;
+}
+
+.batch-export-copy > span,
+.batch-export-copy > small,
+.batch-filename-field > span {
+  color: #9aa7bc;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.batch-export-status {
+  color: #aab7cb;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.batch-export-status.status-complete {
+  color: #8de0bd;
+}
+
+.batch-export-status.status-failed,
+.batch-export-error,
+.release-error,
+.export-dialog-error {
+  color: #ff9aaa !important;
+}
+
+.batch-export-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.batch-filename-field {
+  display: grid;
+  grid-template-columns: auto minmax(80px, 1fr);
+  align-items: center;
+  gap: 8px;
+  max-width: 390px;
+}
+
+.batch-filename-field input,
+.release-select-field input,
+.release-select-field select {
+  width: 100%;
+  min-width: 0;
+  height: 35px;
+  border: 1px solid #3a4761;
+  border-radius: 7px;
+  padding: 0 9px;
+  background: #111a29;
+  color: #e8edf8;
+  font: inherit;
+  font-size: 12px;
+}
+
+.batch-export-progress {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.batch-progress-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.batch-progress-heading > span {
+  color: #9aa7bc;
+}
+
+.batch-export-progress progress {
+  width: 100%;
+  height: 7px;
+  accent-color: var(--primary);
+}
+
+.batch-download-ready {
+  display: grid;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid #544879;
+  border-radius: 10px;
+  background: #191a30;
+  color: #d9d4f3;
+  font-size: 12px;
+}
+
+.batch-export-actions {
+  flex-wrap: wrap;
+}
+
+.release-output-card {
+  display: grid;
+  gap: 9px;
+  padding: 14px;
+  border: 1px solid #29364c;
+  border-radius: 11px;
+  background: #0c1422;
+}
+
+.release-output-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 24px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.release-output-toggle input,
+.release-compression input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
+.release-output-card > p {
+  margin: 0;
+  color: #9aa7bc;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.release-output-controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.release-select-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: #9aa7bc;
+  font-size: 11px;
+}
+
+.release-compression {
+  display: flex;
+  align-items: center;
+  align-self: end;
+  gap: 6px;
+  min-height: 35px;
+  color: #b7c1d1;
+  font-size: 11px;
+}
+
+.getting-started-steps {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.getting-started-steps > li {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1px solid #29364c;
+}
+
+.getting-started-steps > li > div:nth-child(2) {
+  min-width: 0;
+}
+
+.getting-started-steps strong {
+  font-size: 13px;
+}
+
+.getting-started-steps p {
+  margin: 4px 0 0;
+  color: #9aa7bc;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.getting-started-steps .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.getting-started-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.getting-started-note {
+  margin: 0;
+  color: #8996aa;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 600px) {
+  .batch-export-item {
+    grid-template-columns: 27px minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .batch-export-status {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .batch-export-item-actions {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+
+  .release-output-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .getting-started-steps > li {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .getting-started-steps > li > button,
+  .getting-started-actions {
+    grid-column: 2;
+  }
+
+  .batch-filename-field {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { CSSProperties } from "react";
+import { LookPreview } from "./look-preview";
 import { Bookmark, Check, Plus, PinOff, RotateCcw, Undo2, Redo2 } from "lucide-react";
 import { BUILTIN_LOOKS } from "@/lib/customizer-config";
 import { visualModeName, type PresetStyle, type SavedPreset } from "@/lib/presets";
@@ -10,14 +10,9 @@ export type ActiveLook = { id: string; name: string; settings: PresetStyle; pres
 type BuiltinLook = (typeof BUILTIN_LOOKS)[number];
 
 function LookArt({ settings }: { settings: PresetStyle }) {
-  const style = {
-    "--look-primary": settings.primary,
-    "--look-secondary": settings.secondary,
-    "--look-background": settings.background,
-  } as CSSProperties;
   return (
-    <span className={`look-art ${settings.mode}`} style={style} aria-hidden="true">
-      <i />
+    <span className="look-art rendered-look" aria-hidden="true">
+      <LookPreview settings={settings} />
     </span>
   );
 }
