@@ -209,6 +209,274 @@ test("project commit exposes all replacement resources before releasing the old 
   owner.dispose();
 });
 
+test("artwork is staged with project assets and multi-image replacement is atomic", async () => {
+  const f = fixture();
+  const { owner } = f;
+  assert.equal(await owner.load(file("assets.wav")), true);
+  assert.equal(await owner.changeImage("logo", file("old-logo.png", "image/png")), true);
+  assert.equal(await owner.changeImage("artwork", file("old-cover.png", "image/png")), true);
+  const oldLogo = owner.snapshot.logo;
+  const oldArtwork = owner.snapshot.artwork;
+
+  assert.equal(
+    await owner.replaceAssets({
+      logo: file("staged-logo.png", "image/png"),
+      artwork: file("bad.png", "image/png"),
+    }),
+    false,
+  );
+  assert.equal(owner.snapshot.logo, oldLogo);
+  assert.equal(owner.snapshot.artwork, oldArtwork);
+  assert.ok(f.revoked.some((url) => url.startsWith("asset:logo:staged-logo.png:")));
+
+  assert.equal(
+    await owner.replaceAssets({
+      logo: file("new-logo.png", "image/png"),
+      artwork: file("new-cover.png", "image/png"),
+    }),
+    true,
+  );
+  assert.equal(owner.snapshot.logo.file.name, "new-logo.png");
+  assert.equal(owner.snapshot.artwork.file.name, "new-cover.png");
+  assert.ok(f.revoked.includes(oldLogo.url));
+  assert.ok(f.revoked.includes(oldArtwork.url));
+  const artworkUrl = owner.snapshot.artwork.url;
+  owner.dispose();
+  assert.ok(f.revoked.includes(artworkUrl));
+});
+
+test("atomic image replacement is discarded when a new media load starts before staging finishes", async () => {
+  const imageRead = deferred();
+  const imageReadStarted = deferred();
+  const audioPreparation = deferred();
+  const f = fixture({
+    prepareAudio: async (mediaFile) =>
+      mediaFile.name === "next-track.wav" ? audioPreparation.promise : null,
+    readImage: async (imageFile, _kind, asset) => {
+      if (imageFile.name === "pending-logo.png") {
+        imageReadStarted.resolve();
+        await imageRead.promise;
+      }
+      return asset;
+    },
+  });
+  const { owner } = f;
+  assert.equal(await owner.load(file("active-track.wav")), true);
+  assert.equal(await owner.changeImage("logo", file("old-logo.png", "image/png")), true);
+  assert.equal(await owner.changeImage("artwork", file("old-cover.png", "image/png")), true);
+  const oldLogo = owner.snapshot.logo;
+  const oldArtwork = owner.snapshot.artwork;
+
+  const replacement = owner.replaceAssets({
+    logo: file("pending-logo.png", "image/png"),
+    artwork: file("pending-cover.png", "image/png"),
+  });
+  await imageReadStarted.promise;
+  const loading = owner.load(file("next-track.wav"));
+  assert.equal(owner.requestGeneration, 2);
+  assert.equal(owner.snapshot.file.name, "active-track.wav");
+
+  imageRead.resolve();
+  assert.equal(await replacement, false);
+  assert.equal(owner.snapshot.logo, oldLogo);
+  assert.equal(owner.snapshot.artwork, oldArtwork);
+  assert.ok(f.revoked.some((url) => url.startsWith("asset:logo:pending-logo.png:")));
+  assert.ok(f.revoked.some((url) => url.startsWith("asset:artwork:pending-cover.png:")));
+
+  audioPreparation.resolve(null);
+  assert.equal(await loading, true);
+  assert.equal(owner.snapshot.logo, oldLogo);
+  assert.equal(owner.snapshot.artwork, oldArtwork);
+  owner.dispose();
+});
+
+test("single image changes are discarded when a new media load starts while they are pending", async () => {
+  const imageRead = deferred();
+  const imageReadStarted = deferred();
+  const audioPreparation = deferred();
+  const f = fixture({
+    prepareAudio: async (mediaFile) =>
+      mediaFile.name === "next-track.wav" ? audioPreparation.promise : null,
+    readImage: async (imageFile, _kind, asset) => {
+      if (imageFile.name === "pending-cover.png") {
+        imageReadStarted.resolve();
+        await imageRead.promise;
+      }
+      return asset;
+    },
+  });
+  const { owner } = f;
+  assert.equal(await owner.load(file("active-track.wav")), true);
+  assert.equal(await owner.changeImage("artwork", file("old-cover.png", "image/png")), true);
+  const oldArtwork = owner.snapshot.artwork;
+
+  const changing = owner.changeImage("artwork", file("pending-cover.png", "image/png"));
+  await imageReadStarted.promise;
+  const loading = owner.load(file("next-track.wav"));
+  assert.equal(owner.requestGeneration, 2);
+  imageRead.resolve();
+  assert.equal(await changing, false);
+  assert.equal(owner.snapshot.artwork, oldArtwork);
+  assert.ok(f.revoked.some((url) => url.startsWith("asset:artwork:pending-cover.png:")));
+
+  audioPreparation.resolve(null);
+  assert.equal(await loading, true);
+  assert.equal(owner.snapshot.artwork, oldArtwork);
+  owner.dispose();
+});
+
+test("project asset load includes artwork and can skip preparation for inactive track activation", async () => {
+  let prepared = 0;
+  const f = fixture({ prepareAudio: async () => (prepared++, null) });
+  const { owner } = f;
+  const cover = file("cover.png", "image/png");
+  assert.equal(
+    await owner.load(file("inactive-track.wav"), {
+      prepareSound: false,
+      projectAssets: { logo: null, background: null, artwork: cover },
+    }),
+    true,
+  );
+  assert.equal(prepared, 0);
+  assert.equal(owner.snapshot.artwork.file, cover);
+  assert.equal(owner.snapshot.sound, null);
+  assert.equal(owner.snapshot.live !== null, true);
+  owner.dispose();
+});
+
+test("suspending prepared sound releases derived PCM while retaining playback and live response", async () => {
+  const audio = {
+    sampleRate: 48000,
+    numberOfChannels: 1,
+    length: 48000,
+    duration: 1,
+    getChannelData: () => new Float32Array(48000),
+  };
+  const f = fixture({
+    prepareAudio: async () => ({ audio, events: [], envelopes: [], overview: [] }),
+  });
+  const { owner } = f;
+  assert.equal(await owner.load(file("prepared-track.wav")), true);
+  const oldFeatures = owner.snapshot.features;
+  assert.equal(oldFeatures.samples.length, 1);
+  assert.equal(owner.suspendPreparedSound(), true);
+  assert.equal(owner.snapshot.features, null);
+  assert.equal(owner.snapshot.sound, null);
+  assert.equal(owner.snapshot.live !== null, true);
+  assert.equal(oldFeatures.samples.length, 0);
+  assert.equal(owner.snapshot.file.name, "prepared-track.wav");
+  owner.dispose();
+});
+
+test("clearing a track releases its resources, invalidates pending work, and leaves the owner reusable", async () => {
+  const pendingAudio = deferred();
+  const pendingImage = deferred();
+  const pendingImageStarted = deferred();
+  const preparedAudio = {
+    sampleRate: 48000,
+    numberOfChannels: 1,
+    length: 48000,
+    duration: 1,
+    getChannelData: () => new Float32Array(48000),
+  };
+  const f = fixture({
+    prepareAudio: async (mediaFile) => {
+      if (mediaFile.name === "pending-track.wav") return pendingAudio.promise;
+      if (mediaFile.name === "pcm-track.wav")
+        return { audio: preparedAudio, events: [], envelopes: [], overview: [] };
+      return null;
+    },
+    readImage: async (imageFile, _kind, asset) => {
+      if (imageFile.name === "pending-background.png") {
+        pendingImageStarted.resolve();
+        await pendingImage.promise;
+      }
+      return asset;
+    },
+  });
+  const { owner } = f;
+  assert.equal(await owner.load(file("pcm-track.wav")), true);
+  assert.equal(await owner.changeImage("logo", file("brand.png", "image/png")), true);
+  assert.equal(await owner.changeImage("background", file("brand-bg.png", "image/png")), true);
+  assert.equal(await owner.changeImage("artwork", file("cover.png", "image/png")), true);
+  const logo = owner.snapshot.logo;
+  const background = owner.snapshot.background;
+  const cover = owner.snapshot.artwork;
+  const media = owner.snapshot.media;
+  const source = owner.snapshot.source;
+  const features = owner.snapshot.features;
+  assert.ok(features.samples.length > 0);
+
+  const events = [];
+  owner.subscribe((event) => events.push(event));
+  const pendingLoad = owner.load(file("pending-track.wav"));
+  const pendingBackground = owner.changeImage(
+    "background",
+    file("pending-background.png", "image/png"),
+  );
+  await pendingImageStarted.promise;
+  assert.equal(owner.clearMedia(), true);
+  assert.equal(owner.snapshot.file, null);
+  assert.equal(owner.snapshot.media, null);
+  assert.equal(owner.snapshot.video, null);
+  assert.equal(owner.snapshot.sound, null);
+  assert.equal(owner.snapshot.features, null);
+  assert.equal(owner.snapshot.live, null);
+  assert.equal(owner.snapshot.source, null);
+  assert.equal(owner.snapshot.duration, 0);
+  assert.equal(owner.snapshot.logo, logo);
+  assert.equal(owner.snapshot.background, background);
+  assert.equal(owner.snapshot.artwork, null);
+  assert.equal(media.removed, true);
+  assert.equal(source.disconnected, true);
+  assert.equal(features.samples.length, 0);
+  assert.ok(f.revoked.includes(cover.url));
+  assert.equal(f.revoked.includes(logo.url), false);
+  assert.equal(f.revoked.includes(background.url), false);
+  assert.ok(events.some((event) => event.type === "loading" && !event.loading));
+  assert.ok(events.some((event) => event.type === "position" && event.time === 0));
+  assert.ok(events.some((event) => event.type === "memory" && event.snapshot.file === null));
+
+  pendingImage.resolve();
+  pendingAudio.resolve(null);
+  assert.equal(await pendingLoad, false);
+  assert.equal(await pendingBackground, false);
+  assert.equal(owner.snapshot.background, background);
+  assert.ok(f.revoked.some((url) => url.startsWith("asset:background:pending-background.png:")));
+  assert.ok(f.revoked.some((url) => url.startsWith("media:pending-track.wav:")));
+
+  assert.equal(await owner.load(file("live-track.wav")), true);
+  const live = owner.snapshot.live;
+  assert.ok(live);
+  assert.equal(owner.clearMedia(), true);
+  assert.equal(live.disposed, true);
+  assert.equal(owner.snapshot.file, null);
+  assert.equal(owner.snapshot.logo, logo);
+  assert.equal(owner.snapshot.background, background);
+  assert.equal(await owner.load(file("after-clear.wav")), true);
+  assert.equal(owner.snapshot.file.name, "after-clear.wav");
+  owner.dispose();
+});
+
+test("locked media clear leaves the active track and assets untouched", async () => {
+  let locked = false;
+  const f = fixture({ isBlocked: () => locked });
+  const { owner } = f;
+  assert.equal(await owner.load(file("locked-track.wav")), true);
+  assert.equal(await owner.changeImage("artwork", file("locked-cover.png", "image/png")), true);
+  const snapshot = owner.snapshot;
+  locked = true;
+  assert.equal(owner.clearMedia(), false);
+  assert.equal(owner.snapshot.file, snapshot.file);
+  assert.equal(owner.snapshot.media, snapshot.media);
+  assert.equal(owner.snapshot.artwork, snapshot.artwork);
+  assert.equal(snapshot.media.removed, false);
+  assert.equal(f.revoked.includes(snapshot.artwork.url), false);
+  locked = false;
+  assert.equal(owner.clearMedia(), true);
+  owner.dispose();
+});
+
 test("media replacement and owner disposal free each prepared frame analyzer once", async () => {
   const audio = {
     sampleRate: 48000,

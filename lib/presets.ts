@@ -2,7 +2,7 @@ import { z } from "zod";
 import { settingsSchema, migrateSettings } from "./visual-settings";
 import type { VisualSettings } from "./visual-settings-model";
 
-export type PresetStyle = Omit<VisualSettings, "trackTitle" | "trackArtist">;
+export type PresetStyle = Omit<VisualSettings, "trackTitle" | "trackArtist" | "composition">;
 export type SavedPreset = {
   id: string;
   name: string;
@@ -33,9 +33,15 @@ export function presetStyle(value: unknown): PresetStyle {
   const parsed = settingsSchema.safeParse({ ...value, trackTitle: "", trackArtist: "" });
   if (!parsed.success) throw new Error("This preset has invalid settings.");
   const style = migrateSettings(parsed.data);
-  const { trackTitle: _title, trackArtist: _artist, ...settings } = style;
+  const {
+    trackTitle: _title,
+    trackArtist: _artist,
+    composition: _composition,
+    ...settings
+  } = style;
   void _title;
   void _artist;
+  void _composition;
   return settings;
 }
 export function applyPreset(current: VisualSettings, style: PresetStyle): VisualSettings {
@@ -43,6 +49,7 @@ export function applyPreset(current: VisualSettings, style: PresetStyle): Visual
     ...presetStyle(style),
     trackTitle: current.trackTitle,
     trackArtist: current.trackArtist,
+    ...(current.composition ? { composition: current.composition } : {}),
   };
 }
 export const visualModeName = (mode: VisualSettings["mode"]) =>

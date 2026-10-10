@@ -47,6 +47,9 @@ function profile({
   codec = "avc",
   audioIncluded = true,
   compression = false,
+  destination = "buffer",
+  artwork = false,
+  composition = "legacy",
   ringLayers = 3,
   glow = 0.95,
   spectrumReflection = 45,
@@ -70,6 +73,8 @@ function profile({
     subtitles: false,
     logo: false,
     background: false,
+    artwork,
+    composition,
     videoOverlay: false,
     trackInfo: true,
     reducedMotion: false,
@@ -81,6 +86,7 @@ function profile({
     videoCompression: compression,
     sourceKind: "audio",
     preparedAudio,
+    destination,
     workload,
   });
   return { base, full: { ...base, codec, audioIncluded } };
@@ -230,6 +236,22 @@ test("pre-export lookup needs one unambiguous codec and audio configuration", ()
     null,
     "a different actual codec does not borrow the first codec timing",
   );
+});
+
+test("historical profiles separate file output and coarse composition or artwork work", () => {
+  const storage = new MemoryStorage();
+  const buffer = profile();
+  const file = profile({ destination: "file" });
+  const artwork = profile({ artwork: true });
+  const customComposition = profile({ composition: "custom" });
+  estimate.recordSuccessfulExport(measurement(buffer.full), storage, 1000);
+
+  assert.ok(estimate.getPreExportEstimate(buffer.base, 600, storage, 1000));
+  assert.equal(estimate.getPreExportEstimate(file.base, 600, storage, 1000), null);
+  assert.equal(estimate.getPreExportEstimate(artwork.base, 600, storage, 1000), null);
+  assert.equal(estimate.getPreExportEstimate(customComposition.base, 600, storage, 1000), null);
+  assert.equal(buffer.base.destination, "buffer");
+  assert.equal(file.base.destination, "file");
 });
 
 test("storage errors and incompatible schemas fail closed without breaking export", () => {

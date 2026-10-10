@@ -2,11 +2,11 @@ import { prepareSound, type PreparedSound } from "./audio-features";
 import { initializeDsp } from "./dsp/loader";
 import { PcmFeatures } from "./pcm-features";
 import { LiveSound } from "./live-sound";
-import { readLocalImage, type LocalImage } from "./local-image";
+import { readLocalImage, type LocalImage, type LocalImageKind } from "./local-image";
 import type { ProjectContent } from "./project-file";
 
-export type MediaAssetKind = "logo" | "background";
-export type MediaSessionOperation = "load" | "play" | "preview" | "logo" | "background";
+export type MediaAssetKind = LocalImageKind;
+export type MediaSessionOperation = "load" | "play" | "preview" | MediaAssetKind;
 
 export type MediaSessionSnapshot = {
   file: File | null;
@@ -19,6 +19,7 @@ export type MediaSessionSnapshot = {
   generation: number;
   logo: LocalImage | null;
   background: LocalImage | null;
+  artwork: LocalImage | null;
   audioContext: AudioContext | null;
   source: MediaElementAudioSourceNode | null;
   playing: boolean;
@@ -42,15 +43,23 @@ export type MediaSessionEvent =
       kind: MediaAssetKind;
       asset: LocalImage | null;
     }
+  | { type: "memory"; snapshot: MediaSessionSnapshot }
   | { type: "error"; operation: MediaSessionOperation; error: Error }
   | { type: "notice"; message: string };
 
-export type MediaSessionAssetFiles = { logo: File | null; background: File | null };
+export type MediaSessionAssetFiles = {
+  logo: File | null;
+  background: File | null;
+  artwork?: File | null;
+};
 export type MediaSessionLoadOptions = {
   range?: [number, number];
   project?: ProjectContent;
   projectAssets?: MediaSessionAssetFiles;
+  /** Skip PCM decoding/analysis while activating an inactive project track. */
+  prepareSound?: boolean;
 };
+export type MediaSessionAssetChanges = Partial<Record<MediaAssetKind, File | null>>;
 
 export type MediaSessionDependencies = {
   createMediaElement?: (video: boolean) => HTMLMediaElement;
@@ -133,6 +142,7 @@ export class MediaSessionOwner {
   private media: MediaResource | null = null;
   private logo: LocalImage | null = null;
   private background: LocalImage | null = null;
+  private artwork: LocalImage | null = null;
   private context: AudioContext | null = null;
   private monitor: GainNode | null = null;
   private generationValue = 0;
@@ -146,6 +156,7 @@ export class MediaSessionOwner {
   private lastPositionEvent = 0;
   private logoRequest = 0;
   private backgroundRequest = 0;
+  private artworkRequest = 0;
   private listeners = new Set<(event: MediaSessionEvent) => void>();
 
   constructor(private readonly dependencies: MediaSessionDependencies = {}) {}
@@ -161,6 +172,9 @@ export class MediaSessionOwner {
   }
   get backgroundAsset() {
     return this.background;
+  }
+  get artworkAsset() {
+    return this.artwork;
   }
   get audioContext() {
     return this.context;
@@ -178,6 +192,7 @@ export class MediaSessionOwner {
       generation: this.generationValue,
       logo: this.logo,
       background: this.background,
+      artwork: this.artwork,
       audioContext: this.context,
       source: this.media?.source ?? null,
       playing: !!this.media && !this.media.media.paused && !this.media.media.ended,
@@ -308,11 +323,34 @@ export class MediaSessionOwner {
   }
 
   private updateAsset(kind: MediaAssetKind, asset: LocalImage | null, emit = true) {
-    const old = kind === "logo" ? this.logo : this.background;
-    if (kind === "logo") this.logo = asset;
-    else this.background = asset;
+    const old = this.asset(kind);
+    this.setAsset(kind, asset);
     if (old !== asset) this.revokeAsset(old);
     if (emit) this.emit({ type: "assets", snapshot: this.snapshot, kind, asset });
+  }
+
+  private asset(kind: MediaAssetKind) {
+    return kind === "logo" ? this.logo : kind === "background" ? this.background : this.artwork;
+  }
+
+  private setAsset(kind: MediaAssetKind, asset: LocalImage | null) {
+    if (kind === "logo") this.logo = asset;
+    else if (kind === "background") this.background = asset;
+    else this.artwork = asset;
+  }
+
+  private assetRequest(kind: MediaAssetKind) {
+    return kind === "logo"
+      ? this.logoRequest
+      : kind === "background"
+        ? this.backgroundRequest
+        : this.artworkRequest;
+  }
+
+  private bumpAssetRequest(kind: MediaAssetKind) {
+    if (kind === "logo") return ++this.logoRequest;
+    if (kind === "background") return ++this.backgroundRequest;
+    return ++this.artworkRequest;
   }
 
   /** Prepare media and project assets off to the side, then synchronously swap the complete snapshot. */
@@ -338,6 +376,7 @@ export class MediaSessionOwner {
     let url: string | null = null;
     let candidateLogo: LocalImage | null = null;
     let candidateBackground: LocalImage | null = null;
+    let candidateArtwork: LocalImage | null = null;
     let source: MediaElementAudioSourceNode | null = null;
     let live: LiveSound | null = null;
     let features: PcmFeatures | null = null;
@@ -357,7 +396,11 @@ export class MediaSessionOwner {
       const projectAssets =
         options.projectAssets ??
         (options.project
-          ? { logo: options.project.logo, background: options.project.background }
+          ? {
+              logo: options.project.logo,
+              background: options.project.background,
+              artwork: "artwork" in options.project ? (options.project.artwork ?? null) : null,
+            }
           : null);
       const prepareAsset = (kind: MediaAssetKind, file: File | null) => {
         if (!file) return Promise.resolve(null);
@@ -372,7 +415,8 @@ export class MediaSessionOwner {
             return null;
           }
           if (kind === "logo") candidateLogo = asset;
-          else candidateBackground = asset;
+          else if (kind === "background") candidateBackground = asset;
+          else candidateArtwork = asset;
           return asset;
         });
       };
@@ -380,10 +424,14 @@ export class MediaSessionOwner {
         ? Promise.all([
             prepareAsset("logo", projectAssets.logo),
             prepareAsset("background", projectAssets.background),
+            prepareAsset("artwork", projectAssets.artwork ?? null),
           ])
-        : Promise.resolve([null, null] as const);
-      const soundWork = this.prepareAudio(next, controller.signal);
-      const dspWork = initializeDsp();
+        : Promise.resolve([null, null, null] as const);
+      const soundWork =
+        options.prepareSound === false
+          ? Promise.resolve(null)
+          : this.prepareAudio(next, controller.signal);
+      const dspWork = options.prepareSound === false ? Promise.resolve() : initializeDsp();
       const [, , sound] = await withAbort(
         Promise.all([ready, assets, soundWork, dspWork]),
         controller.signal,
@@ -435,11 +483,14 @@ export class MediaSessionOwner {
       this.segmentEnd = null;
       this.generationValue++;
       this.attachMediaHandlers(resource, this.generationValue);
+      const previousArtwork = this.artwork;
       if (projectAssets) {
         ++this.logoRequest;
         ++this.backgroundRequest;
+        ++this.artworkRequest;
         this.logo = candidateLogo;
         this.background = candidateBackground;
+        this.artwork = candidateArtwork;
       }
       committed = true;
       this.emit({ type: "commit", snapshot: this.snapshot, next, project: options.project, range });
@@ -447,6 +498,7 @@ export class MediaSessionOwner {
       if (projectAssets) {
         this.revokeAsset(previousLogo);
         this.revokeAsset(previousBackground);
+        this.revokeAsset(previousArtwork);
       }
       if (!sound)
         this.emit({
@@ -478,6 +530,7 @@ export class MediaSessionOwner {
         this.revoke(url);
         this.revokeAsset(candidateLogo);
         this.revokeAsset(candidateBackground);
+        this.revokeAsset(candidateArtwork);
         if (!contextExistedBeforeLoad && !this.media && this.context) {
           void this.context.close();
           this.context = null;
@@ -620,7 +673,9 @@ export class MediaSessionOwner {
 
   async changeImage(kind: MediaAssetKind, file: File | null): Promise<boolean> {
     if (this.blocked()) return false;
-    const generation = kind === "logo" ? ++this.logoRequest : ++this.backgroundRequest;
+    const mediaRequest = this.requestValue;
+    const activeMedia = this.media;
+    const generation = this.bumpAssetRequest(kind);
     if (!file) {
       this.updateAsset(kind, null);
       return true;
@@ -628,7 +683,9 @@ export class MediaSessionOwner {
     try {
       const asset = await this.readImage(file, kind);
       const stillCurrent =
-        generation === (kind === "logo" ? this.logoRequest : this.backgroundRequest);
+        generation === this.assetRequest(kind) &&
+        mediaRequest === this.requestValue &&
+        activeMedia === this.media;
       if (!stillCurrent || this.blocked()) {
         this.revokeAsset(asset);
         return false;
@@ -637,7 +694,9 @@ export class MediaSessionOwner {
       return true;
     } catch (caught) {
       const stillCurrent =
-        generation === (kind === "logo" ? this.logoRequest : this.backgroundRequest);
+        generation === this.assetRequest(kind) &&
+        mediaRequest === this.requestValue &&
+        activeMedia === this.media;
       if (stillCurrent)
         this.emit({
           type: "error",
@@ -646,6 +705,110 @@ export class MediaSessionOwner {
         });
       return false;
     }
+  }
+
+  /** Stage and validate all supplied images before replacing any active asset. */
+  async replaceAssets(changes: MediaSessionAssetChanges): Promise<boolean> {
+    if (this.blocked()) return false;
+    const mediaRequest = this.requestValue;
+    const activeMedia = this.media;
+    const kinds = (Object.keys(changes) as MediaAssetKind[]).filter((kind) =>
+      Object.prototype.hasOwnProperty.call(changes, kind),
+    );
+    if (!kinds.length) return true;
+    const requests = new Map(kinds.map((kind) => [kind, this.bumpAssetRequest(kind)]));
+    const staged = new Map<MediaAssetKind, LocalImage | null>();
+    const results = await Promise.allSettled(
+      kinds.map(async (kind) => {
+        const file = changes[kind] ?? null;
+        return file ? await this.readImage(file, kind) : null;
+      }),
+    );
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") staged.set(kinds[index], result.value);
+    });
+    const stillCurrent =
+      !this.blocked() &&
+      mediaRequest === this.requestValue &&
+      activeMedia === this.media &&
+      kinds.every((kind) => requests.get(kind) === this.assetRequest(kind));
+    const failedIndex = results.findIndex((result) => result.status === "rejected");
+    if (failedIndex >= 0) {
+      for (const asset of staged.values()) this.revokeAsset(asset);
+      if (stillCurrent) {
+        const kind = kinds[failedIndex];
+        const failure = results[failedIndex];
+        this.emit({
+          type: "error",
+          operation: kind,
+          error: asError(
+            failure.status === "rejected" ? failure.reason : undefined,
+            `Could not read that ${kind}.`,
+          ),
+        });
+      }
+      return false;
+    }
+    if (!stillCurrent) {
+      for (const asset of staged.values()) this.revokeAsset(asset);
+      return false;
+    }
+
+    const previous = new Map(kinds.map((kind) => [kind, this.asset(kind)]));
+    for (const kind of kinds) this.setAsset(kind, staged.get(kind) ?? null);
+    for (const asset of previous.values()) this.revokeAsset(asset);
+    for (const kind of kinds)
+      this.emit({
+        type: "assets",
+        snapshot: this.snapshot,
+        kind,
+        asset: this.asset(kind),
+      });
+    return true;
+  }
+
+  /** Drop the active track's derived PCM cache while retaining its playable media element. */
+  suspendPreparedSound() {
+    const resource = this.media;
+    if (!resource || (!resource.sound && !resource.features)) return false;
+    resource.features?.dispose();
+    resource.features = null;
+    resource.sound = null;
+    if (!resource.live && this.context) {
+      resource.live =
+        this.dependencies.createLiveSound?.(this.context, resource.source) ??
+        new LiveSound(this.context, resource.source);
+    }
+    this.emit({ type: "memory", snapshot: this.snapshot });
+    return true;
+  }
+
+  /** Release the active track and its artwork while keeping reusable project branding. */
+  clearMedia() {
+    if (this.blocked()) return false;
+    this.requestValue++;
+    this.activeLoad?.abort();
+    this.activeLoad = null;
+    this.transportRequest++;
+    this.segmentEnd = null;
+    this.lastPositionEvent = 0;
+    this.logoRequest++;
+    this.backgroundRequest++;
+    this.artworkRequest++;
+
+    const activeMedia = this.media;
+    this.media = null;
+    this.generationValue++;
+    this.releaseMedia(activeMedia);
+
+    const oldArtwork = this.artwork;
+    this.artwork = null;
+    this.revokeAsset(oldArtwork);
+
+    this.emit({ type: "loading", loading: false, requestGeneration: this.requestValue });
+    this.emit({ type: "position", snapshot: this.snapshot, time: 0 });
+    this.emit({ type: "memory", snapshot: this.snapshot });
+    return true;
   }
 
   dispose() {
@@ -658,12 +821,15 @@ export class MediaSessionOwner {
     this.requestValue++;
     this.logoRequest++;
     this.backgroundRequest++;
+    this.artworkRequest++;
     this.releaseMedia(this.media);
     this.media = null;
     this.revokeAsset(this.logo);
     this.logo = null;
     this.revokeAsset(this.background);
     this.background = null;
+    this.revokeAsset(this.artwork);
+    this.artwork = null;
     this.monitor?.disconnect();
     this.monitor = null;
     if (this.context) void this.context.close();

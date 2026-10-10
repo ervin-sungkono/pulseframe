@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-export async function loadSources({ dspAssets = false } = {}) {
+export async function loadSources({ dspAssets = false, modules } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "pulseframe-tests-"));
   process.on("exit", () => rmSync(directory, { recursive: true, force: true }));
   mkdirSync(join(directory, "dsp"), { recursive: true });
@@ -13,11 +13,19 @@ export async function loadSources({ dspAssets = false } = {}) {
     join(directory, "dsp", "analysis-worker-url.mjs"),
     `export default 'analysis-worker.test.js';`,
   );
-  const names = [
+  const allNames = [
     "audio-analysis-config",
+    "subtitle-file",
+    "clip-suggestions",
     "visual-settings-model",
+    "composition",
+    "project-model",
+    "playlist-timeline",
     "export-settings",
     "export-timeline",
+    "export-time-estimate",
+    "export-request",
+    "release-recipe",
     "audio-features",
     "pcm-features",
     "dsp/contracts",
@@ -25,10 +33,16 @@ export async function loadSources({ dspAssets = false } = {}) {
     "dsp/wasm-backend",
     "dsp/scan-client",
     "visualizer",
+    "render-still",
     "subtitles",
     "project-file",
     "demo-file",
     "media-audio",
+    "audio-normalize",
+    "export-destination",
+    "export-preflight",
+    "export-video",
+    "local-image",
     "live-sound",
     "glitch",
     "beat-lighting",
@@ -37,7 +51,13 @@ export async function loadSources({ dspAssets = false } = {}) {
     "presets",
     "customizer-config",
     "preset-store",
+    "composition",
+    "artist-profile",
+    "artist-profile-store",
+    "artist-profile-file",
+    "image-palette",
   ];
+  const names = modules ?? allNames;
   for (const name of ["audio-dsp", "art-reactivity", "drop-detector"])
     writeFileSync(
       join(directory, name + ".mjs"),

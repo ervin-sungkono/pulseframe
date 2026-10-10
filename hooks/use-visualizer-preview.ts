@@ -233,6 +233,7 @@ export function useVisualizerPreview({
       {
         sound,
         background: snapshot?.background?.image ?? null,
+        artwork: snapshot?.artwork?.image ?? null,
         drop: dropRef.current,
         reducedMotion: reducedMotionRef.current,
       },
@@ -369,6 +370,7 @@ export function useVisualizerPreview({
           {
             sound,
             background: snapshot.background?.image ?? null,
+            artwork: snapshot.artwork?.image ?? null,
             drop: dropRef.current,
             reducedMotion: reducedMotionRef.current,
           },

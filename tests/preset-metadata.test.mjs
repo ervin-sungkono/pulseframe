@@ -202,6 +202,7 @@ const uiAlertDialog = {
 };
 const presetComponentMocks = (id) => {
   if (id === "react") return reactMock;
+  if (id === "./look-preview") return { LookPreview: stubComponent };
   if (id === "lucide-react") return icons;
   if (id === "@/components/ui/dialog") return uiDialog;
   if (id === "@/components/ui/alert-dialog") return uiAlertDialog;
@@ -235,6 +236,7 @@ const mediaSnapshot = {
 const mediaSessionOwner = { snapshot: mediaSnapshot, requestGeneration: 0, pause() {} };
 const appMockRequire = (id) => {
   if (id === "react") return reactMock;
+  if (id === "./look-preview") return { LookPreview: stubComponent };
   if (id === "lucide-react") return icons;
   if (id === "@/lib/export-settings")
     return { exportDimensions: () => ({ width: 1280, height: 720 }), timestamp: () => "0:00" };
@@ -291,31 +293,39 @@ const appMockRequire = (id) => {
         };
       },
     };
-  if (id === "@/hooks/use-media-session")
+  if (id === "@/hooks/use-studio-project")
     return {
-      useMediaSession: () => ({
-        session: mediaSessionOwner,
-        snapshot: mediaSnapshot,
-        file: null,
-        duration: 0,
-        position: 0,
-        playing: false,
-        loadingMedia: false,
-        logoName: null,
-        logoUrl: null,
-        backgroundName: null,
-        backgroundUrl: null,
-        generation: 0,
-        requestGeneration: 0,
-        loadFile: async () => false,
-        seek() {},
-        togglePlay: async () => false,
-        previewRange: async () => false,
-        pollPosition() {},
-        changeLogo: async () => false,
-        changeBackground: async () => false,
-        setVolume() {},
-        setLoop() {},
+      useStudioProject: () => ({
+        tracks: { tracks: [], importing: false },
+        activeTrack: null,
+        range: [0, 0],
+        setRange() {},
+        timeline: { segments: [], duration: 0 },
+        exportDuration: 0,
+        media: {
+          session: mediaSessionOwner,
+          snapshot: mediaSnapshot,
+          file: null,
+          duration: 0,
+          position: 0,
+          playing: false,
+          loadingMedia: false,
+          logoName: null,
+          logoUrl: null,
+          backgroundName: null,
+          backgroundUrl: null,
+          generation: 0,
+          requestGeneration: 0,
+          loadFile: async () => false,
+          seek() {},
+          togglePlay: async () => false,
+          previewRange: async () => false,
+          pollPosition() {},
+          changeLogo: async () => false,
+          changeBackground: async () => false,
+          setVolume() {},
+          setLoop() {},
+        },
       }),
     };
   if (id === "@/hooks/use-visualizer-preview")
@@ -331,6 +341,28 @@ const appMockRequire = (id) => {
         cancelExport() {},
       }),
     };
+  if (id === "@/hooks/use-release-preview")
+    return { useReleasePreview: () => ({ preview: null, inspect() {}, close() {} }) };
+  if (id === "@/lib/release-recipe") return {};
+  if (id === "@/hooks/use-artist-profiles") return { useArtistProfiles: () => ({}) };
+  if (id === "@/hooks/use-studio-branding")
+    return { useStudioBranding: () => ({ assets: {}, apply() {} }) };
+  if (id === "@/hooks/use-export-queue")
+    return { useExportQueue: () => ({ requests: [], runState: null, addRequests() {} }) };
+  const extraViews = {
+    "@/components/artist-profile-dialog": "ArtistProfileDialog",
+    "@/components/artwork-palette": "ArtworkPalette",
+    "@/components/playlist-panel": "PlaylistPanel",
+    "@/components/clip-suggestions": "ClipSuggestions",
+    "@/components/composition-editor": "CompositionEditor",
+    "@/components/composition-inspector": "CompositionInspector",
+    "@/components/release-dialog": "ReleaseDialog",
+    "@/components/batch-export-dialog": "BatchExportDialog",
+    "@/components/getting-started": "GettingStarted",
+  };
+  if (extraViews[id]) return { [extraViews[id]]: stubComponent };
+  if (id === "@/lib/composition" || id === "@/lib/export-request") return {};
+  if (id.endsWith(".css")) return {};
   if (id === "@/components/subtitle-dialog") return { SubtitleDialog: stubComponent };
   if (id === "@/lib/audio-features")
     return {

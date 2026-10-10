@@ -5,6 +5,14 @@ import type { SoundEnvelope } from "./audio-features";
 import { drawGlitch } from "./glitch";
 import { drawTrackOverlay, trackOverlayLayout } from "./track-overlay";
 import { drawBeatLighting } from "./beat-lighting";
+import {
+  boundsToPixels,
+  compositionAspect,
+  pixelsToBounds,
+  resolveCompositionBounds,
+  type CompositionElement,
+  type PixelBounds,
+} from "./composition";
 
 export type Particle = {
   x: number;
@@ -29,9 +37,12 @@ export type AudioReactiveState = {
 export type RenderExtras = {
   sound?: SoundEnvelope | null;
   background?: LogoLayer | null;
+  artwork?: LogoLayer | null;
   drop?: number;
   reducedMotion?: boolean;
 };
+
+export type VisualizationCompositionGeometry = Record<CompositionElement, PixelBounds>;
 
 export function createAudioReactiveState(): AudioReactiveState {
   return {
@@ -302,11 +313,40 @@ function drawBackdrop(
   video?: VideoLayer | null,
   image?: LogoLayer | null,
   drop = 0,
+  compositionBackground?: {
+    bounds: PixelBounds;
+    fit: "cover" | "contain";
+    focusX: number;
+    focusY: number;
+    scrimOpacity: number;
+  },
 ) {
   ctx.fillStyle = s.background;
   ctx.fillRect(0, 0, w, h);
   const layer = image ?? video;
-  if (layer && (!("readyState" in layer) || layer.readyState >= 2)) {
+  if (compositionBackground && layer && (!("readyState" in layer) || layer.readyState >= 2)) {
+    ctx.save();
+    ctx.globalAlpha = (image ? s.backgroundOpacity : s.videoOpacity) / 100;
+    if (drop > 0) ctx.filter = `blur(${(drop * Math.min(w, h)) / 144}px)`;
+    drawImageInBounds(
+      ctx,
+      layer,
+      compositionBackground.bounds,
+      compositionBackground.fit,
+      compositionBackground.focusX,
+      compositionBackground.focusY,
+    );
+    ctx.restore();
+    if (compositionBackground.scrimOpacity > 0) {
+      ctx.fillStyle = `rgba(3,5,20,${compositionBackground.scrimOpacity / 100})`;
+      ctx.fillRect(
+        compositionBackground.bounds.x,
+        compositionBackground.bounds.y,
+        compositionBackground.bounds.width,
+        compositionBackground.bounds.height,
+      );
+    }
+  } else if (layer && (!("readyState" in layer) || layer.readyState >= 2)) {
     ctx.save();
     ctx.globalAlpha = (image ? s.backgroundOpacity : s.videoOpacity) / 100;
     if (drop > 0) ctx.filter = `blur(${(drop * Math.min(w, h)) / 144}px)`;
@@ -720,6 +760,159 @@ export function coverCrop(sourceW: number, sourceH: number, targetW: number, tar
   return { x: (sourceW - width) / 2, y: (sourceH - height) / 2, width, height };
 }
 
+function layerSize(image: LogoLayer | VideoLayer | null | undefined) {
+  if (!image) return { width: 0, height: 0 };
+  const sized = image as HTMLImageElement & HTMLVideoElement & ImageBitmap;
+  return {
+    width: sized.naturalWidth || sized.videoWidth || sized.width || 0,
+    height: sized.naturalHeight || sized.videoHeight || sized.height || 0,
+  };
+}
+
+function drawImageInBounds(
+  ctx: CanvasRenderingContext2D,
+  image: LogoLayer | VideoLayer,
+  bounds: PixelBounds,
+  fit: "cover" | "contain",
+  focusX = 50,
+  focusY = 50,
+) {
+  const { width: sourceW, height: sourceH } = layerSize(image);
+  if (!sourceW || !sourceH || bounds.width <= 0 || bounds.height <= 0) return;
+  if (fit === "contain") {
+    const scale = Math.min(bounds.width / sourceW, bounds.height / sourceH);
+    const width = sourceW * scale,
+      height = sourceH * scale;
+    ctx.drawImage(
+      image,
+      bounds.x + (bounds.width - width) / 2,
+      bounds.y + (bounds.height - height) / 2,
+      width,
+      height,
+    );
+    return;
+  }
+  const targetAspect = bounds.width / bounds.height;
+  const sourceAspect = sourceW / sourceH;
+  const cropWidth = sourceAspect > targetAspect ? sourceH * targetAspect : sourceW;
+  const cropHeight = sourceAspect > targetAspect ? sourceH : sourceW / targetAspect;
+  const cropX = (sourceW - cropWidth) * Math.max(0, Math.min(1, focusX / 100));
+  const cropY = (sourceH - cropHeight) * Math.max(0, Math.min(1, focusY / 100));
+  ctx.drawImage(
+    image,
+    cropX,
+    cropY,
+    cropWidth,
+    cropHeight,
+    bounds.x,
+    bounds.y,
+    bounds.width,
+    bounds.height,
+  );
+}
+
+function logoBounds(
+  w: number,
+  h: number,
+  s: VisualSettings,
+  image: LogoLayer | null,
+  bass: number,
+): PixelBounds {
+  const { width: sourceW, height: sourceH } = layerSize(image);
+  if (s.logoAutoFit[s.mode]) {
+    const short = Math.min(w, h);
+    const circle = s.mode === "ring";
+    const width = circle ? ringInnerRadius(short, bass) * 2 * s.visualScale : short * 0.36;
+    const height = circle ? width : short * 0.17;
+    const centerY = circle || s.mode === "edges" ? h / 2 : h * 0.21;
+    const scale = Math.max(0.5, Math.min(1, (s.logoFitScale?.[s.mode] ?? 100) / 100));
+    const clipW = width * Math.min(1, scale),
+      clipH = height * Math.min(1, scale);
+    return { x: w / 2 - clipW / 2, y: centerY - clipH / 2, width: clipW, height: clipH };
+  }
+  const place = s.logoPlacements[s.mode];
+  const box = (Math.min(w, h) * place.size) / 100;
+  const ratio = sourceW && sourceH ? sourceW / sourceH : 1;
+  const drawW = ratio >= 1 ? box : box * ratio;
+  const drawH = ratio >= 1 ? box / ratio : box;
+  return {
+    x: (w * place.x) / 100 - drawW / 2,
+    y: (h * place.y) / 100 - drawH / 2,
+    width: drawW,
+    height: drawH,
+  };
+}
+
+function defaultArtworkBounds(w: number, h: number): PixelBounds {
+  const unit = Math.min(w, h);
+  const size = unit * 0.22;
+  const margin = unit * 0.055;
+  return { x: w - size - margin, y: margin, width: size, height: size };
+}
+
+function defaultPromoBounds(w: number, h: number): PixelBounds {
+  return { x: w * 0.22, y: h * 0.14, width: w * 0.56, height: h * 0.09 };
+}
+
+function defaultCaptionBounds(w: number, h: number, captionLane: number): PixelBounds {
+  const blockH = Math.max(captionLane, Math.round(Math.max(24, Math.min(w, h) * 0.046) * 2.85));
+  return {
+    x: w * 0.07,
+    y: h - Math.max(Math.min(w, h) * 0.055, 22) - blockH,
+    width: w * 0.86,
+    height: blockH,
+  };
+}
+
+function hasCompositionBounds(
+  settings: VisualSettings,
+  element: CompositionElement,
+  w: number,
+  h: number,
+) {
+  const aspect = compositionAspect(w, h);
+  return !!(
+    settings.composition?.layouts[aspect]?.[element] ?? settings.composition?.layouts.base[element]
+  );
+}
+
+/** Shared default and aspect-specific hit-test geometry for canvas editing. */
+export function visualizationCompositionGeometry(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  settings: VisualSettings,
+  logo: LogoLayer | null,
+  artwork: LogoLayer | null,
+  subtitles: SubtitleCue[],
+  time: number,
+  captionLane?: number,
+): VisualizationCompositionGeometry {
+  const aspect = compositionAspect(w, h);
+  const laneHeight = captionLane ?? subtitleLane(ctx, w, h, subtitles);
+  const track = trackOverlayLayout(w, h, settings, laneHeight);
+  const defaults: Record<CompositionElement, PixelBounds> = {
+    background: { x: 0, y: 0, width: w, height: h },
+    artwork: defaultArtworkBounds(w, h),
+    logo: logoBounds(w, h, settings, logo, 0),
+    trackInfo: track.bounds,
+    promo: defaultPromoBounds(w, h),
+    captions: defaultCaptionBounds(w, h, laneHeight),
+  };
+  // Keep the caption selection box stable while the active cue changes.
+  void ctx;
+  void artwork;
+  void subtitles;
+  void time;
+  return Object.fromEntries(
+    (Object.keys(defaults) as CompositionElement[]).map((element) => {
+      const fallback = pixelsToBounds(defaults[element], w, h);
+      const bounds = resolveCompositionBounds(settings.composition, aspect, element, fallback);
+      return [element, boundsToPixels(bounds, w, h)];
+    }),
+  ) as VisualizationCompositionGeometry;
+}
+
 function drawLogo(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -727,7 +920,28 @@ function drawLogo(
   s: VisualSettings,
   image: LogoLayer,
   bass: number,
+  override?: PixelBounds,
 ) {
+  if (override) {
+    ctx.save();
+    ctx.globalAlpha = s.logoOpacity / 100;
+    ctx.shadowColor = s.primary;
+    ctx.shadowBlur = s.glow * 12;
+    if (s.mode === "ring" && s.logoAutoFit.ring) {
+      ctx.beginPath();
+      ctx.arc(
+        override.x + override.width / 2,
+        override.y + override.height / 2,
+        Math.min(override.width, override.height) / 2,
+        0,
+        Math.PI * 2,
+      );
+      ctx.clip();
+    }
+    drawImageInBounds(ctx, image, override, "contain");
+    ctx.restore();
+    return;
+  }
   const sourceW = image.width,
     sourceH = image.height;
   if (!sourceW || !sourceH) return;
@@ -893,8 +1107,39 @@ function subtitleLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: nu
   if (line) lines.push(line);
   return lines;
 }
+
+function captionBounds(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  text: string,
+  size = 1,
+) {
+  const unit = Math.min(w, h);
+  const fontSize = Math.round(Math.max(24, unit * 0.046) * size);
+  ctx.save();
+  ctx.font = `700 ${fontSize}px ui-sans-serif,system-ui,sans-serif`;
+  const lines = subtitleLines(ctx, text, w * 0.84).slice(0, 3);
+  ctx.restore();
+  const height = lines.length * fontSize * 1.3 + fontSize * 0.55;
+  return {
+    fontSize,
+    lines,
+    bounds: {
+      x: w * 0.07,
+      y: h - Math.max(unit * 0.055, 22) - height,
+      width: w * 0.86,
+      height,
+    },
+  };
+}
 const subtitleLaneCache = new WeakMap<SubtitleCue[], Map<string, number>>();
-function subtitleLane(ctx: CanvasRenderingContext2D, w: number, h: number, cues: SubtitleCue[]) {
+export function subtitleLane(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  cues: SubtitleCue[],
+) {
   if (!cues.length) return 0;
   const key = `${w}:${h}`;
   let sizes = subtitleLaneCache.get(cues);
@@ -921,30 +1166,134 @@ function drawSubtitle(
   h: number,
   cues: SubtitleCue[],
   time: number,
+  override?: PixelBounds,
+  settings?: VisualSettings,
 ) {
   const cue = activeSubtitle(cues, time);
   if (!cue) return;
-  const unit = Math.min(w, h),
-    fontSize = Math.round(Math.max(24, unit * 0.046));
-  const maxWidth = w * 0.84;
+  const style = settings?.composition?.captions;
+  const metrics = captionBounds(ctx, w, h, cue.text, style?.size ?? 1);
+  const bounds = override ?? metrics.bounds;
+  const scale = override
+    ? Math.max(
+        0.5,
+        Math.min(2, bounds.width / metrics.bounds.width, bounds.height / metrics.bounds.height),
+      )
+    : 1;
+  const fontSize = Math.round(metrics.fontSize * scale);
+  const maxWidth = Math.max(1, override ? bounds.width * 0.84 : w * 0.84);
   ctx.save();
-  ctx.font = `700 ${fontSize}px ui-sans-serif,system-ui,sans-serif`;
+  const family =
+    style?.font === "serif"
+      ? "Georgia,serif"
+      : style?.font === "mono"
+        ? "ui-monospace,Menlo,monospace"
+        : "ui-sans-serif,system-ui,sans-serif";
+  ctx.font = `${style?.weight ?? 700} ${fontSize}px ${family}`;
   const lines = subtitleLines(ctx, cue.text, maxWidth);
   const shown = lines.slice(0, 3).map((item) => fitText(ctx, item, maxWidth));
   const lineH = fontSize * 1.3,
-    blockH = shown.length * lineH + fontSize * 0.55;
-  const bottom = h - Math.max(unit * 0.055, 22);
-  const top = bottom - blockH;
-  ctx.fillStyle = "rgba(5,8,18,.76)";
+    blockH = override ? bounds.height : shown.length * lineH + fontSize * 0.55;
+  const top = override ? bounds.y : metrics.bounds.y;
+  const left = override ? bounds.x : metrics.bounds.x;
+  ctx.fillStyle = rgba(style?.background ?? "#050812", (style?.backgroundOpacity ?? 76) / 100);
   ctx.beginPath();
-  ctx.roundRect(w * 0.07, top, w * 0.86, blockH, fontSize * 0.38);
+  ctx.roundRect(left, top, override ? bounds.width : w * 0.86, blockH, fontSize * 0.38);
   ctx.fill();
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "#fff";
+  ctx.fillStyle = style?.color ?? "#ffffff";
   ctx.shadowColor = "#000";
   ctx.shadowBlur = fontSize * 0.22;
-  shown.forEach((item, i) => ctx.fillText(item, w / 2, top + fontSize * 0.42 + (i + 0.5) * lineH));
+  shown.forEach((item, i) => {
+    const y = override
+      ? top + bounds.height / 2 + (i - (shown.length - 1) / 2) * lineH
+      : top + fontSize * 0.42 + (i + 0.5) * lineH;
+    ctx.fillText(item, left + (override ? bounds.width : w * 0.86) / 2, y);
+  });
+  ctx.restore();
+}
+
+function drawArtwork(
+  ctx: CanvasRenderingContext2D,
+  image: LogoLayer,
+  settings: VisualSettings,
+  bounds: PixelBounds,
+) {
+  const style = settings.composition?.artwork;
+  ctx.save();
+  ctx.globalAlpha = (style?.opacity ?? 100) / 100;
+  ctx.beginPath();
+  if (style?.frame === "circle") {
+    ctx.arc(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2,
+      Math.min(bounds.width, bounds.height) / 2,
+      0,
+      Math.PI * 2,
+    );
+  } else {
+    const radius =
+      style?.frame === "rounded"
+        ? Math.min(bounds.width, bounds.height) * (style.radius ?? 0.12)
+        : 0;
+    ctx.roundRect(bounds.x, bounds.y, bounds.width, bounds.height, radius);
+  }
+  ctx.clip();
+  drawImageInBounds(ctx, image, bounds, style?.fit ?? "cover");
+  ctx.restore();
+}
+
+function drawPromo(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  settings: VisualSettings,
+  bounds: PixelBounds,
+) {
+  const promo = settings.composition?.promo;
+  const text = promo?.text.trim() ?? "";
+  if (!promo?.visible || !text) return;
+  const fontSize = Math.max(
+    12,
+    Math.min(bounds.height * 0.68, Math.min(w, h) * 0.045 * promo.size),
+  );
+  const family =
+    promo.font === "serif"
+      ? "Georgia,serif"
+      : promo.font === "mono"
+        ? "ui-monospace,Menlo,monospace"
+        : "ui-sans-serif,system-ui,sans-serif";
+  ctx.save();
+  ctx.font = `${promo.weight} ${fontSize}px ${family}`;
+  const fitted = fitText(ctx, text, Math.max(1, bounds.width * 0.9));
+  const opacity = promo.backgroundOpacity / 100;
+  if (opacity > 0) {
+    const insetX = bounds.width * 0.04,
+      insetY = bounds.height * 0.12;
+    ctx.fillStyle = rgba(promo.background, opacity);
+    ctx.beginPath();
+    ctx.roundRect(
+      bounds.x,
+      bounds.y,
+      bounds.width,
+      bounds.height,
+      Math.min(bounds.height / 2, Math.max(insetX, insetY)),
+    );
+    ctx.fill();
+  }
+  ctx.textAlign = promo.align;
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = promo.color;
+  ctx.shadowColor = "#020513";
+  ctx.shadowBlur = fontSize * 0.18;
+  const x =
+    promo.align === "left"
+      ? bounds.x + bounds.width * 0.06
+      : promo.align === "right"
+        ? bounds.x + bounds.width * 0.94
+        : bounds.x + bounds.width / 2;
+  ctx.fillText(fitted, x, bounds.y + bounds.height / 2);
   ctx.restore();
 }
 
@@ -986,12 +1335,49 @@ export function drawVisualization(
   // Keep the composition on screen in silent passages. Only the audio-driven
   // part of each shape is gated, so low-level analyser noise cannot animate it.
   const captionHeight = subtitleLane(ctx, w, h, subtitles);
+  const geometry = visualizationCompositionGeometry(
+    ctx,
+    w,
+    h,
+    settings,
+    logo ?? null,
+    extras.artwork ?? null,
+    subtitles,
+    time,
+    captionHeight,
+  );
+  const backgroundStyle = settings.composition?.background;
+  const customBackground =
+    hasCompositionBounds(settings, "background", w, h) ||
+    (!!backgroundStyle &&
+      (backgroundStyle.fit !== "cover" ||
+        backgroundStyle.focusX !== 50 ||
+        backgroundStyle.focusY !== 50 ||
+        backgroundStyle.scrimOpacity > 0));
   const bands = extras.sound
     ? (state.ringBands[0] ?? [])
     : fallbackBands(frequency, sampleRate, activity);
   ctx.clearRect(0, 0, w, h);
   const drop = settings.dropEffects && !extras.reducedMotion ? (extras.drop ?? 0) : 0;
-  drawBackdrop(ctx, w, h, settings, motionTime, video, extras.background, drop);
+  drawBackdrop(
+    ctx,
+    w,
+    h,
+    settings,
+    motionTime,
+    video,
+    extras.background,
+    drop,
+    customBackground
+      ? {
+          bounds: geometry.background,
+          fit: backgroundStyle?.fit ?? "cover",
+          focusX: backgroundStyle?.focusX ?? 50,
+          focusY: backgroundStyle?.focusY ?? 50,
+          scrimOpacity: backgroundStyle?.scrimOpacity ?? 0,
+        }
+      : undefined,
+  );
   if (drop > 0) {
     const aura = ctx.createRadialGradient(
       w / 2,
@@ -1082,7 +1468,35 @@ export function drawVisualization(
   const glitchActivity = extras.sound && extras.sound.rms <= settings.quietThreshold ? 0 : activity;
   if (settings.glitch && !extras.reducedMotion)
     drawGlitch(ctx, time, energy, bassPulse, glitchActivity, settings.glitchStrength);
-  if (logo) drawLogo(ctx, w, h, settings, logo, settings.mode === "ring" ? ringPulse : bassPulse);
-  drawTrackOverlay(ctx, w, h, settings, time, duration, captionHeight);
-  drawSubtitle(ctx, w, h, subtitles, time);
+  if (extras.artwork) drawArtwork(ctx, extras.artwork, settings, geometry.artwork);
+  if (logo)
+    drawLogo(
+      ctx,
+      w,
+      h,
+      settings,
+      logo,
+      settings.mode === "ring" ? ringPulse : bassPulse,
+      hasCompositionBounds(settings, "logo", w, h) ? geometry.logo : undefined,
+    );
+  drawTrackOverlay(
+    ctx,
+    w,
+    h,
+    settings,
+    time,
+    duration,
+    captionHeight,
+    hasCompositionBounds(settings, "trackInfo", w, h) ? geometry.trackInfo : undefined,
+  );
+  drawPromo(ctx, w, h, settings, geometry.promo);
+  drawSubtitle(
+    ctx,
+    w,
+    h,
+    subtitles,
+    time,
+    hasCompositionBounds(settings, "captions", w, h) ? geometry.captions : undefined,
+    settings,
+  );
 }

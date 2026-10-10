@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { compositionSchema } from "./composition";
 import {
   DEFAULT_LOGO_AUTO_FIT,
   DEFAULT_LOGO_FIT_SCALE,
@@ -27,6 +28,7 @@ const placement = z.object({
   size: percent.min(0).max(100),
 });
 export const settingsSchema = z.object({
+  composition: compositionSchema.optional(),
   mode: z.enum(visualModes),
   spectrumRoundness: percent.min(0).max(100).default(100),
   spectrumReflection: percent.min(0).max(100).default(45),

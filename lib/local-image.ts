@@ -1,12 +1,17 @@
 export type LocalImage = { file: File; url: string; image: HTMLImageElement };
-export async function readLocalImage(file: File, kind: "logo" | "background"): Promise<LocalImage> {
-  const logo = kind === "logo",
-    types = ["image/png", "image/jpeg", "image/webp", ...(!logo ? ["image/avif"] : [])];
-  if (!types.includes(file.type) || file.size > (logo ? 8 : 20) * 1024 * 1024 || !file.size) {
+export type LocalImageKind = "logo" | "background" | "artwork";
+
+export async function readLocalImage(file: File, kind: LocalImageKind): Promise<LocalImage> {
+  const logo = kind === "logo";
+  const types = ["image/png", "image/jpeg", "image/webp", ...(!logo ? ["image/avif"] : [])];
+  const maximumBytes = logo ? 8 : 20;
+  if (!types.includes(file.type) || file.size > maximumBytes * 1024 * 1024 || !file.size) {
     throw new Error(
       logo
         ? "Choose a PNG, JPEG, or WebP logo under 8 MB."
-        : "Choose a PNG, JPEG, WebP, or AVIF background under 20 MB.",
+        : kind === "artwork"
+          ? "Choose PNG, JPEG, WebP, or AVIF cover art under 20 MB."
+          : "Choose a PNG, JPEG, WebP, or AVIF background under 20 MB.",
     );
   }
   const url = URL.createObjectURL(file),
@@ -22,7 +27,9 @@ export async function readLocalImage(file: File, kind: "logo" | "background"): P
       throw new Error(
         logo
           ? "Use a logo smaller than 4096 × 4096 pixels."
-          : "Choose a background smaller than 40 megapixels.",
+          : kind === "artwork"
+            ? "Choose cover art smaller than 40 megapixels."
+            : "Choose a background smaller than 40 megapixels.",
       );
     }
     return { file, url, image };

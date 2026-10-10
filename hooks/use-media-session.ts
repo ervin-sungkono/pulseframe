@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   MediaSessionOwner,
+  type MediaSessionAssetChanges,
   type MediaSessionEvent,
+  type MediaSessionLoadOptions,
+  type MediaSessionOperation,
   type MediaSessionSnapshot,
 } from "@/lib/media-session";
 import type { ProjectContent } from "@/lib/project-file";
@@ -22,10 +25,7 @@ export type UseMediaSessionOptions = {
   initialLoop?: boolean;
   onEvent?: (event: MediaSessionEvent) => void;
   onCommitted?: (commit: MediaCommitted) => void;
-  onError?: (failure: {
-    operation: "load" | "play" | "preview" | "logo" | "background";
-    error: Error;
-  }) => void;
+  onError?: (failure: { operation: MediaSessionOperation; error: Error }) => void;
   onNotice?: (message: string) => void;
   onRequestFile?: () => void;
 };
@@ -42,12 +42,16 @@ export type UseMediaSessionResult = {
   logoUrl: string | null;
   backgroundName: string | null;
   backgroundUrl: string | null;
+  artworkFile: File | null;
+  artworkName: string | null;
+  artworkUrl: string | null;
   generation: number;
   requestGeneration: number;
   loadFile: (
     next: File | undefined,
     savedRange?: [number, number],
     project?: ProjectContent,
+    options?: Omit<MediaSessionLoadOptions, "range" | "project">,
   ) => Promise<boolean>;
   seek: (time: number) => void;
   togglePlay: () => Promise<boolean>;
@@ -55,6 +59,10 @@ export type UseMediaSessionResult = {
   pollPosition: (force?: boolean) => number;
   changeLogo: (file: File | null) => Promise<boolean>;
   changeBackground: (file: File | null) => Promise<boolean>;
+  changeArtwork: (file: File | null) => Promise<boolean>;
+  replaceAssets: (changes: MediaSessionAssetChanges) => Promise<boolean>;
+  suspendPreparedSound: () => boolean;
+  clearMedia: () => boolean;
   setVolume: (volume: number) => void;
   setLoop: (looping: boolean) => void;
 };
@@ -133,8 +141,12 @@ export function useMediaSession(options: UseMediaSessionOptions = {}): UseMediaS
   }, [session]);
 
   const loadFile = useCallback(
-    (next: File | undefined, savedRange?: [number, number], project?: ProjectContent) =>
-      session.load(next, { range: savedRange, project }),
+    (
+      next: File | undefined,
+      savedRange?: [number, number],
+      project?: ProjectContent,
+      loadOptions?: Omit<MediaSessionLoadOptions, "range" | "project">,
+    ) => session.load(next, { ...loadOptions, range: savedRange, project }),
     [session],
   );
   const seek = useCallback((time: number) => session.seek(time), [session]);
@@ -158,6 +170,16 @@ export function useMediaSession(options: UseMediaSessionOptions = {}): UseMediaS
     (file: File | null) => session.changeImage("background", file),
     [session],
   );
+  const changeArtwork = useCallback(
+    (file: File | null) => session.changeImage("artwork", file),
+    [session],
+  );
+  const replaceAssets = useCallback(
+    (changes: MediaSessionAssetChanges) => session.replaceAssets(changes),
+    [session],
+  );
+  const suspendPreparedSound = useCallback(() => session.suspendPreparedSound(), [session]);
+  const clearMedia = useCallback(() => session.clearMedia(), [session]);
   const setVolume = useCallback((volume: number) => session.setVolume(volume), [session]);
   const setLoop = useCallback((looping: boolean) => session.setLoop(looping), [session]);
 
@@ -173,6 +195,9 @@ export function useMediaSession(options: UseMediaSessionOptions = {}): UseMediaS
     logoUrl: snapshot.logo?.url ?? null,
     backgroundName: snapshot.background?.file.name ?? null,
     backgroundUrl: snapshot.background?.url ?? null,
+    artworkFile: snapshot.artwork?.file ?? null,
+    artworkName: snapshot.artwork?.file.name ?? null,
+    artworkUrl: snapshot.artwork?.url ?? null,
     generation: snapshot.generation,
     requestGeneration: session.requestGeneration,
     loadFile,
@@ -182,6 +207,10 @@ export function useMediaSession(options: UseMediaSessionOptions = {}): UseMediaS
     pollPosition,
     changeLogo,
     changeBackground,
+    changeArtwork,
+    replaceAssets,
+    suspendPreparedSound,
+    clearMedia,
     setVolume,
     setLoop,
   };

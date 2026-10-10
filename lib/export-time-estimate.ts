@@ -6,7 +6,7 @@ import { COMPRESSED_VIDEO_QUALITY } from "./export-settings";
  * the workload shape and timing of successful exports, never media metadata.
  */
 export const EXPORT_TIMING_SCHEMA_VERSION = 1 as const;
-export const EXPORT_TIMING_PIPELINE_VERSION = "wasm-auto-canvas-v1" as const;
+export const EXPORT_TIMING_PIPELINE_VERSION = "wasm-auto-canvas-v3" as const;
 export const EXPORT_TIMING_STORAGE_KEY = "pulseframe.export-timing.v1";
 export const EXPORT_TIMING_MAX_AGE_MS = 45 * 24 * 60 * 60 * 1000;
 export const EXPORT_TIMING_MAX_RECORDS = 20;
@@ -34,6 +34,9 @@ export type ExportWorkload = {
   subtitles: boolean;
   logo: boolean;
   background: boolean;
+  artwork: boolean;
+  /** A privacy-safe category for composition overhead, never the authored layout. */
+  composition: "legacy" | "default" | "custom";
   videoOverlay: boolean;
   trackInfo: boolean;
   reducedMotion: boolean;
@@ -49,6 +52,7 @@ export type ExportTimingProfileBase = {
   videoQuality: number;
   sourceKind: ExportSourceKind;
   preparedAudio: boolean;
+  destination: "file" | "buffer";
   workload: ExportWorkload;
 };
 
@@ -131,6 +135,8 @@ function validWorkload(value: unknown): value is ExportWorkload {
     isBoolean(workload.subtitles) &&
     isBoolean(workload.logo) &&
     isBoolean(workload.background) &&
+    isBoolean(workload.artwork) &&
+    ["legacy", "default", "custom"].includes(String(workload.composition)) &&
     isBoolean(workload.videoOverlay) &&
     isBoolean(workload.trackInfo) &&
     isBoolean(workload.reducedMotion)
@@ -154,6 +160,7 @@ export function isValidTimingProfile(value: unknown): value is ExportTimingProfi
     profile.videoQuality <= 1 &&
     (profile.sourceKind === "audio" || profile.sourceKind === "video") &&
     isBoolean(profile.preparedAudio) &&
+    (profile.destination === "file" || profile.destination === "buffer") &&
     (profile.codec === "avc" || profile.codec === "vp9" || profile.codec === "vp8") &&
     isBoolean(profile.audioIncluded) &&
     validWorkload(profile.workload)
@@ -317,6 +324,7 @@ function isValidBaseProfile(value: unknown): value is ExportTimingProfileBase {
     base.videoQuality <= 1 &&
     (base.sourceKind === "audio" || base.sourceKind === "video") &&
     isBoolean(base.preparedAudio) &&
+    (base.destination === "file" || base.destination === "buffer") &&
     validWorkload(base.workload)
   );
 }
@@ -520,6 +528,8 @@ export function makeExportWorkload(input: {
   subtitles: boolean;
   logo: boolean;
   background: boolean;
+  artwork?: boolean;
+  composition?: ExportWorkload["composition"];
   videoOverlay: boolean;
   trackInfo: boolean;
   reducedMotion: boolean;
@@ -564,6 +574,8 @@ export function makeExportWorkload(input: {
     subtitles: Boolean(input.subtitles),
     logo: Boolean(input.logo),
     background: Boolean(input.background),
+    artwork: Boolean(input.artwork),
+    composition: input.composition ?? "legacy",
     videoOverlay: Boolean(input.videoOverlay),
     trackInfo: Boolean(input.trackInfo),
     reducedMotion: Boolean(input.reducedMotion),
@@ -583,6 +595,7 @@ export function makeExportTimingProfileBase(input: {
   videoCompression: boolean;
   sourceKind: ExportSourceKind;
   preparedAudio: boolean;
+  destination?: "file" | "buffer";
   workload: ExportWorkload;
 }): ExportTimingProfileBase {
   return {
@@ -594,6 +607,7 @@ export function makeExportTimingProfileBase(input: {
     videoQuality: input.videoCompression ? COMPRESSED_VIDEO_QUALITY : 0.75,
     sourceKind: input.sourceKind,
     preparedAudio: input.preparedAudio,
+    destination: input.destination ?? "buffer",
     workload: input.workload,
   };
 }
@@ -607,10 +621,36 @@ export function makeExportWorkloadForExport(input: {
   subtitles: boolean;
   logo: boolean;
   background: boolean;
+  artwork?: boolean;
   videoOverlay: boolean;
   reducedMotion: boolean;
 }): ExportWorkload {
   const { settings } = input;
+  const composition = settings.composition;
+  const layouts = composition?.layouts;
+  const hasCustomLayout =
+    !!layouts &&
+    [layouts.base, layouts.landscape, layouts.portrait, layouts.square].some(
+      (layout) => !!layout && Object.keys(layout).length > 0,
+    );
+  const hasCustomStyle =
+    !!composition &&
+    (composition.artwork.fit !== "cover" ||
+      composition.artwork.frame !== "square" ||
+      composition.artwork.radius !== 0.12 ||
+      composition.artwork.opacity !== 100 ||
+      composition.background.fit !== "cover" ||
+      composition.background.focusX !== 50 ||
+      composition.background.focusY !== 50 ||
+      composition.background.scrimOpacity !== 0 ||
+      composition.captions.font !== "sans" ||
+      composition.captions.size !== 1 ||
+      composition.promo.visible);
+  const compositionFingerprint: ExportWorkload["composition"] = !composition
+    ? "legacy"
+    : hasCustomLayout || hasCustomStyle
+      ? "custom"
+      : "default";
   return makeExportWorkload({
     durationSeconds: input.durationSeconds,
     analysisSeconds: input.analysisSeconds,
@@ -630,6 +670,8 @@ export function makeExportWorkloadForExport(input: {
     subtitles: input.subtitles,
     logo: input.logo,
     background: input.background,
+    artwork: input.artwork,
+    composition: compositionFingerprint,
     videoOverlay: input.videoOverlay,
     trackInfo: settings.showTrackInfo,
     reducedMotion: input.reducedMotion,

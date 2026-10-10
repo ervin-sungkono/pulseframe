@@ -1,3 +1,5 @@
+import type { Composition } from "./composition";
+
 export type VisualMode = "ring" | "spectrum" | "edges";
 export type ParticleMode = "stardust" | "sparks" | "constellation" | "comets";
 export type BackdropMode = "nebula" | "grid" | "clean";
@@ -7,6 +9,8 @@ export type BeatLighting = "rays" | "aura" | "beams" | "edges";
 export type LogoPlacement = { x: number; y: number; size: number };
 
 export type VisualSettings = {
+  /** Absent on legacy projects to preserve their exact renderer layout. */
+  composition?: Composition;
   mode: VisualMode;
   spectrumRoundness: number;
   spectrumReflection: number;

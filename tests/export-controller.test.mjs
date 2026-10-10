@@ -8,15 +8,29 @@ import ts from "typescript";
 
 const testDirectory = mkdtempSync(join(tmpdir(), "pulseframe-export-job-"));
 const modulePath = join(testDirectory, "export-job.mjs");
-const source = readFileSync(new URL("../lib/export-job.ts", import.meta.url), "utf8");
+const requestPath = join(testDirectory, "export-request.mjs");
+const requestSource = readFileSync(new URL("../lib/export-request.ts", import.meta.url), "utf8");
 writeFileSync(
-  modulePath,
-  ts.transpileModule(source, {
+  requestPath,
+  ts.transpileModule(requestSource, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
   }).outputText,
 );
+const source = readFileSync(new URL("../lib/export-job.ts", import.meta.url), "utf8");
+writeFileSync(
+  modulePath,
+  ts
+    .transpileModule(source, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+    })
+    .outputText.replace('from "./export-request"', 'from "./export-request.mjs"'),
+);
 const { createExportJobController } = await import(pathToFileURL(modulePath).href);
-after(() => rmSync(testDirectory, { recursive: true, force: true }));
+const createdJobs = [];
+after(() => {
+  for (const controller of createdJobs) controller.dispose();
+  rmSync(testDirectory, { recursive: true, force: true });
+});
 
 const output = { blob: new Blob(["encoded"]), extension: "mp4" };
 
@@ -43,6 +57,7 @@ function makeJob(overrides = {}) {
     onComplete: (...args) => completions.push(args),
     ...overrides,
   });
+  createdJobs.push(controller);
   return {
     controller,
     lockedRef,
@@ -82,8 +97,13 @@ test("cancellation holds the lock until pending encoding settles and skips a lat
 
   job.controller.cancel();
   assert.equal(job.lockedRef.current, true);
+  const statesBeforeCanceledProgress = job.states.length;
   reportFirst({ phase: "Rendering frames", percent: 50 });
-  assert.equal(job.states.length, 1, "progress from a canceled job is ignored");
+  assert.equal(
+    job.states.length,
+    statesBeforeCanceledProgress,
+    "progress from a canceled job is ignored",
+  );
 
   finishFirst(output);
   await firstTask;
@@ -155,7 +175,7 @@ test("unmount aborts the job, releases the lock, and ignores late progress and r
 
   job.controller.dispose();
   assert.equal(signal.aborted, true);
-  assert.equal(job.lockedRef.current, false);
+  assert.equal(job.lockedRef.current, true, "teardown keeps the lock until the encoder settles");
   report({ phase: "Rendering frames", percent: 90 });
   finish(output);
   await task;
@@ -196,7 +216,25 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
   const estimatePath = join(testDirectory, "export-time-estimate.mjs");
   const reactPath = join(testDirectory, "react-mock.mjs");
   const adapterPath = join(testDirectory, "export-video-mock.mjs");
+  const preflightPath = join(testDirectory, "export-preflight-mock.mjs");
   const hookPath = join(testDirectory, "use-export-controller.mjs");
+  const playlistPath = join(testDirectory, "playlist-timeline.mjs");
+  const projectPath = join(testDirectory, "project-model.mjs");
+  writeFileSync(
+    projectPath,
+    ts.transpileModule(readFileSync(new URL("../lib/project-model.ts", import.meta.url), "utf8"), {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+    }).outputText,
+  );
+  writeFileSync(
+    playlistPath,
+    ts
+      .transpileModule(
+        readFileSync(new URL("../lib/playlist-timeline.ts", import.meta.url), "utf8"),
+        { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } },
+      )
+      .outputText.replace('from "./project-model"', 'from "./project-model.mjs"'),
+  );
   writeFileSync(
     settingsPath,
     `
@@ -240,6 +278,15 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
     }
   `,
   );
+  writeFileSync(
+    preflightPath,
+    `
+    export function getCachedExportPreflight() { return null; }
+    export async function preflightExport() {
+      return { extension: 'mp4', videoCodec: 'avc', audioCodec: 'aac', audioIncluded: true, segments: [] };
+    }
+  `,
+  );
   let hookSource = readFileSync(
     new URL("../hooks/use-export-controller.ts", import.meta.url),
     "utf8",
@@ -249,6 +296,9 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
     .replaceAll('"@/lib/export-settings"', JSON.stringify(pathToFileURL(settingsPath).href))
     .replaceAll('"@/lib/export-job"', JSON.stringify(pathToFileURL(modulePath).href))
     .replaceAll('"@/lib/export-time-estimate"', JSON.stringify(pathToFileURL(estimatePath).href))
+    .replaceAll('"@/lib/export-request"', JSON.stringify(pathToFileURL(requestPath).href))
+    .replaceAll('"@/lib/export-preflight"', JSON.stringify(pathToFileURL(preflightPath).href))
+    .replaceAll('"@/lib/playlist-timeline"', JSON.stringify(pathToFileURL(playlistPath).href))
     .replaceAll('"@/lib/export-video"', JSON.stringify(pathToFileURL(adapterPath).href));
   writeFileSync(
     hookPath,
@@ -372,6 +422,9 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
   const options = {
     lockedRef,
     getSource: () => source,
+    onError: (message) => {
+      if (message) events.push(`error:${message}`);
+    },
     pausePlayback: () => {
       events.push(`pause:${lockedRef.current}`);
     },
@@ -448,5 +501,5 @@ async function waitFor(predicate) {
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
-  assert.fail("Timed out waiting for export hook lifecycle event.");
+  assert.fail(`Timed out waiting for export hook lifecycle event: ${JSON.stringify(events)}`);
 }
