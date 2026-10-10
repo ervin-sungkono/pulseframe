@@ -31,9 +31,7 @@ provider, execution profile or runtime environment variables are required.
 Import `ervin-sungkono/audio-visualizer` in Vercel and select the Vite framework.
 `vercel.json` configures a frozen pnpm install, `pnpm build` and `dist/` output.
 Use the repository root as the project root. Git integration builds PR branches
-as previews and deploys `main` to production after merge. This migration PR is
-stacked on the WASM PR; merge that prerequisite before retargeting the migration
-PR to `main`.
+as previews and deploys `main` to production after merge.
 
 Vercel serves generated files in `public/dsp/` at `/dsp/`. A deployment needs
 only Node/pnpm, not Rust. Rust is needed only to regenerate the checked-in engine
@@ -58,6 +56,27 @@ keep. The migration does not delete the old site's D1 data.
 Export supports 480p, 720p, 1080p and 1440p, 24/30/60 fps, optional video
 compression off by default, and device-specific duration estimates. See
 [export settings](docs/video-export.md).
+
+## Creative and release tools
+
+Arrange background, artwork, logo, track information, promo text and captions
+with canvas selection/drag/resize and precise controls. Layout overrides are
+independent for landscape, portrait and square. Artist profiles store reusable
+branding and images in local IndexedDB; portable `.pfartist` files transfer them.
+Quick Looks preserve artwork, track text and explicit composition layouts.
+
+Import SRT or plain-text VTT captions, adjust timing, and export full or selected
+range sidecars. Clip suggestions use existing audio history and require complete
+analysis; they do not claim to identify a chorus.
+
+A playlist is one project whose tracks export as a continuous video. A batch is
+an ordered list of independent output requests. Release packages add full video,
+portrait teaser and selected-time PNG requests to that queue. Exports can stream
+to a chosen file/folder on supporting browsers; the download fallback keeps one
+completed batch output at a time. V3 project files preserve tracks, assets,
+composition and release recipes; v1/v2 projects still open.
+
+See [release studio](docs/release-studio.md) for workflow and supported limits.
 
 ## Architecture and checks
 

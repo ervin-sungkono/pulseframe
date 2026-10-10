@@ -35,9 +35,10 @@ of truth when older documentation disagrees with them.
   configuration. Add abstractions only to solve a demonstrated responsibility
   or duplication problem. Remove obsolete code when replacing it.
 - Preserve visual response, preset/project compatibility and exported output
-  unless the task explicitly changes them. Keep speculative playlist support
-  out of current single-track implementation; five-minute tracks are the
-  present performance target.
+  unless the task explicitly changes them. A playlist is one project with
+  contiguous tracks and one continuous video; a batch is independent output
+  requests producing separate files. Five-minute tracks remain the measured
+  performance target; long playlists use one decoded track at a time.
 
 ## Media, DSP and export lifecycle
 
@@ -47,6 +48,11 @@ of truth when older documentation disagrees with them.
 - Keep one owner for media elements, audio graphs, decoded audio, images,
   workers and object URLs. Release resources on replacement, cancellation and
   teardown. Do not copy entire tracks merely to hand work to an adapter.
+- Keep track title, artist, trim, captions and artwork canonical in project
+  entries. Resolve renderer settings through the project adapter. Queue only
+  original File references and immutable values, never decoded caches.
+- File-backed exports commit the physical writer only after successful mux
+  finalization. A target stream close during cancellation must never commit.
 - Snapshot export settings, subtitles and the selected range before asynchronous
   preparation. Retain source resources while the shared export lock is held;
   release that lock only after the job settles. Prevent late progress updates

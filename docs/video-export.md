@@ -15,3 +15,33 @@ Export time is shown as a rough range. Before export, the browser uses only rece
 Timing history stays in this browser for up to 45 days and is capped at 20 successful exports. It stores the export pipeline version, coarse renderer workload and duration buckets, encoder settings, and phase timings. It excludes media names, track titles, PCM, and exact appearance values. Clearing this site's browser storage clears the history. Ranges are practical estimates, not confidence guarantees.
 
 The WASM migration changes the timing pipeline version, so measurements from the earlier JavaScript pipeline are ignored. Initialization failures can still use JavaScript; live throughput adjusts the estimate to the work this device actually completes.
+
+## Saving and running multiple outputs
+
+On supporting browsers, **Save directly to file** streams positioned encoded
+chunks through Mediabunny to a staged filesystem writer. File/folder selection
+happens directly from the click after cached codec preflight. The writer commits
+only after mux finalization; cancel/error aborts it. The browser may leave an
+empty picker-created placeholder. MP4 file mode uses explicit non-fragmented,
+seekable output with fast start disabled. No complete output Blob is needed.
+
+The download fallback estimates output memory conservatively and rejects
+workloads estimated above 300 MiB, directing users to file mode or a shorter
+range. This is an admission heuristic, not a guarantee of peak browser/GPU
+memory. Five-second interleaving of audio/video bounds mux timeline skew.
+
+A release package queues independent full-video, portrait-teaser and PNG
+requests. Playlist requests export one continuous file on a global frame grid,
+with hard visual cuts and contiguous normalized 48 kHz stereo audio. Silent
+segments receive silence when the output contains audio. Source-local captions,
+titles and artwork change at track boundaries. Surround audio is unsupported.
+
+A batch holds one shared lock until all work or cancellation settles, runs
+requests sequentially, and pauses between files. The manual download path waits
+for one click per completed file. Its “Complete” status means the browser download
+was requested; the app cannot observe the eventual disk save. A stopped/failed
+run can retry unfinished requests without repeating completed items.
+
+The current timing pipeline invalidates earlier measurements and separates
+buffer/file destinations, artwork and composition workload. It does not train
+on PNGs, failed writes or canceled runs. File selection time is excluded.

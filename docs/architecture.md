@@ -7,7 +7,10 @@ explicit. There is no new global store, service container, or plugin framework.
 
 ```mermaid
 flowchart LR
-  UI[Home and controls: View] --> Media[useMediaSession: Controller]
+  UI[Home and controls: View] --> Project[useStudioProject / useProjectTracks: Controller]
+  Project --> Media[useMediaSession: Controller]
+  UI --> Branding[useStudioBranding / useArtistProfiles: Controller]
+  Branding --> Assets[Artist profiles / IndexedDB adapter]
   UI --> Preview[useVisualizerPreview: Controller]
   UI --> Export[useExportController: Controller]
   UI --> History[useSettingsHistory and usePresets]
@@ -15,9 +18,12 @@ flowchart LR
   Session --> Analysis[PCM and live audio analysis]
   Preview --> Session
   Preview --> Renderer[drawVisualization: canvas View]
+  UI --> Queue[useExportQueue: Controller]
+  Queue --> Export
   Export --> Job[Export job lifecycle]
   Job --> Encoder[Existing video export adapter]
   Encoder --> Renderer
+  Encoder --> Sink[Commit / abort file destination]
   Contracts[Settings, presets, project and subtitle contracts: Model] --> UI
   Contracts --> Renderer
   Contracts --> Encoder
@@ -34,6 +40,10 @@ flowchart LR
 | Preview orchestration | `hooks/use-visualizer-preview.ts`, `lib/preview-state.ts` | Frame loop, sizing, reduced motion, seek response replay and PNG capture |
 | Canvas rendering | `lib/visualizer.ts`, `lib/track-overlay.ts`, `lib/beat-lighting.ts`, `lib/glitch.ts` | Existing visual composition and response equations |
 | Export orchestration | `hooks/use-export-controller.ts`, `lib/export-job.ts`, `lib/export-time-estimate.ts` | Input snapshot, shared lock, measured progress and estimates, successful-run history, cancellation and download cleanup |
+| Project orchestration | `hooks/use-studio-project.ts`, `hooks/use-project-tracks.ts` | Canonical track metadata, source activation, playlist transport, recipe projection |
+| Project and composition models | `lib/project-model.ts`, `lib/playlist-timeline.ts`, `lib/composition.ts`, `lib/release-recipe.ts`, `lib/export-request.ts` | Validated file/metadata documents, timeline mappings, output requests and normalized geometry |
+| Export destinations | `lib/export-preflight.ts`, `lib/export-destination.ts`, `lib/audio-normalize.ts` | Codec admission, positioned writes with explicit commit/abort and budgeted per-track resampling |
+| Branding | `hooks/use-studio-branding.ts`, `hooks/use-artist-profiles.ts`, `lib/artist-profile*.ts`, `lib/image-palette.ts` | Atomic image staging, bounded local branding library and opt-in color suggestions |
 | Persistence | `hooks/use-presets.ts`, `lib/preset-store.ts` | Validated browser-local preset persistence and cross-tab refresh |
 
 The browser session snapshot exposes resource handles for preview and export.
@@ -52,8 +62,10 @@ Settings, presets and serializers must not import controller hooks or components
   between small batches and rejects changed settings, seeks or media. Cached
   response states are cloned before rendering can mutate them.
 - Export captures settings, subtitles and range before lazy encoder loading.
-  PCM and image resources remain referenced while the shared lock prevents media
-  replacement. Cancel keeps the lock until encoding settles and suppresses late
+  Single-file exports may retain active runtime resources under the lock.
+  Batch snapshots drop derived handles and prepare each request separately;
+  playlist encoders normalize one track at a time to 48 kHz stereo. The shared
+  lock prevents media replacement. Cancel keeps the lock until encoding settles and suppresses late
   progress and downloads. Teardown aborts work and releases retained URLs.
 - Export timing counts frame work only after each awaited encoder submission.
   The controller measures from the click through lazy loading and preparation,
@@ -68,9 +80,10 @@ Settings, presets and serializers must not import controller hooks or components
 
 The application is a Vite/React static site on Vercel. Quick Looks use browser-local storage; there is no preset API or database service.
 
-The application still edits one track at a time. Five-minute tracks are the
-current target; a future playlist can sequence track sessions without introducing
-playlist state into this refactor. Browser codecs and memory still determine
+The editor prepares one active track at a time. Playlist documents retain
+original files and lightweight metadata, and exports process contiguous segments
+through one encoder on a global frame grid. Five-minute source tracks remain the
+measured target. Browser codecs and memory still determine
 which export sizes and track lengths a device can process.
 
 Run regression checks with `node --test tests/*.test.mjs`, type checking with

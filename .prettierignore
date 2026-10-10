@@ -3,6 +3,8 @@ coverage/
 crates/pulseframe-dsp/target/
 dist/
 node_modules/
+outputs/
+work/
 pnpm-lock.yaml
 public/dsp/
 vendor/
