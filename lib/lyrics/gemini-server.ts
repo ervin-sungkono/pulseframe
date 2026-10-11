@@ -116,6 +116,8 @@ type ApiErrorCode =
   | "missing_api_key"
   | "invalid_api_key"
   | "permission_denied"
+  | "account_precondition"
+  | "billing_required"
   | "unsupported_model"
   | "rate_limit_or_quota"
   | "provider_unavailable"
@@ -319,25 +321,37 @@ function retryAfterMs(headers: Headers, now: number) {
   return Math.max(0, Math.min(60_000, Math.round(target - now)));
 }
 
-function getProviderErrorCode(body: unknown, status: number): ApiErrorCode {
-  if (status === 401) return "invalid_api_key";
-  if (status === 403) return "permission_denied";
-  if (status === 404) return "unsupported_model";
-  if (status === 429) return "rate_limit_or_quota";
-  if (status >= 500) return "provider_unavailable";
+function providerErrorStatus(body: unknown) {
   if (typeof body === "object" && body !== null && "error" in body) {
     const error = (body as { error?: { status?: unknown; message?: unknown } })
       .error;
     const statusText =
-      typeof error?.status === "string" ? error.status.toLowerCase() : "";
+      typeof error?.status === "string" && /^[A-Z_]{2,40}$/.test(error.status)
+        ? error.status.toLowerCase()
+        : "";
     const safeForMatch =
       typeof error?.message === "string" ? error.message.toLowerCase() : "";
-    if (statusText.includes("permission_denied")) return "permission_denied";
+    return { statusText, safeForMatch };
+  }
+  return { statusText: "", safeForMatch: "" };
+}
+
+function getProviderErrorCode(body: unknown, status: number): ApiErrorCode {
+  const { statusText, safeForMatch } = providerErrorStatus(body);
+  if (status === 401) return "invalid_api_key";
+  if (status === 402) return "billing_required";
+  if (status === 403) return "permission_denied";
+  if (status === 404) return "unsupported_model";
+  if (status === 429) return "rate_limit_or_quota";
+  if (status >= 500) return "provider_unavailable";
+  if (status === 400) {
     if (
       statusText.includes("unauthenticated") ||
       /api[ _-]?key.{0,24}(invalid|not valid)/.test(safeForMatch)
     )
       return "invalid_api_key";
+    if (statusText.includes("failed_precondition"))
+      return "account_precondition";
     if (
       statusText.includes("not_found") ||
       /model.{0,24}(not found|unsupported)/.test(safeForMatch)
@@ -345,7 +359,7 @@ function getProviderErrorCode(body: unknown, status: number): ApiErrorCode {
       return "unsupported_model";
     if (statusText.includes("resource_exhausted")) return "rate_limit_or_quota";
   }
-  return "provider_unavailable";
+  return "invalid_request";
 }
 
 function publicErrorMessage(code: ApiErrorCode) {
@@ -354,6 +368,10 @@ function publicErrorMessage(code: ApiErrorCode) {
       return "Gemini rejected this API key. Check the key or enter a different one.";
     case "permission_denied":
       return "This Gemini key does not have permission to use the configured model.";
+    case "account_precondition":
+      return "Gemini rejected this project's setup. Check free-tier regional availability and billing in Google AI Studio.";
+    case "billing_required":
+      return "Gemini billing or prepaid credits need attention in Google AI Studio.";
     case "unsupported_model":
       return "The configured Gemini model is unavailable for this project.";
     case "rate_limit_or_quota":
@@ -372,6 +390,8 @@ function publicErrorMessage(code: ApiErrorCode) {
       return "Enter a Gemini API key or configure GEMINI_API_KEY on the server.";
     case "server_configuration":
       return "Gemini is not configured correctly on the server.";
+    case "invalid_request":
+      return "Gemini rejected the audio request. Check the configured model and request format.";
     case "invalid_audio":
       return "This audio chunk is not a supported mono PCM16 WAV at 24 kHz.";
     default:
@@ -713,7 +733,19 @@ export async function handleGeminiLyricsRequest(
     const code = getProviderErrorCode(providerBody, providerResponse.status);
     const retryable =
       code === "rate_limit_or_quota" || code === "provider_unavailable";
-    return apiError(502, code, publicErrorMessage(code), {
+    const status =
+      code === "rate_limit_or_quota" ? 429 :
+      code === "provider_unavailable" ? 502 :
+      code === "billing_required" ? 402 :
+      code === "permission_denied" ? 403 :
+      code === "unsupported_model" ? 404 : 400;
+    // Log only status codes. Provider messages may echo user-supplied content.
+    console.warn("Gemini provider request failed", {
+      providerHttpStatus: providerResponse.status,
+      providerStatus: providerErrorStatus(providerBody).statusText,
+      classifiedAs: code,
+    });
+    return apiError(status, code, publicErrorMessage(code), {
       retryable,
       retryAfterMs: retryable
         ? retryAfterMs(providerResponse.headers, (config.now ?? Date.now)())
