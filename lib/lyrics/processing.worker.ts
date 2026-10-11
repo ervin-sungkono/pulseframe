@@ -21,7 +21,7 @@ type WorkerScope = {
     type: "message",
     listener: (event: MessageEvent<LyricsWorkerRequest>) => void,
   ) => void;
-  postMessage: (message: LyricsWorkerResponse) => void;
+  postMessage: (message: LyricsWorkerResponse, transfer?: Transferable[]) => void;
 };
 
 type HighPerformanceAdapter = unknown;
@@ -57,8 +57,8 @@ let activeJob: ActiveJob | null = null;
 let checkpoint: Checkpoint | null = null;
 let retainedWhisperModel: Plan["model"] | null = null;
 
-function post(message: LyricsWorkerResponse) {
-  scope.postMessage(message);
+function post(message: LyricsWorkerResponse, transfer?: Transferable[]) {
+  scope.postMessage(message, transfer);
 }
 
 function progress(jobId: number, value: LyricsProgress) {
@@ -217,7 +217,7 @@ function createAdmission(request: LyricsWorkerStart, isolation: boolean, model: 
     deviceMemoryGiB: readDeviceMemoryGiB(),
     isolation,
     model,
-    method: "local",
+    method: request.isolationOnly ? "gemini" : "local",
   });
 }
 
@@ -236,6 +236,34 @@ function updateCheckpoint(plan: Plan, request: LyricsWorkerStart, values: Partia
     notices: values.notices ?? previous?.notices ?? [...plan.notices],
     ...values,
   };
+}
+
+async function runIsolationOnly(request: LyricsWorkerStart) {
+  validateStart(request);
+  if (request.preset !== "quality") throw new Error("Vocal isolation requires Quality mode.");
+  const admission = createAdmission(request, true, "base");
+  if (!admission.admitted)
+    throw new Error(admission.reason ?? "This track exceeds the estimated memory budget.");
+  const jobId = request.jobId;
+  const signal = activeJob!.controller.signal;
+  const source = await collectSource(request, jobId);
+  progress(jobId, { stage: "prepare", message: "Preparing stereo audio for vocal isolation." });
+  const stereo = await resampleStereo44100(source, request.sampleRate, signal);
+  source.length = 0;
+  const { isolateVocals } = await import("./isolation");
+  const isolated = await isolateVocals(stereo, {
+    overlap: 0.5,
+    threads: getThreadCount(),
+    signal,
+    onProgress: (value) =>
+      progress(jobId, {
+        stage: "isolate",
+        message: "Separating the vocal from the accompaniment.",
+        completed: value.completed,
+        total: value.total,
+      }),
+  });
+  return isolated;
 }
 
 async function run(request: LyricsWorkerStart) {
@@ -503,6 +531,30 @@ scope.addEventListener("message", (event) => {
     return;
   }
   activeJob = { id: request.jobId, controller: new AbortController() };
+  if (request.isolationOnly) {
+    void runIsolationOnly(request).then(
+      (isolated) => {
+        if (activeJob?.id !== request.jobId) return;
+        post(
+          {
+            type: "isolated",
+            jobId: request.jobId,
+            channels: isolated.channels,
+            backend: isolated.backend,
+            notices: isolated.notices,
+          },
+          isolated.channels.map((channel) => channel.buffer),
+        );
+        activeJob = null;
+      },
+      (error) => {
+        if (activeJob?.id !== request.jobId) return;
+        post({ type: "error", jobId: request.jobId, message: errorMessage(error) });
+        activeJob = null;
+      },
+    );
+    return;
+  }
   void run(request).then(
     (result) => {
       if (activeJob?.id !== request.jobId) return;

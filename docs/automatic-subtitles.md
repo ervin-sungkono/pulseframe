@@ -18,8 +18,12 @@ Gemini is optional. Prepared mono PCM16 WAV chunks are sent to the same-origin
 `/api/lyrics/transcribe` Vercel Function. **The browser never calls Google
 directly.** The Function uses a supplied client session key first. Only an absent
 client key permits `GEMINI_API_KEY` fallback; a rejected client key does not
-trigger a second request billed to the server key. Fast and Auto use one pass;
-Quality can recheck uncertain chunks within a bounded extra-request budget.
+trigger a second request billed to the server key. Fast and Auto transcribe the
+original mix. Quality first isolates vocals on device through the existing
+subtitle worker's isolation-only mode; it does not load Whisper for this path.
+Isolation failure stops Quality rather than uploading the original mix silently.
+Song language defaults to Auto, with optional hints from Google's supported
+language table. Local language detection remains automatic.
 
 The client key exists only in React/session memory and request headers. Disconnect
 clears it. It is excluded from project files, Quick Looks, local/session storage,
@@ -32,30 +36,34 @@ for an already accepted request.
 
 Keep the existing Vite deployment and `dist/` output. The new Node.js Function is
 declared under `api/lyrics/transcribe.ts`; it does not need a database, account
-service, container or durable queue. Each request contains at most 60 seconds of
-24 kHz mono PCM16 audio: 2.88 MB WAV payload, approximately 3.84 MB after base64,
+service, container or durable queue. Each request contains at most 100 seconds of
+16 kHz mono PCM16 audio: 3.20 MB WAV payload, approximately 4.27 MB after base64,
 with bounded JSON overhead below Vercel's 4.5 MB request limit. The next chunk
 waits for the previous one. There is no server-side full-song/video encoding.
 
-The [Gemini audio documentation](https://ai.google.dev/gemini-api/docs/generate-content/audio)
-states 32 audio tokens per second: five minutes is about 9,600 input audio tokens
-before chunk overlap, prompts and output. Compressing the codec or reducing its
-bitrate does not itself reduce those duration-based tokens. Each two-second
-overlap repeats about 64 audio tokens. Mono WAV avoids another browser encoding
-dependency and supplies exact sample-duration checks; it can be larger than an
-original compressed MP3. Smaller Opus uploads could help a measured transport
-bottleneck, but require additional codec/timestamp validation and do not promise
-faster provider inference. The current response asks only for timestamped text
-and bounded uncertainty flags; Pulseframe assigns block IDs and converts times
-to the existing seconds contract locally. Successful chunks are reused on retry.
+The default model is `gemini-3.5-transcribe`, using the documented
+[transcription API](https://ai.google.dev/gemini-api/docs/transcribe). The Function
+uploads each WAV through Google's Files API, then calls Interactions with that
+file URI, an optional language hint, and verbatim word timestamps. It deletes
+the uploaded file after the attempt; if deletion fails, Google may retain it for
+up to 48 hours. Timed word annotations are grouped into bounded subtitle phrases
+and validated before returning Pulseframe's existing JSON contract.
+
+Google permits up to 30 minutes with word timestamps, but the Vercel request
+size limit bounds each upload to 100 seconds here. A five-minute track uses four
+requests with two-second overlap. Mono WAV avoids an extra browser encoder and
+supplies exact sample-duration checks. Reducing upload bytes does not guarantee
+lower provider cost or faster inference. Successful chunks are reused on retry;
+changing the selected language invalidates incompatible cached results.
 
 In Vercel Project Settings → Environment Variables, optionally configure
 `GEMINI_API_KEY` as a sensitive server environment variable for the environments
 that should offer the fallback. Redeploy after changing it. Never name this key
 `VITE_GEMINI_API_KEY`: Vite-prefixed values are public. A deployment without the
 server key still supports client session keys. Do not paste keys into issues or
-pull requests. `GEMINI_MODEL` can override the internal provider model without
-adding a model picker to the UI.
+pull requests. `GEMINI_MODEL` can override the model with a transcription-compatible model;
+general text-generation models do not support this request format. No model
+picker is exposed in the UI.
 
 For local development, put the same server variables in an ignored `.env.local`
 and run `pnpm dev`. Vite's development-only middleware invokes the same Web

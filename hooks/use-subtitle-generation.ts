@@ -8,6 +8,7 @@ import {
   MAX_LYRICS_SOURCE_BYTES,
 } from "@/lib/lyrics/policy";
 import { generatedCuesToSubtitles } from "@/lib/lyrics/cues";
+import { GEMINI_LANGUAGE_CODES, type GeminiLanguageCode } from "@/lib/lyrics/gemini-languages";
 import type {
   LyricsAdapter,
   LyricsAudio,
@@ -208,12 +209,14 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
   const lastRequestRef = useRef<{
     method: LyricsMethod;
     preset: LyricsPreset;
+    languageCode: GeminiLanguageCode;
   } | null>(null);
   const resultRef = useRef<GenerationSnapshot | null>(null);
   const mountedRef = useRef(true);
 
   const [method, setMethodState] = useState<LyricsMethod>(DEFAULT_METHOD);
   const [preset, setPresetState] = useState<LyricsPreset>(DEFAULT_PRESET);
+  const [languageCode, setLanguageCodeState] = useState<GeminiLanguageCode>("");
   const [apiKey, setApiKeyState] = useState("");
   const [phase, setPhase] = useState<SubtitleGenerationPhase>("idle");
   const [running, setRunning] = useState(false);
@@ -349,6 +352,13 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
     [preset],
   );
 
+  const setLanguageCode = useCallback((next: GeminiLanguageCode) => {
+    if (!GEMINI_LANGUAGE_CODES.has(next) || jobRef.current) return;
+    lastRequestRef.current = null;
+    setLanguageCodeState(next);
+    setError(null);
+  }, []);
+
   const disconnectGemini = useCallback(() => {
     if (jobRef.current?.method === "gemini") {
       const job = jobRef.current;
@@ -417,10 +427,15 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
   );
 
   const generate = useCallback(
-    async (override?: { method?: LyricsMethod; preset?: LyricsPreset }) => {
+    async (override?: {
+      method?: LyricsMethod;
+      preset?: LyricsPreset;
+      languageCode?: GeminiLanguageCode;
+    }) => {
       const currentOptions = optionsRef.current;
       const targetMethod = override?.method ?? method;
       const targetPreset = override?.preset ?? preset;
+      const targetLanguageCode = override?.languageCode ?? languageCode;
       if (jobRef.current || currentOptions.lockedRef.current) return false;
       const source = currentOptions.getSource();
       if (!source) {
@@ -474,7 +489,11 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
         lockOwned: true,
       };
       jobRef.current = job;
-      lastRequestRef.current = { method: targetMethod, preset: targetPreset };
+      lastRequestRef.current = {
+        method: targetMethod,
+        preset: targetPreset,
+        languageCode: targetLanguageCode,
+      };
       currentOptions.lockedRef.current = true;
       setRunning(true);
       setPhase("running");
@@ -514,6 +533,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
         if (controller.signal.aborted) throw new DOMException("Generation canceled.", "AbortError");
         const result = await adapter.generate(audio, {
           preset: targetPreset,
+          languageCode: targetMethod === "gemini" ? targetLanguageCode : undefined,
           sourceId: job.sourceId,
           signal: controller.signal,
           onProgress: (next) => {
@@ -643,7 +663,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
         release();
       }
     },
-    [cloudConsentScope, ensureAdapter, getAudio, method, preset, serverKeyAvailable],
+    [cloudConsentScope, ensureAdapter, getAudio, languageCode, method, preset, serverKeyAvailable],
   );
 
   const retry = useCallback(() => {
@@ -816,6 +836,8 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
     setMethod,
     preset,
     setPreset,
+    languageCode,
+    setLanguageCode,
     apiKey,
     setApiKey,
     disconnectGemini,
