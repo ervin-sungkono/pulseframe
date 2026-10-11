@@ -7,3 +7,6 @@ pnpm-lock.yaml
 public/dsp/
 vendor/
 *.tsbuildinfo
+
+public/mdx-ort/
+public/whisper-ort/

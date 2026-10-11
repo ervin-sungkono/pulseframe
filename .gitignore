@@ -23,3 +23,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+
+# Generated browser inference runtimes
+/public/mdx-ort/
+/public/whisper-ort/

@@ -51,6 +51,7 @@ of truth when older documentation disagrees with them.
   preparation. Retain source resources while the shared export lock is held;
   release that lock only after the job settles. Prevent late progress updates
   and downloads after cancellation.
+- Keep automatic subtitle generation on the complete active track. Run local inference in its dedicated worker and route Gemini audio through the serverless endpoint only after explicit user consent.
 - Keep video compression optional and off by default. It is video encoding
   compression, not ZIP packaging. Preserve the shared resolution and frame-rate
   contracts rather than introducing separate UI constants.

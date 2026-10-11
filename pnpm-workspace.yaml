@@ -4,3 +4,6 @@ trustLockfile: false
 strictDepBuilds: true
 allowBuilds:
   esbuild: true
+  onnxruntime-node: false
+  protobufjs: false
+  sharp: false
