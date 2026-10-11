@@ -74,12 +74,19 @@ function interaction(annotations = [], text = "") {
   };
 }
 
-async function transcribe(providerBody, { languageCode = "" } = {}) {
+let requestSequence = 0;
+async function transcribe(
+  providerBody,
+  { languageCode = "", preset = "fast", recheck = false } = {},
+) {
   const calls = [];
   const request = new Request("https://pulseframe.test/api/lyrics/transcribe", {
     method: "POST",
-    headers: { "content-type": "application/json", "x-goog-api-key": "session-secret" },
-    body: JSON.stringify({ ...JSON.parse(payload), languageCode }),
+    headers: {
+      "content-type": "application/json",
+      "x-goog-api-key": `session-secret-${requestSequence++}`,
+    },
+    body: JSON.stringify({ ...JSON.parse(payload), languageCode, preset, recheck }),
   });
   const response = await handleGeminiLyricsRequest(request, {
     fetcher: async (url, options) => {
@@ -319,7 +326,7 @@ test("Transcribe reports stable issues for malformed timestamped responses", asy
     [
       "word_timing_out_of_bounds",
       interaction([
-        { type: "word_info", text: "outside", start_offset: "0.900s", end_offset: "1.101s" },
+        { type: "word_info", text: "outside", start_offset: "1.101s", end_offset: "1.500s" },
       ]),
     ],
   ];
@@ -339,12 +346,25 @@ test("Transcribe reports stable issues for malformed timestamped responses", asy
   }
   assert.doesNotMatch(JSON.stringify(warnings), /session-secret|server-secret|PRIVATE_LYRICS/);
   assert.deepEqual(
-    warnings,
+    warnings.map(([message, details]) => [message, details.responseIssue, details.chunkIndex]),
     invalidCases.map(([responseIssue]) => [
       "Gemini transcription response rejected",
-      { responseIssue, chunkIndex: 0 },
+      responseIssue,
+      0,
     ]),
   );
+  assert.deepEqual(warnings.at(-2)[1].responseTiming, {
+    reason: "reversed_interval",
+    startMs: 400,
+    endMs: 300,
+    chunkDurationMs: 1000,
+  });
+  assert.deepEqual(warnings.at(-1)[1].responseTiming, {
+    reason: "word_start_outside_chunk",
+    startMs: 1101,
+    endMs: 1500,
+    chunkDurationMs: 1000,
+  });
 });
 
 test("Transcribe rejects too many segments and accepts valid silence", async () => {
@@ -368,4 +388,30 @@ test("Transcribe rejects too many segments and accepts valid silence", async () 
   const silence = await transcribe({ status: "completed", steps: [] });
   assert.equal(silence.response.status, 200);
   assert.deepEqual(silence.body.segments, []);
+});
+
+test("Transcribe clips overflowing word endings to the WAV duration in every mode", async () => {
+  for (const preset of ["fast", "auto", "quality"]) {
+    const { response, body } = await transcribe(
+      interaction([
+        { type: "word_info", text: "hello", start_offset: "0.100s", end_offset: "0.400s" },
+        { type: "word_info", text: "world.", start_offset: "0.900s", end_offset: "2.500s" },
+      ]),
+      { preset },
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.segments, [{ startMs: 100, endMs: 1000, text: "hello world." }]);
+    assert.equal(body.flags.timing, true);
+  }
+});
+
+test("Transcribe rejects positive intervals starting exactly at EOF", async () => {
+  const { response, body } = await transcribe(
+    interaction([
+      { type: "word_info", text: "outside", start_offset: "1.000s", end_offset: "1.500s" },
+    ]),
+  );
+  assert.equal(response.status, 502);
+  assert.equal(body.responseTiming.reason, "word_start_outside_chunk");
+  assert.equal(body.responseTiming.chunkDurationMs, 1000);
 });

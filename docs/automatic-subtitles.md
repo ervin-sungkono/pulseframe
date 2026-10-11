@@ -86,8 +86,14 @@ key, audio, or provider message. Vercel Hobby runtime logs have short retention,
 so inspect them soon after reproducing an issue.
 Timestamp-response validation errors include a fixed `responseIssue` code,
 such as `missing_word_annotations` or `word_timing_out_of_bounds`. The Function
-logs only that code and the chunk index, so parser failures can be diagnosed
-without exposing lyrics or the upstream response body.
+logs that code and the chunk index. For invalid intervals, `responseTiming`
+includes only numeric start/end/chunk duration and a fixed reason (reversed
+interval or word starting outside the chunk), never lyric text or keys.
+Word endings beyond the uploaded WAV are clipped to its exact duration when
+that word starts within the chunk. These adjustments flag the chunk for the
+existing bounded Quality recheck and show a timing-review notice if still
+present in the final result. Fast and Auto keep their existing request budgets.
+Reversed intervals and words starting beyond the upload remain invalid.
 
 The server validates origin, request size, WAV format and response structure, and
 applies bounded execution/retry limits. Process-local admission limits are only

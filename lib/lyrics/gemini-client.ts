@@ -708,6 +708,13 @@ export function createGeminiLyricsAdapter(options: {
         stage: "format",
         message: "Combining timestamped lyrics…",
       });
+      const adjustedChunks = completed.flatMap((chunk, index) =>
+        chunk.result.flags.timing ? [index + 1] : [],
+      );
+      if (adjustedChunks.length)
+        notices.push(
+          `Gemini timestamps needed adjustment in audio chunk(s) ${adjustedChunks.join(", ")}. Review adjusted subtitle timing before applying.`,
+        );
       const allCues: GeneratedCue[] = [];
       for (let index = 0; index < completed.length; index += 1) {
         allCues.push(...resultCues(completed[index].result, index, plans, durationMs));

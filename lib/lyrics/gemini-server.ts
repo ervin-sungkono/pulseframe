@@ -9,7 +9,6 @@ import {
   GEMINI_MAX_SOURCE_DURATION_MS,
   GEMINI_MAX_WAV_BYTES,
   GEMINI_SAMPLE_RATE,
-  GEMINI_TIMING_BOUNDARY_TOLERANCE_MS,
   geminiProviderContentSchema,
   geminiSuccessResponseSchema,
   geminiTranscriptionRequestSchema,
@@ -107,8 +106,18 @@ type TranscriptionResponseIssue =
   | "segment_limit_exceeded"
   | "invalid_subtitle_contract";
 
+type WordTimingDiagnostic = {
+  reason: "reversed_interval" | "word_start_outside_chunk";
+  startMs: number;
+  endMs: number;
+  chunkDurationMs: number;
+};
+
 class TranscriptionResponseError extends Error {
-  constructor(readonly issue: TranscriptionResponseIssue) {
+  constructor(
+    readonly issue: TranscriptionResponseIssue,
+    readonly timing?: WordTimingDiagnostic,
+  ) {
     super(issue);
   }
 }
@@ -130,6 +139,7 @@ function apiError(
     retryAfterMs?: number;
     providerAttempts?: number;
     responseIssue?: TranscriptionResponseIssue;
+    responseTiming?: WordTimingDiagnostic;
   } = {},
 ) {
   return json(status, {
@@ -137,6 +147,7 @@ function apiError(
     ...(details.retryAfterMs === undefined ? {} : { retryAfterMs: details.retryAfterMs }),
     providerAttempts: details.providerAttempts ?? 0,
     ...(details.responseIssue ? { responseIssue: details.responseIssue } : {}),
+    ...(details.responseTiming ? { responseTiming: details.responseTiming } : {}),
   });
 }
 
@@ -458,10 +469,18 @@ function normalizeInteraction(body: unknown, chunkDurationMs: number) {
         const endMs = offsetMs(annotation.end_offset);
         if (
           endMs < startMs ||
-          startMs < 0 ||
-          endMs > chunkDurationMs + GEMINI_TIMING_BOUNDARY_TOLERANCE_MS
+          startMs > chunkDurationMs ||
+          (startMs === chunkDurationMs && endMs > startMs)
         )
-          throw new TranscriptionResponseError("word_timing_out_of_bounds");
+          throw new TranscriptionResponseError("word_timing_out_of_bounds", {
+            reason: endMs < startMs ? "reversed_interval" : "word_start_outside_chunk",
+            startMs,
+            endMs,
+            chunkDurationMs,
+          });
+        // A word that starts inside the upload can have an estimated end past
+        // EOF. Clip that end to the real WAV boundary instead of rejecting all
+        // lyrics. Never repair reversed intervals or shift outside words inside.
         const boundedStart = Math.min(startMs, chunkDurationMs);
         const boundedEnd = Math.min(endMs, chunkDurationMs);
         if ((boundedStart === boundedEnd && /[\p{L}\p{N}]/u.test(text)) || endMs > chunkDurationMs)
@@ -756,15 +775,18 @@ export async function handleGeminiLyricsRequest(request: Request, config: Server
   } catch (error) {
     const responseIssue =
       error instanceof TranscriptionResponseError ? error.issue : "invalid_subtitle_contract";
-    // Fixed diagnostic codes only: never log the response body, lyric text,
+    const responseTiming = error instanceof TranscriptionResponseError ? error.timing : undefined;
+    // Fixed diagnostic codes and numeric timing only: never log the response body, lyric text,
     // keys, or exception messages that could contain provider content.
     console.warn("Gemini transcription response rejected", {
       responseIssue,
       chunkIndex: input.chunkIndex,
+      ...(responseTiming ? { responseTiming } : {}),
     });
     return apiError(502, "invalid_response", publicErrorMessage("invalid_response"), {
       providerAttempts: 1,
       responseIssue,
+      responseTiming,
     });
   }
 
@@ -787,5 +809,4 @@ export const geminiServerLimits = {
   maxChunkDurationMs: GEMINI_AUDIO_CHUNK_MS,
   maxChunkCount: GEMINI_MAX_CHUNK_COUNT,
   maxSegmentsPerChunk: GEMINI_MAX_SEGMENTS_PER_CHUNK,
-  boundaryToleranceMs: GEMINI_TIMING_BOUNDARY_TOLERANCE_MS,
 };
