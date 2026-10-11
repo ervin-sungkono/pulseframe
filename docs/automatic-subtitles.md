@@ -63,6 +63,15 @@ handler used by the Function. It is not included in the browser bundle.
 `pnpm preview` serves static production assets; use Vercel development or a
 Vercel preview to exercise a real deployed API.
 
+If Gemini rejects a session-key request, inspect the returned error code.
+`account_precondition` means the Google project needs attention; free-tier
+regional availability or billing can be the cause. `rate_limit_or_quota` means
+the key reached a Google limit, while `invalid_request` points to a rejected
+model/request shape. Only `provider_unavailable` indicates a temporary provider
+failure. The Function logs Google's HTTP status and status name, but never the
+key, audio, or provider message. Vercel Hobby runtime logs have short retention,
+so inspect them soon after reproducing an issue.
+
 The server validates origin, request size, WAV format and response structure, and
 applies bounded execution/retry limits. Process-local admission limits are only
 best-effort protection for one warm Function instance; they are not a global
