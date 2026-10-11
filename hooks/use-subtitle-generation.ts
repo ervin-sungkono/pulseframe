@@ -265,6 +265,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
   const [running, setRunning] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
   const [progress, setProgress] = useState<LyricsProgress | null>(null);
+  const [retryable, setRetryable] = useState(true);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -568,6 +569,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
         elapsedMs: 0,
       });
       setStartedAt(job.startedAt);
+      setRetryable(true);
       setError(null);
       setNotice(null);
 
@@ -716,6 +718,14 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
                 )
               : [];
           setPhase(canceled ? "canceled" : "error");
+          setRetryable(
+            !(
+              caught &&
+              typeof caught === "object" &&
+              "retryable" in caught &&
+              caught.retryable === false
+            ),
+          );
           setError(
             canceled
               ? cancelReason === "source"
@@ -752,10 +762,11 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
   );
 
   const retry = useCallback(() => {
+    if (!retryable) return Promise.resolve(false);
     const request = lastRequestRef.current;
     if (!request) return Promise.resolve(false);
     return generate(request);
-  }, [generate]);
+  }, [generate, retryable]);
 
   const useFast = useCallback(() => {
     lastRequestRef.current = null;
@@ -965,6 +976,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
     cancelRequested,
     phase,
     progress,
+    retryable,
     startedAt,
     elapsedMs: progress?.elapsedMs ?? 0,
     error,

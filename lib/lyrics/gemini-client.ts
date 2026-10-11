@@ -83,11 +83,13 @@ export class GeminiLyricsError extends Error {
   readonly tokenUsage: { input: number; output: number };
   readonly notices: string[];
   readonly code: string;
+  readonly retryable: boolean;
 
   constructor(
     message: string,
     details: {
       code?: string;
+      retryable?: boolean;
       providerAttempts?: number;
       unknownAttempts?: number;
       tokenUsage?: { input: number; output: number };
@@ -97,6 +99,17 @@ export class GeminiLyricsError extends Error {
     super(message);
     this.name = "GeminiLyricsError";
     this.code = details.code ?? "provider_unavailable";
+    this.retryable =
+      details.retryable ??
+      ![
+        "invalid_request",
+        "invalid_audio",
+        "invalid_api_key",
+        "permission_denied",
+        "account_precondition",
+        "billing_required",
+        "unsupported_model",
+      ].includes(this.code);
     this.providerAttempts = details.providerAttempts ?? 0;
     this.unknownAttempts = details.unknownAttempts ?? 0;
     this.tokenUsage = details.tokenUsage ?? { input: 0, output: 0 };
@@ -361,6 +374,7 @@ async function requestChunk(input: {
         );
         throw new GeminiLyricsError(failure.message, {
           code: failure.code,
+          retryable: failure.retryable,
           providerAttempts,
           unknownAttempts,
           tokenUsage,
@@ -391,6 +405,7 @@ async function requestChunk(input: {
       }
       throw new GeminiLyricsError(failure.message, {
         code: failure.code,
+        retryable: failure.retryable,
         providerAttempts,
         unknownAttempts,
         tokenUsage,
