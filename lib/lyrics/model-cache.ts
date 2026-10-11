@@ -29,20 +29,16 @@ export type VerifiedModelCacheDependencies = {
 };
 
 function makeCacheRequest(artifact: ModelArtifact, origin?: string): Request {
-  const base =
-    origin ?? globalThis.location?.origin ?? "https://pulseframe.invalid";
+  const base = origin ?? globalThis.location?.origin ?? "https://pulseframe.invalid";
   const key = `${artifact.revision}-${artifact.sha256}`;
   return new Request(new URL(`${CACHE_PREFIX}${key}`, base));
 }
 
-export async function sha256Hex(
-  bytes: BufferSource,
-  subtle: SubtleCrypto,
-): Promise<string> {
+export async function sha256Hex(bytes: BufferSource, subtle: SubtleCrypto): Promise<string> {
   const digest = await subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (value) =>
-    value.toString(16).padStart(2, "0"),
-  ).join("");
+  return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 export async function validateModelBytes(
@@ -72,15 +68,11 @@ export async function loadVerifiedModel(
   const subtle = dependencies.subtle ?? globalThis.crypto?.subtle;
   const timeoutMs = dependencies.timeoutMs ?? MODEL_DOWNLOAD_TIMEOUT_MS;
 
-  if (!subtle)
-    throw new Error(
-      "Web Crypto is required to verify the local isolation model",
-    );
+  if (!subtle) throw new Error("Web Crypto is required to verify the local isolation model");
   if (signal.aborted) throw abortError();
 
   const downloadController = new AbortController();
-  const parentAbort = () =>
-    downloadController.abort(signal.reason ?? abortError());
+  const parentAbort = () => downloadController.abort(signal.reason ?? abortError());
   signal.addEventListener("abort", parentAbort, { once: true });
   const timeout = setTimeout(
     () =>
@@ -99,28 +91,17 @@ export async function loadVerifiedModel(
   try {
     if (cacheStorage) {
       try {
-        cache = await awaitWithSignal(
-          cacheStorage.open(CACHE_NAME),
-          downloadSignal,
-        );
-        const response = await awaitWithSignal(
-          cache.match(cacheRequest),
-          downloadSignal,
-        );
+        cache = await awaitWithSignal(cacheStorage.open(CACHE_NAME), downloadSignal);
+        const response = await awaitWithSignal(cache.match(cacheRequest), downloadSignal);
         if (response) {
           try {
-            const bytes = await readResponseBytes(
-              response,
-              artifact.bytes,
-              downloadSignal,
-            );
+            const bytes = await readResponseBytes(response, artifact.bytes, downloadSignal);
             if (await validateModelBytes(bytes, artifact, subtle)) {
               throwIfAborted(downloadSignal);
               return bytes;
             }
           } catch (error) {
-            if (downloadSignal.aborted)
-              throw abortReason(downloadSignal, error);
+            if (downloadSignal.aborted) throw abortReason(downloadSignal, error);
             // A failed or malformed cache entry is treated as a cache miss.
           }
           try {
@@ -141,26 +122,16 @@ export async function loadVerifiedModel(
       cache: "no-cache",
     });
     if (!response.ok || response.status !== 200) {
-      throw new Error(
-        `Isolation model download failed with HTTP ${response.status}`,
-      );
+      throw new Error(`Isolation model download failed with HTTP ${response.status}`);
     }
     const contentLength = response.headers.get("content-length");
     if (contentLength && Number(contentLength) !== artifact.bytes) {
-      throw new Error(
-        "Isolation model download has an unexpected content length",
-      );
+      throw new Error("Isolation model download has an unexpected content length");
     }
-    const bytes = await readResponseBytes(
-      response,
-      artifact.bytes,
-      downloadSignal,
-    );
+    const bytes = await readResponseBytes(response, artifact.bytes, downloadSignal);
     throwIfAborted(downloadSignal);
     if (!(await validateModelBytes(bytes, artifact, subtle))) {
-      throw new Error(
-        "Isolation model download failed its pinned size or SHA-256 check",
-      );
+      throw new Error("Isolation model download failed its pinned size or SHA-256 check");
     }
     throwIfAborted(downloadSignal);
 
@@ -201,16 +172,11 @@ async function readResponseBytes(
 ): Promise<Uint8Array> {
   const contentLength = response.headers.get("content-length");
   if (contentLength && Number(contentLength) !== expectedBytes) {
-    throw new Error(
-      "Isolation model response has an unexpected content length",
-    );
+    throw new Error("Isolation model response has an unexpected content length");
   }
 
   const reader = response.body?.getReader();
-  if (!reader)
-    throw new Error(
-      "Isolation model response did not expose a bounded byte stream",
-    );
+  if (!reader) throw new Error("Isolation model response did not expose a bounded byte stream");
 
   const bytes = new Uint8Array(expectedBytes);
   let offset = 0;
@@ -221,9 +187,7 @@ async function readResponseBytes(
       if (done) break;
       if (offset + value.byteLength > expectedBytes) {
         await reader.cancel();
-        throw new Error(
-          "Isolation model response exceeded its pinned byte count",
-        );
+        throw new Error("Isolation model response exceeded its pinned byte count");
       }
       bytes.set(value, offset);
       offset += value.byteLength;
@@ -239,17 +203,12 @@ async function readResponseBytes(
     reader.releaseLock();
   }
   if (offset !== expectedBytes) {
-    throw new Error(
-      "Isolation model response ended before its pinned byte count",
-    );
+    throw new Error("Isolation model response ended before its pinned byte count");
   }
   return bytes;
 }
 
-function awaitWithSignal<T>(
-  promise: Promise<T>,
-  signal: AbortSignal,
-): Promise<T> {
+function awaitWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   throwIfAborted(signal);
   return new Promise<T>((resolve, reject) => {
     const onAbort = () => {

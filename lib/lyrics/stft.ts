@@ -27,9 +27,7 @@ const MAX_SAFE_NORM = 1e-12;
 /** The model uses the periodic form of Hann, whose denominator is N. */
 export function createPeriodicHann(length: number): Float32Array {
   if (!Number.isSafeInteger(length) || length < 2) {
-    throw new RangeError(
-      "Hann window length must be an integer greater than one",
-    );
+    throw new RangeError("Hann window length must be an integer greater than one");
   }
   const window = new Float32Array(length);
   for (let index = 0; index < length; index += 1) {
@@ -79,15 +77,9 @@ export class MdxSTFT {
   }
 
   /** Analyze one 261,120-sample mono channel into one model plane pair. */
-  forward(
-    signal: Float32Array,
-    spectrumReal: Float32Array,
-    spectrumImag: Float32Array,
-  ): void {
+  forward(signal: Float32Array, spectrumReal: Float32Array, spectrumImag: Float32Array): void {
     if (signal.length !== MDX_BLOCK_SAMPLES) {
-      throw new RangeError(
-        `MDX input blocks must contain exactly ${MDX_BLOCK_SAMPLES} samples`,
-      );
+      throw new RangeError(`MDX input blocks must contain exactly ${MDX_BLOCK_SAMPLES} samples`);
     }
     this.assertSpectrumBuffers(spectrumReal, spectrumImag);
 
@@ -96,10 +88,7 @@ export class MdxSTFT {
       const paddedStart = frame * MDX_HOP_SIZE;
       for (let index = 0; index < MDX_FFT_SIZE; index += 1) {
         const sourceIndex = paddedStart + index - half;
-        const sample =
-          sourceIndex >= 0 && sourceIndex < signal.length
-            ? signal[sourceIndex]
-            : 0;
+        const sample = sourceIndex >= 0 && sourceIndex < signal.length ? signal[sourceIndex] : 0;
         this.frameReal[index] = sample * this.hann[index];
         this.frameImag[index] = 0;
       }
@@ -112,10 +101,8 @@ export class MdxSTFT {
       );
       for (let bin = 0; bin < MDX_BINS; bin += 1) {
         const target = bin * MDX_FRAMES + frame;
-        spectrumReal[target] =
-          bin < MDX_LOW_BINS ? 0 : this.transformedReal[bin];
-        spectrumImag[target] =
-          bin < MDX_LOW_BINS ? 0 : this.transformedImag[bin];
+        spectrumReal[target] = bin < MDX_LOW_BINS ? 0 : this.transformedReal[bin];
+        spectrumImag[target] = bin < MDX_LOW_BINS ? 0 : this.transformedImag[bin];
       }
     }
   }
@@ -127,16 +114,10 @@ export class MdxSTFT {
    * zero-filled. The model output is otherwise preserved, including bins that
    * were zeroed only on the input path.
    */
-  inverse(
-    spectrumReal: Float32Array,
-    spectrumImag: Float32Array,
-    signal: Float32Array,
-  ): void {
+  inverse(spectrumReal: Float32Array, spectrumImag: Float32Array, signal: Float32Array): void {
     this.assertSpectrumBuffers(spectrumReal, spectrumImag);
     if (signal.length !== MDX_BLOCK_SAMPLES) {
-      throw new RangeError(
-        `MDX output blocks must contain exactly ${MDX_BLOCK_SAMPLES} samples`,
-      );
+      throw new RangeError(`MDX output blocks must contain exactly ${MDX_BLOCK_SAMPLES} samples`);
     }
 
     this.inverseAccum.fill(0);
@@ -178,17 +159,13 @@ export class MdxSTFT {
       const position = cropStart + index;
       const normalization = this.inverseNorm[position];
       signal[index] =
-        normalization > MAX_SAFE_NORM
-          ? this.inverseAccum[position] / normalization
-          : 0;
+        normalization > MAX_SAFE_NORM ? this.inverseAccum[position] / normalization : 0;
     }
   }
 
   private assertSpectrumBuffers(real: Float32Array, imag: Float32Array): void {
     if (real.length < MDX_SPECTRUM_SIZE || imag.length < MDX_SPECTRUM_SIZE) {
-      throw new RangeError(
-        `MDX spectrum buffers must each contain ${MDX_SPECTRUM_SIZE} values`,
-      );
+      throw new RangeError(`MDX spectrum buffers must each contain ${MDX_SPECTRUM_SIZE} values`);
     }
   }
 }

@@ -5,7 +5,6 @@ import {
   GEMINI_MAX_CHUNK_COUNT,
   GEMINI_MAX_REQUEST_BYTES,
   GEMINI_MAX_SEGMENTS_PER_CHUNK,
-  GEMINI_MAX_SEGMENT_TEXT_LENGTH,
   GEMINI_MAX_SOURCE_DURATION_MS,
   GEMINI_MAX_WAV_BYTES,
   GEMINI_SAMPLE_RATE,
@@ -18,8 +17,7 @@ import {
 
 const PROVIDER_TIMEOUT_MS = 60_000;
 const DEFAULT_MODEL = "gemini-3.8-flash";
-const PROVIDER_BASE =
-  "https://generativelanguage.googleapis.com/v1beta/models/";
+const PROVIDER_BASE = "https://generativelanguage.googleapis.com/v1beta/models/";
 type ServerConfig = {
   env?: Record<string, string | undefined>;
   fetcher?: typeof fetch;
@@ -28,8 +26,7 @@ type ServerConfig = {
 
 type KeyAdmission = { active: number; starts: number[]; touchedAt: number };
 type ProviderAdmission =
-  | { acquired: false; retryAfterMs: number }
-  | { acquired: true; release: () => void };
+  { acquired: false; retryAfterMs: number } | { acquired: true; release: () => void };
 const keyAdmissions = new Map<string, KeyAdmission>();
 const MAX_ACTIVE_PER_KEY = 2;
 const MAX_REQUESTS_PER_KEY_PER_MINUTE = 24;
@@ -55,11 +52,8 @@ function acquireProviderSlot(key: string, now: number): ProviderAdmission {
     keyAdmissions.set(id, admission);
   }
   admission.touchedAt = now;
-  admission.starts = admission.starts.filter(
-    (startedAt) => now - startedAt < 60_000,
-  );
-  if (admission.active >= MAX_ACTIVE_PER_KEY)
-    return { acquired: false, retryAfterMs: 1_000 };
+  admission.starts = admission.starts.filter((startedAt) => now - startedAt < 60_000);
+  if (admission.active >= MAX_ACTIVE_PER_KEY) return { acquired: false, retryAfterMs: 1_000 };
   if (admission.starts.length >= MAX_REQUESTS_PER_KEY_PER_MINUTE) {
     return {
       acquired: false,
@@ -87,13 +81,12 @@ const providerSchema = {
   properties: {
     segments: {
       type: "array",
-      maxItems: GEMINI_MAX_SEGMENTS_PER_CHUNK,
       items: {
         type: "object",
         properties: {
           startMs: { type: "number" },
           endMs: { type: "number" },
-          text: { type: "string", maxLength: GEMINI_MAX_SEGMENT_TEXT_LENGTH },
+          text: { type: "string" },
         },
         required: ["startMs", "endMs", "text"],
       },
@@ -147,9 +140,7 @@ function apiError(
 ) {
   return json(status, {
     error: { code, message, retryable: details.retryable ?? false },
-    ...(details.retryAfterMs === undefined
-      ? {}
-      : { retryAfterMs: details.retryAfterMs }),
+    ...(details.retryAfterMs === undefined ? {} : { retryAfterMs: details.retryAfterMs }),
     providerAttempts: details.providerAttempts ?? 0,
   });
 }
@@ -159,8 +150,7 @@ async function readBodyLimited(
   maxBytes: number,
 ) {
   const declared = Number(input.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > maxBytes)
-    throw new Error("body_too_large");
+  if (Number.isFinite(declared) && declared > maxBytes) throw new Error("body_too_large");
   if (!input.body) return new Uint8Array();
   const reader = input.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -200,16 +190,11 @@ function decodeCanonicalBase64(value: string) {
   if (
     value.length > GEMINI_MAX_BASE64_CHARS ||
     value.length % 4 !== 0 ||
-    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
-      value,
-    )
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)
   )
     throw new Error("invalid_audio");
   const decoded = Buffer.from(value, "base64");
-  if (
-    decoded.toString("base64") !== value ||
-    decoded.byteLength > GEMINI_MAX_WAV_BYTES
-  )
+  if (decoded.toString("base64") !== value || decoded.byteLength > GEMINI_MAX_WAV_BYTES)
     throw new Error("invalid_audio");
   return new Uint8Array(decoded.buffer, decoded.byteOffset, decoded.byteLength);
 }
@@ -218,12 +203,9 @@ function validateWav(bytes: Uint8Array, expectedDurationMs: number) {
   if (bytes.byteLength < 44 || bytes.byteLength > GEMINI_MAX_WAV_BYTES)
     throw new Error("invalid_audio");
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const ascii = (start: number, end: number) =>
-    String.fromCharCode(...bytes.subarray(start, end));
-  if (ascii(0, 4) !== "RIFF" || ascii(8, 12) !== "WAVE")
-    throw new Error("invalid_audio");
-  if (view.getUint32(4, true) + 8 !== bytes.byteLength)
-    throw new Error("invalid_audio");
+  const ascii = (start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
+  if (ascii(0, 4) !== "RIFF" || ascii(8, 12) !== "WAVE") throw new Error("invalid_audio");
+  if (view.getUint32(4, true) + 8 !== bytes.byteLength) throw new Error("invalid_audio");
 
   let cursor = 12;
   let format: number | undefined;
@@ -267,37 +249,24 @@ function validateWav(bytes: Uint8Array, expectedDurationMs: number) {
     throw new Error("invalid_audio");
   }
   const actualDurationMs = (dataBytes / 2 / sampleRate) * 1000;
-  if (
-    Math.abs(actualDurationMs - expectedDurationMs) >
-    1000 / sampleRate + 0.001
-  )
+  if (Math.abs(actualDurationMs - expectedDurationMs) > 1000 / sampleRate + 0.001)
     throw new Error("invalid_audio");
   return bytes;
 }
 
-function validateChunkPlan(
-  input: GeminiTranscriptionRequest,
-  actualDurationMs: number,
-) {
+function validateChunkPlan(input: GeminiTranscriptionRequest, actualDurationMs: number) {
   const expectedCount =
     1 +
-    Math.ceil(
-      Math.max(0, input.sourceDurationMs - GEMINI_AUDIO_CHUNK_MS) /
-        GEMINI_AUDIO_STRIDE_MS,
-    );
+    Math.ceil(Math.max(0, input.sourceDurationMs - GEMINI_AUDIO_CHUNK_MS) / GEMINI_AUDIO_STRIDE_MS);
   const expectedStart = input.chunkIndex * GEMINI_AUDIO_STRIDE_MS;
-  const expectedDuration = Math.min(
-    GEMINI_AUDIO_CHUNK_MS,
-    input.sourceDurationMs - expectedStart,
-  );
+  const expectedDuration = Math.min(GEMINI_AUDIO_CHUNK_MS, input.sourceDurationMs - expectedStart);
   if (
     input.totalChunks !== expectedCount ||
     input.chunkIndex >= input.totalChunks ||
     Math.abs(input.chunkStartMs - expectedStart) > 1 ||
     expectedDuration <= 0 ||
     Math.abs(input.chunkDurationMs - expectedDuration) > 1 ||
-    Math.abs(actualDurationMs - input.chunkDurationMs) >
-      1000 / GEMINI_SAMPLE_RATE + 0.001
+    Math.abs(actualDurationMs - input.chunkDurationMs) > 1000 / GEMINI_SAMPLE_RATE + 0.001
   ) {
     throw new Error("invalid_audio");
   }
@@ -305,8 +274,7 @@ function validateChunkPlan(
 
 function resolveModel(env: Record<string, string | undefined>) {
   const model = env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
-  if (!/^[a-z0-9][a-z0-9.-]{0,95}$/i.test(model))
-    throw new Error("server_configuration");
+  if (!/^[a-z0-9][a-z0-9.-]{0,95}$/i.test(model)) throw new Error("server_configuration");
   return model;
 }
 
@@ -314,23 +282,19 @@ function retryAfterMs(headers: Headers, now: number) {
   const raw = headers.get("retry-after");
   if (!raw) return undefined;
   const seconds = Number(raw);
-  const target = Number.isFinite(seconds)
-    ? now + seconds * 1000
-    : Date.parse(raw);
+  const target = Number.isFinite(seconds) ? now + seconds * 1000 : Date.parse(raw);
   if (!Number.isFinite(target)) return undefined;
   return Math.max(0, Math.min(60_000, Math.round(target - now)));
 }
 
 function providerErrorStatus(body: unknown) {
   if (typeof body === "object" && body !== null && "error" in body) {
-    const error = (body as { error?: { status?: unknown; message?: unknown } })
-      .error;
+    const error = (body as { error?: { status?: unknown; message?: unknown } }).error;
     const statusText =
       typeof error?.status === "string" && /^[A-Z_]{2,40}$/.test(error.status)
         ? error.status.toLowerCase()
         : "";
-    const safeForMatch =
-      typeof error?.message === "string" ? error.message.toLowerCase() : "";
+    const safeForMatch = typeof error?.message === "string" ? error.message.toLowerCase() : "";
     return { statusText, safeForMatch };
   }
   return { statusText: "", safeForMatch: "" };
@@ -350,8 +314,7 @@ function getProviderErrorCode(body: unknown, status: number): ApiErrorCode {
       /api[ _-]?key.{0,24}(invalid|not valid)/.test(safeForMatch)
     )
       return "invalid_api_key";
-    if (statusText.includes("failed_precondition"))
-      return "account_precondition";
+    if (statusText.includes("failed_precondition")) return "account_precondition";
     if (
       statusText.includes("not_found") ||
       /model.{0,24}(not found|unsupported)/.test(safeForMatch)
@@ -411,10 +374,8 @@ async function readProviderJson(response: Response) {
 }
 
 function tokenUsage(body: unknown) {
-  if (typeof body !== "object" || body === null || !("usageMetadata" in body))
-    return null;
-  const metadata = (body as { usageMetadata?: Record<string, unknown> })
-    .usageMetadata;
+  if (typeof body !== "object" || body === null || !("usageMetadata" in body)) return null;
+  const metadata = (body as { usageMetadata?: Record<string, unknown> }).usageMetadata;
   const input = metadata?.promptTokenCount;
   const output = metadata?.candidatesTokenCount;
   const thoughts = metadata?.thoughtsTokenCount;
@@ -432,17 +393,14 @@ function tokenUsage(body: unknown) {
     input,
     output:
       output +
-      (typeof thoughts === "number" &&
-      Number.isSafeInteger(thoughts) &&
-      thoughts > 0
+      (typeof thoughts === "number" && Number.isSafeInteger(thoughts) && thoughts > 0
         ? thoughts
         : 0),
   };
 }
 
 function providerText(body: unknown) {
-  if (typeof body !== "object" || body === null)
-    return { text: null, blocked: false };
+  if (typeof body !== "object" || body === null) return { text: null, blocked: false };
   const data = body as {
     promptFeedback?: { blockReason?: unknown };
     candidates?: Array<{
@@ -451,17 +409,10 @@ function providerText(body: unknown) {
     }>;
   };
   const candidate = data.candidates?.[0];
-  const finishReason =
-    typeof candidate?.finishReason === "string" ? candidate.finishReason : "";
-  const blocked =
-    Boolean(data.promptFeedback?.blockReason) ||
-    /safety|block/i.test(finishReason);
-  const incomplete = /max_tokens|malformed_function_call|unspecified/i.test(
-    finishReason,
-  );
-  const text = candidate?.content?.parts?.find(
-    (part) => typeof part.text === "string",
-  )?.text;
+  const finishReason = typeof candidate?.finishReason === "string" ? candidate.finishReason : "";
+  const blocked = Boolean(data.promptFeedback?.blockReason) || /safety|block/i.test(finishReason);
+  const incomplete = /max_tokens|malformed_function_call|unspecified/i.test(finishReason);
+  const text = candidate?.content?.parts?.find((part) => typeof part.text === "string")?.text;
   return { text: typeof text === "string" ? text : null, blocked, incomplete };
 }
 
@@ -476,10 +427,7 @@ function normalizeProviderText(text: string, chunkDurationMs: number) {
   let timingAdjusted = false;
   let previousStart = -1;
   const segments = result.segments.map((segment) => {
-    if (
-      !segment.text.trim() ||
-      segment.startMs < 0 - GEMINI_TIMING_BOUNDARY_TOLERANCE_MS
-    )
+    if (!segment.text.trim() || segment.startMs < 0 - GEMINI_TIMING_BOUNDARY_TOLERANCE_MS)
       throw new Error("invalid_response");
     if (segment.startMs < previousStart) throw new Error("invalid_response");
     previousStart = segment.startMs;
@@ -489,18 +437,11 @@ function normalizeProviderText(text: string, chunkDurationMs: number) {
       startMs = 0;
       timingAdjusted = true;
     }
-    if (
-      endMs > chunkDurationMs &&
-      endMs <= chunkDurationMs + GEMINI_TIMING_BOUNDARY_TOLERANCE_MS
-    ) {
+    if (endMs > chunkDurationMs && endMs <= chunkDurationMs + GEMINI_TIMING_BOUNDARY_TOLERANCE_MS) {
       endMs = chunkDurationMs;
       timingAdjusted = true;
     }
-    if (
-      startMs >= chunkDurationMs ||
-      endMs > chunkDurationMs ||
-      endMs <= startMs
-    )
+    if (startMs >= chunkDurationMs || endMs > chunkDurationMs || endMs <= startMs)
       throw new Error("invalid_response");
     return { startMs, endMs, text: segment.text.trim() };
   });
@@ -513,10 +454,7 @@ function normalizeProviderText(text: string, chunkDurationMs: number) {
   };
 }
 
-export async function handleGeminiLyricsRequest(
-  request: Request,
-  config: ServerConfig = {},
-) {
+export async function handleGeminiLyricsRequest(request: Request, config: ServerConfig = {}) {
   const env = config.env ?? process.env;
   try {
     if (new URL(request.url).search)
@@ -535,42 +473,24 @@ export async function handleGeminiLyricsRequest(
     });
   }
   if (request.method !== "POST")
-    return json(
-      405,
-      { error: { code: "method_not_allowed" } },
-      { allow: "GET, POST" },
-    );
+    return json(405, { error: { code: "method_not_allowed" } }, { allow: "GET, POST" });
 
   const origin = request.headers.get("origin");
   if (origin) {
     try {
       if (new URL(origin).origin !== new URL(request.url).origin)
-        return apiError(
-          403,
-          "invalid_request",
-          "This request must come from the same site.",
-        );
+        return apiError(403, "invalid_request", "This request must come from the same site.");
     } catch {
-      return apiError(
-        403,
-        "invalid_request",
-        "This request must come from the same site.",
-      );
+      return apiError(403, "invalid_request", "This request must come from the same site.");
     }
   }
 
-  if (
-    !/^application\/json(?:\s*;|$)/i.test(
-      request.headers.get("content-type") ?? "",
-    )
-  )
+  if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get("content-type") ?? ""))
     return apiError(415, "invalid_request", "This request must use JSON.");
 
   let raw: unknown;
   try {
-    raw = parseJsonBytes(
-      await readBodyLimited(request, GEMINI_MAX_REQUEST_BYTES),
-    );
+    raw = parseJsonBytes(await readBodyLimited(request, GEMINI_MAX_REQUEST_BYTES));
   } catch (error) {
     const code =
       error instanceof Error && error.message === "body_too_large"
@@ -586,21 +506,14 @@ export async function handleGeminiLyricsRequest(
   }
   const parsedInput = geminiTranscriptionRequestSchema.safeParse(raw);
   if (!parsedInput.success)
-    return apiError(
-      400,
-      "invalid_request",
-      publicErrorMessage("invalid_request"),
-    );
+    return apiError(400, "invalid_request", publicErrorMessage("invalid_request"));
   const input = parsedInput.data;
 
   let audio: Uint8Array;
   try {
     audio = decodeCanonicalBase64(input.audioBase64);
     validateWav(audio, input.chunkDurationMs);
-    validateChunkPlan(
-      input,
-      ((audio.byteLength - 44) / 2 / GEMINI_SAMPLE_RATE) * 1000,
-    );
+    validateChunkPlan(input, ((audio.byteLength - 44) / 2 / GEMINI_SAMPLE_RATE) * 1000);
   } catch {
     return apiError(400, "invalid_audio", publicErrorMessage("invalid_audio"));
   }
@@ -608,18 +521,9 @@ export async function handleGeminiLyricsRequest(
   const suppliedKey = request.headers.get("x-goog-api-key")?.trim();
   const clientHeaderPresent = request.headers.has("x-goog-api-key");
   const apiKey = clientHeaderPresent ? suppliedKey : env.GEMINI_API_KEY?.trim();
-  if (!apiKey)
-    return apiError(
-      503,
-      "missing_api_key",
-      publicErrorMessage("missing_api_key"),
-    );
+  if (!apiKey) return apiError(503, "missing_api_key", publicErrorMessage("missing_api_key"));
   if (apiKey.length > 4096)
-    return apiError(
-      400,
-      "invalid_request",
-      publicErrorMessage("invalid_request"),
-    );
+    return apiError(400, "invalid_request", publicErrorMessage("invalid_request"));
   if (input.recheck && input.preset !== "quality")
     return apiError(
       400,
@@ -631,11 +535,7 @@ export async function handleGeminiLyricsRequest(
   try {
     model = resolveModel(env);
   } catch {
-    return apiError(
-      500,
-      "server_configuration",
-      publicErrorMessage("server_configuration"),
-    );
+    return apiError(500, "server_configuration", publicErrorMessage("server_configuration"));
   }
 
   const prompt = [
@@ -701,9 +601,7 @@ export async function handleGeminiLyricsRequest(
     });
   } catch {
     const timeout = controllerSignal.aborted;
-    const code: ApiErrorCode = timeout
-      ? "provider_timeout"
-      : "provider_unavailable";
+    const code: ApiErrorCode = timeout ? "provider_timeout" : "provider_unavailable";
     return apiError(timeout ? 504 : 502, code, publicErrorMessage(code), {
       retryable: false,
       providerAttempts: 1,
@@ -730,14 +628,19 @@ export async function handleGeminiLyricsRequest(
 
   if (!providerResponse.ok) {
     const code = getProviderErrorCode(providerBody, providerResponse.status);
-    const retryable =
-      code === "rate_limit_or_quota" || code === "provider_unavailable";
+    const retryable = code === "rate_limit_or_quota" || code === "provider_unavailable";
     const status =
-      code === "rate_limit_or_quota" ? 429 :
-      code === "provider_unavailable" ? 502 :
-      code === "billing_required" ? 402 :
-      code === "permission_denied" ? 403 :
-      code === "unsupported_model" ? 404 : 400;
+      code === "rate_limit_or_quota"
+        ? 429
+        : code === "provider_unavailable"
+          ? 502
+          : code === "billing_required"
+            ? 402
+            : code === "permission_denied"
+              ? 403
+              : code === "unsupported_model"
+                ? 404
+                : 400;
     // Log only status codes. Provider messages may echo user-supplied content.
     console.warn("Gemini provider request failed", {
       providerHttpStatus: providerResponse.status,
@@ -755,40 +658,24 @@ export async function handleGeminiLyricsRequest(
 
   const provider = providerText(providerBody);
   if (provider.blocked)
-    return apiError(
-      422,
-      "blocked_response",
-      publicErrorMessage("blocked_response"),
-      {
-        providerAttempts: 1,
-      },
-    );
+    return apiError(422, "blocked_response", publicErrorMessage("blocked_response"), {
+      providerAttempts: 1,
+    });
   if (provider.incomplete)
-    return apiError(
-      502,
-      "invalid_response",
-      publicErrorMessage("invalid_response"),
-      {
-        providerAttempts: 1,
-      },
-    );
+    return apiError(502, "invalid_response", publicErrorMessage("invalid_response"), {
+      providerAttempts: 1,
+    });
   if (!provider.text)
-    return apiError(
-      502,
-      "invalid_response",
-      publicErrorMessage("invalid_response"),
-      {
-        providerAttempts: 1,
-      },
-    );
+    return apiError(502, "invalid_response", publicErrorMessage("invalid_response"), {
+      providerAttempts: 1,
+    });
 
   let result: ReturnType<typeof normalizeProviderText>;
   try {
     result = normalizeProviderText(provider.text, input.chunkDurationMs);
   } catch (error) {
     const code: ApiErrorCode =
-      error instanceof SyntaxError ||
-      (error instanceof Error && error.message === "invalid_json")
+      error instanceof SyntaxError || (error instanceof Error && error.message === "invalid_json")
         ? "invalid_json"
         : "invalid_response";
     return apiError(502, code, publicErrorMessage(code), {

@@ -85,6 +85,16 @@ test("Gemini failures preserve actionable upstream categories without exposing k
             providerRequest.generationConfig.responseFormat.text.mimeType,
             "application/json",
           );
+          assert.deepEqual(
+            providerRequest.generationConfig.responseFormat.text.schema.properties.segments.items
+              .properties.text,
+            { type: "string" },
+          );
+          assert.equal(
+            providerRequest.generationConfig.responseFormat.text.schema.properties.segments
+              .maxItems,
+            undefined,
+          );
           return Response.json(
             { error: { status: upstreamCode, message: "Rejected session-secret" } },
             { status: upstreamStatus },

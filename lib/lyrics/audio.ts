@@ -39,35 +39,20 @@ const FILTER_RADIUS = FILTER_TAPS / 2;
 const RESAMPLE_YIELD_FRAMES = 32_768;
 
 function throwIfAborted(signal?: AbortSignal) {
-  if (signal?.aborted)
-    throw new DOMException("Audio preparation canceled", "AbortError");
+  if (signal?.aborted) throw new DOMException("Audio preparation canceled", "AbortError");
 }
 
-function validateChannels(
-  channels: readonly Float32Array[],
-  sampleRate: number,
-) {
+function validateChannels(channels: readonly Float32Array[], sampleRate: number) {
   if (!Array.isArray(channels) || channels.length < 1 || channels.length > 2)
     throw new Error("Subtitle generation supports mono or stereo audio.");
-  if (
-    !Number.isInteger(sampleRate) ||
-    sampleRate < 8_000 ||
-    sampleRate > 384_000
-  )
-    throw new Error(
-      "The audio sample rate is not supported for subtitle generation.",
-    );
+  if (!Number.isInteger(sampleRate) || sampleRate < 8_000 || sampleRate > 384_000)
+    throw new Error("The audio sample rate is not supported for subtitle generation.");
   const length = channels[0]?.length ?? 0;
   if (
     length < 1 ||
-    channels.some(
-      (channel) =>
-        !(channel instanceof Float32Array) || channel.length !== length,
-    )
+    channels.some((channel) => !(channel instanceof Float32Array) || channel.length !== length)
   )
-    throw new Error(
-      "The decoded audio channels have an invalid sample layout.",
-    );
+    throw new Error("The decoded audio channels have an invalid sample layout.");
   return length;
 }
 
@@ -80,9 +65,7 @@ function gcd(a: number, b: number) {
 
 function createFilterPhases(sourceRate: number, targetRate: number) {
   const divisor = gcd(sourceRate, targetRate);
-  const exactPhaseCount = divisor
-    ? targetRate / divisor
-    : Number.POSITIVE_INFINITY;
+  const exactPhaseCount = divisor ? targetRate / divisor : Number.POSITIVE_INFINITY;
   const useExactPhases = exactPhaseCount <= 4_096;
   const phaseCount = useExactPhases ? exactPhaseCount : 2_048;
   const cutoff = 0.5 * Math.min(1, targetRate / sourceRate) * 0.94;
@@ -102,9 +85,7 @@ function createFilterPhases(sourceRate: number, targetRate: number) {
             0.08 * Math.cos(2 * Math.PI * normalizedDistance);
       const argument = 2 * cutoff * distance;
       const sinc =
-        Math.abs(argument) < 1e-12
-          ? 1
-          : Math.sin(Math.PI * argument) / (Math.PI * argument);
+        Math.abs(argument) < 1e-12 ? 1 : Math.sin(Math.PI * argument) / (Math.PI * argument);
       const weight = 2 * cutoff * sinc * window;
       weights[tap] = weight;
       sum += weight;
@@ -138,11 +119,7 @@ async function resampleRange(
     endOutputSample <= startOutputSample
   )
     throw new Error("The requested audio conversion range is invalid.");
-  if (
-    !Number.isInteger(targetRate) ||
-    targetRate < 8_000 ||
-    targetRate > 192_000
-  )
+  if (!Number.isInteger(targetRate) || targetRate < 8_000 || targetRate > 192_000)
     throw new Error("The requested audio conversion rate is not supported.");
   const output = new Float32Array(endOutputSample - startOutputSample);
   if (sourceRate === targetRate) {
@@ -152,8 +129,7 @@ async function resampleRange(
       for (let index = base; index < limit; index += 1)
         output[index] = monoSample(channels, startOutputSample + index);
       onProgress?.(limit, output.length);
-      if (limit < output.length)
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      if (limit < output.length) await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }
     throwIfAborted(signal);
     return output;
@@ -184,18 +160,14 @@ async function resampleRange(
       let value = 0;
       for (let tap = 0; tap < FILTER_TAPS; tap += 1) {
         const offset = tap - FILTER_RADIUS + 1;
-        const sourceIndex = Math.max(
-          0,
-          Math.min(sourceLength - 1, sourceCenter + offset),
-        );
+        const sourceIndex = Math.max(0, Math.min(sourceLength - 1, sourceCenter + offset));
         const sample = monoSample(channels, sourceIndex);
         value += (Number.isFinite(sample) ? sample : 0) * weights[tap];
       }
       output[localIndex] = value;
     }
     onProgress?.(limit, output.length);
-    if (limit < output.length)
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    if (limit < output.length) await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }
   throwIfAborted(signal);
   return output;
@@ -248,13 +220,9 @@ export async function resampleStereo44100(
   const sourceLength = validateChannels(channels, sampleRate);
   if (sampleRate === MDX_SAMPLE_RATE) {
     onProgress?.(sourceLength, sourceLength);
-    return channels.length === 1
-      ? [channels[0], channels[0]]
-      : [channels[0], channels[1]];
+    return channels.length === 1 ? [channels[0], channels[0]] : [channels[0], channels[1]];
   }
-  const outputLength = Math.round(
-    (sourceLength * MDX_SAMPLE_RATE) / sampleRate,
-  );
+  const outputLength = Math.round((sourceLength * MDX_SAMPLE_RATE) / sampleRate);
   if (channels.length === 1) {
     const mono = await resampleSingleChannel(
       channels[0],
@@ -265,50 +233,29 @@ export async function resampleStereo44100(
     );
     onProgress?.(outputLength * 2, outputLength * 2);
     if (mono.length !== outputLength)
-      throw new Error(
-        "The audio conversion returned an unexpected sample count.",
-      );
+      throw new Error("The audio conversion returned an unexpected sample count.");
     return [mono, mono.slice()];
   }
   let leftCompleted = 0;
   let rightCompleted = 0;
-  const report = () =>
-    onProgress?.(leftCompleted + rightCompleted, outputLength * 2);
+  const report = () => onProgress?.(leftCompleted + rightCompleted, outputLength * 2);
   const [left, right] = await Promise.all([
-    resampleSingleChannel(
-      channels[0],
-      sampleRate,
-      MDX_SAMPLE_RATE,
-      signal,
-      (completed) => {
-        leftCompleted = completed;
-        report();
-      },
-    ),
-    resampleSingleChannel(
-      channels[1],
-      sampleRate,
-      MDX_SAMPLE_RATE,
-      signal,
-      (completed) => {
-        rightCompleted = completed;
-        report();
-      },
-    ),
+    resampleSingleChannel(channels[0], sampleRate, MDX_SAMPLE_RATE, signal, (completed) => {
+      leftCompleted = completed;
+      report();
+    }),
+    resampleSingleChannel(channels[1], sampleRate, MDX_SAMPLE_RATE, signal, (completed) => {
+      rightCompleted = completed;
+      report();
+    }),
   ]);
   if (left.length !== outputLength || right.length !== outputLength)
-    throw new Error(
-      "The audio conversion returned an unexpected sample count.",
-    );
+    throw new Error("The audio conversion returned an unexpected sample count.");
   return [left, right];
 }
 
 /** Root-mean-square level for a bounded sample interval. */
-export function audioRms(
-  samples: Float32Array,
-  start = 0,
-  end = samples.length,
-) {
+export function audioRms(samples: Float32Array, start = 0, end = samples.length) {
   const first = Math.max(0, Math.min(samples.length, Math.floor(start)));
   const last = Math.max(first, Math.min(samples.length, Math.floor(end)));
   if (last <= first) return 0;
@@ -335,26 +282,15 @@ export function planCloudAudioChunks(
   sourceSampleRate: number,
 ): CloudAudioChunkPlan[] {
   if (!Number.isSafeInteger(sourceSampleCount) || sourceSampleCount < 0)
-    throw new Error(
-      "The source audio sample count must be a nonnegative safe integer.",
-    );
-  if (
-    !Number.isInteger(sourceSampleRate) ||
-    sourceSampleRate < 8_000 ||
-    sourceSampleRate > 384_000
-  )
-    throw new Error(
-      "The audio sample rate is not supported for subtitle generation.",
-    );
+    throw new Error("The source audio sample count must be a nonnegative safe integer.");
+  if (!Number.isInteger(sourceSampleRate) || sourceSampleRate < 8_000 || sourceSampleRate > 384_000)
+    throw new Error("The audio sample rate is not supported for subtitle generation.");
   if (!sourceSampleCount) return [];
 
-  const totalSamples = Math.round(
-    (sourceSampleCount * GEMINI_SAMPLE_RATE) / sourceSampleRate,
-  );
+  const totalSamples = Math.round((sourceSampleCount * GEMINI_SAMPLE_RATE) / sourceSampleRate);
   const chunkSamples = (GEMINI_AUDIO_CHUNK_MS * GEMINI_SAMPLE_RATE) / 1000;
   const strideSamples = (GEMINI_AUDIO_STRIDE_MS * GEMINI_SAMPLE_RATE) / 1000;
-  const count =
-    1 + Math.ceil(Math.max(0, totalSamples - chunkSamples) / strideSamples);
+  const count = 1 + Math.ceil(Math.max(0, totalSamples - chunkSamples) / strideSamples);
   return Array.from({ length: count }, (_, index) => {
     const startSample = index * strideSamples;
     const endSample = Math.min(totalSamples, startSample + chunkSamples);
@@ -376,14 +312,9 @@ function writeAscii(view: DataView, offset: number, text: string) {
 }
 
 /** Encode a mono Float32 buffer as little-endian PCM16 WAV. */
-export function encodeMonoPcm16Wav(
-  samples: Float32Array,
-  sampleRate = GEMINI_SAMPLE_RATE,
-) {
+export function encodeMonoPcm16Wav(samples: Float32Array, sampleRate = GEMINI_SAMPLE_RATE) {
   if (!Number.isInteger(sampleRate) || sampleRate <= 0 || samples.length < 1)
-    throw new Error(
-      "The WAV audio chunk is empty or has an invalid sample rate.",
-    );
+    throw new Error("The WAV audio chunk is empty or has an invalid sample rate.");
   const dataBytes = samples.length * 2;
   if (!Number.isSafeInteger(dataBytes) || dataBytes > 0xffff_ffff - 36)
     throw new Error("The WAV audio chunk is too large to encode.");
@@ -403,9 +334,7 @@ export function encodeMonoPcm16Wav(
   writeAscii(view, 36, "data");
   view.setUint32(40, dataBytes, true);
   for (let index = 0; index < samples.length; index += 1) {
-    const sample = Number.isFinite(samples[index])
-      ? Math.max(-1, Math.min(1, samples[index]))
-      : 0;
+    const sample = Number.isFinite(samples[index]) ? Math.max(-1, Math.min(1, samples[index])) : 0;
     view.setInt16(
       44 + index * 2,
       sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff),
@@ -435,9 +364,7 @@ export async function encodeCloudAudioChunk(
     !Number.isInteger(plan.index) ||
     plan.index < 0
   )
-    throw new Error(
-      "The Gemini audio chunk plan does not match the current source audio.",
-    );
+    throw new Error("The Gemini audio chunk plan does not match the current source audio.");
 
   const samples = await resampleRange(
     channels,

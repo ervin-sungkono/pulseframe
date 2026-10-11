@@ -1,10 +1,6 @@
 import { resampleMono16k, resampleStereo44100 } from "./audio";
 import type { IsolationBackend } from "./isolation";
-import {
-  assessLyricsInput,
-  getCpuThreadCount,
-  resolveLocalLyricsPolicy,
-} from "./policy";
+import { assessLyricsInput, getCpuThreadCount, resolveLocalLyricsPolicy } from "./policy";
 import {
   configureWhisperRuntime,
   disposeWhisperPipelines,
@@ -76,8 +72,7 @@ function errorMessage(error: unknown) {
 
 function isFatalInitializationTimeout(error: unknown) {
   return (
-    (error instanceof Error &&
-      error.name === "ModelInitializationTimeoutError") ||
+    (error instanceof Error && error.name === "ModelInitializationTimeoutError") ||
     (error instanceof DOMException && error.name === "TimeoutError")
   );
 }
@@ -90,9 +85,7 @@ function readDeviceMemoryGiB() {
 async function requestHighPerformanceAdapter(): Promise<HighPerformanceAdapter | null> {
   const nav = self.navigator as Navigator & {
     gpu?: {
-      requestAdapter(options?: {
-        powerPreference?: string;
-      }): Promise<unknown | null>;
+      requestAdapter(options?: { powerPreference?: string }): Promise<unknown | null>;
     };
   };
   if (!nav.gpu || typeof nav.gpu.requestAdapter !== "function") return null;
@@ -141,9 +134,7 @@ function validateStart(request: LyricsWorkerStart) {
   ) {
     throw new Error("The decoded audio metadata is invalid.");
   }
-  const expectedSampleCount = Math.round(
-    (request.durationMs * request.sampleRate) / 1000,
-  );
+  const expectedSampleCount = Math.round((request.durationMs * request.sampleRate) / 1000);
   if (
     Math.abs(request.sampleCount - expectedSampleCount) >
       Math.max(2, Math.ceil(request.sampleRate / 2)) ||
@@ -151,9 +142,7 @@ function validateStart(request: LyricsWorkerStart) {
     request.sourceId.length < 1 ||
     request.sourceId.length > 512
   ) {
-    throw new Error(
-      "The decoded audio duration does not match its sample data.",
-    );
+    throw new Error("The decoded audio duration does not match its sample data.");
   }
 }
 
@@ -171,46 +160,38 @@ function matchesCheckpoint(request: LyricsWorkerStart, plan: Plan) {
   );
 }
 
-async function collectSource(
-  request: LyricsWorkerStart,
-  jobId: number,
-): Promise<Float32Array[]> {
+async function collectSource(request: LyricsWorkerStart, jobId: number): Promise<Float32Array[]> {
   const channels = Array.from(
     { length: request.channelCount },
     () => new Float32Array(request.sampleCount),
   );
   const total = Math.ceil(request.sampleCount / AUDIO_SLICE_SAMPLES);
   for (let index = 0; index < total; index += 1) {
-    if (activeJob?.id !== jobId)
-      throw new DOMException("Generation canceled.", "AbortError");
+    if (activeJob?.id !== jobId) throw new DOMException("Generation canceled.", "AbortError");
     const offset = index * AUDIO_SLICE_SAMPLES;
     const length = Math.min(AUDIO_SLICE_SAMPLES, request.sampleCount - offset);
-    const slice = await new Promise<LyricsWorkerAudioSlice>(
-      (resolve, reject) => {
-        const job = activeJob;
-        if (!job || job.id !== jobId) {
-          reject(new DOMException("Generation canceled.", "AbortError"));
-          return;
-        }
-        job.requestAudio = resolve;
-        post({
-          type: "need-audio",
-          jobId,
-          offset,
-          length,
-          completed: index,
-          total,
-        });
-      },
-    );
+    const slice = await new Promise<LyricsWorkerAudioSlice>((resolve, reject) => {
+      const job = activeJob;
+      if (!job || job.id !== jobId) {
+        reject(new DOMException("Generation canceled.", "AbortError"));
+        return;
+      }
+      job.requestAudio = resolve;
+      post({
+        type: "need-audio",
+        jobId,
+        offset,
+        length,
+        completed: index,
+        total,
+      });
+    });
     if (
       slice.offset !== offset ||
       slice.channels.length !== request.channelCount ||
       slice.channels.some((channel) => channel.length !== length)
     ) {
-      throw new Error(
-        "The received audio slice did not match the requested source range.",
-      );
+      throw new Error("The received audio slice did not match the requested source range.");
     }
     for (let channel = 0; channel < channels.length; channel += 1)
       channels[channel].set(slice.channels[channel], offset);
@@ -224,11 +205,7 @@ async function collectSource(
   return channels;
 }
 
-function createAdmission(
-  request: LyricsWorkerStart,
-  isolation: boolean,
-  model: "tiny" | "base",
-) {
+function createAdmission(request: LyricsWorkerStart, isolation: boolean, model: "tiny" | "base") {
   return assessLyricsInput({
     // The UI validates the selected file's byte size. The worker rechecks all
     // decoded-media limits and budgets its retained and worker-owned PCM.
@@ -244,11 +221,7 @@ function createAdmission(
   });
 }
 
-function updateCheckpoint(
-  plan: Plan,
-  request: LyricsWorkerStart,
-  values: Partial<Checkpoint>,
-) {
+function updateCheckpoint(plan: Plan, request: LyricsWorkerStart, values: Partial<Checkpoint>) {
   const previous = matchesCheckpoint(request, plan) ? checkpoint : null;
   checkpoint = {
     sourceId: request.sourceId,
@@ -288,9 +261,7 @@ async function run(request: LyricsWorkerStart) {
   }
   const admission = createAdmission(request, plan.isolation !== "none", model);
   if (!admission.admitted)
-    throw new Error(
-      admission.reason ?? "This track exceeds the estimated memory budget.",
-    );
+    throw new Error(admission.reason ?? "This track exceeds the estimated memory budget.");
 
   const preparationStarted = performance.now();
   if (!cached) {
@@ -299,8 +270,7 @@ async function run(request: LyricsWorkerStart) {
     });
     cached = checkpoint;
   }
-  if (!cached)
-    throw new Error("The audio could not be prepared for local processing.");
+  if (!cached) throw new Error("The audio could not be prepared for local processing.");
 
   const threads = getThreadCount();
   const notices = cached.notices;
@@ -309,19 +279,12 @@ async function run(request: LyricsWorkerStart) {
     message: "Preparing audio for transcription.",
   });
 
-  let actualIsolation: Plan["isolation"] = cached.isolationFallback
-    ? "none"
-    : plan.isolation;
+  let actualIsolation: Plan["isolation"] = cached.isolationFallback ? "none" : plan.isolation;
   let overlap = cached.isolationFallback ? 0 : plan.overlap;
   let isolationBackend: IsolationBackend | undefined = cached.separationBackend;
   let waveform = cached.waveform;
 
-  if (
-    plan.isolation !== "none" &&
-    !cached.vocals &&
-    !cached.isolationFallback &&
-    !waveform
-  ) {
+  if (plan.isolation !== "none" && !cached.vocals && !cached.isolationFallback && !waveform) {
     if (!cached.mdxInput) {
       const source = cached.source;
       if (!source)
@@ -346,11 +309,9 @@ async function run(request: LyricsWorkerStart) {
       cached = checkpoint!;
     }
     const mdxInput = cached.mdxInput;
-    if (!mdxInput)
-      throw new Error("The vocal-isolation retry checkpoint is unavailable.");
-    let isolated: Awaited<
-      ReturnType<(typeof import("./isolation"))["isolateVocals"]>
-    > | null = null;
+    if (!mdxInput) throw new Error("The vocal-isolation retry checkpoint is unavailable.");
+    let isolated: Awaited<ReturnType<(typeof import("./isolation"))["isolateVocals"]>> | null =
+      null;
     try {
       const isolationModule = await import("./isolation");
       isolated = await isolationModule.isolateVocals(mdxInput, {
@@ -371,9 +332,7 @@ async function run(request: LyricsWorkerStart) {
           `Quality vocal separation failed. Retry the same source to resume the separated-audio step. ${errorMessage(error)}`,
         );
       }
-      notices.push(
-        "Auto vocal isolation failed; transcription continued on the original mix.",
-      );
+      notices.push("Auto vocal isolation failed; transcription continued on the original mix.");
       notices.push(errorMessage(error));
       actualIsolation = "none";
       overlap = 0;
@@ -388,11 +347,7 @@ async function run(request: LyricsWorkerStart) {
             )
           : null);
       if (!mix) throw error;
-      waveform = await resampleMono16k(
-        mix,
-        44_100,
-        activeJob?.controller.signal,
-      );
+      waveform = await resampleMono16k(mix, 44_100, activeJob?.controller.signal);
       updateCheckpoint(plan, request, {
         source: undefined,
         mdxInput: undefined,
@@ -444,11 +399,7 @@ async function run(request: LyricsWorkerStart) {
     }
   } else if (!waveform) {
     if (cached.vocals) {
-      waveform = await resampleMono16k(
-        cached.vocals,
-        44_100,
-        activeJob?.controller.signal,
-      );
+      waveform = await resampleMono16k(cached.vocals, 44_100, activeJob?.controller.signal);
       updateCheckpoint(plan, request, {
         waveform,
         vocals: cached.vocals,
@@ -456,11 +407,7 @@ async function run(request: LyricsWorkerStart) {
       });
       cached = checkpoint!;
     } else if (cached.mdxInput) {
-      waveform = await resampleMono16k(
-        cached.mdxInput,
-        44_100,
-        activeJob?.controller.signal,
-      );
+      waveform = await resampleMono16k(cached.mdxInput, 44_100, activeJob?.controller.signal);
       updateCheckpoint(plan, request, {
         waveform,
         mdxInput: cached.mdxInput,
@@ -491,10 +438,7 @@ async function run(request: LyricsWorkerStart) {
     }
   }
 
-  if (!waveform)
-    throw new Error(
-      "Audio preparation did not produce a transcription signal.",
-    );
+  if (!waveform) throw new Error("Audio preparation did not produce a transcription signal.");
   const preparationMs = Math.round(performance.now() - preparationStarted);
   const transcriptionStarted = performance.now();
   await configureWhisperRuntime(threads, gpuAdapter);

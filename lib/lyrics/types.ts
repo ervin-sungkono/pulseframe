@@ -3,8 +3,7 @@ import type { SubtitleCue } from "../subtitles.js";
 export type LyricsMethod = "local" | "gemini";
 export type LyricsPreset = "auto" | "fast" | "quality";
 export type GeneratedCue = { startMs: number; endMs: number; text: string };
-export type LyricsStage =
-  "prepare" | "download" | "isolate" | "send" | "transcribe" | "format";
+export type LyricsStage = "prepare" | "download" | "isolate" | "send" | "transcribe" | "format";
 export type LyricsProgress = {
   stage: LyricsStage;
   message: string;
@@ -55,10 +54,7 @@ export type LyricsRunOptions = {
   onProgress: (progress: LyricsProgress) => void;
 };
 export type LyricsAdapter = {
-  generate: (
-    audio: LyricsAudio,
-    options: LyricsRunOptions,
-  ) => Promise<LyricsResult>;
+  generate: (audio: LyricsAudio, options: LyricsRunOptions) => Promise<LyricsResult>;
   dispose: () => void;
 };
 export type GeneratedApplication = {

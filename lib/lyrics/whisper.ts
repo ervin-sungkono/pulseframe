@@ -3,10 +3,7 @@ import type { GeneratedCue, LyricsProgress } from "./types";
 import { isNearDigitalSilence } from "./audio";
 import type { GeneratedCueInput } from "./cues";
 import { normalizeGeneratedCues, normalizeWindowCues } from "./cues";
-import {
-  configureWhisperRuntimeAssets,
-  type WhisperRuntimeEnvironment,
-} from "./runtime-assets";
+import { configureWhisperRuntimeAssets, type WhisperRuntimeEnvironment } from "./runtime-assets";
 
 export const WHISPER_MODEL_REVISIONS = {
   "onnx-community/whisper-tiny": "ff4177021cc41f7db950912b73ea4fdf7d01d8e7",
@@ -53,12 +50,9 @@ export type WhisperRunResult = {
 };
 
 const loadedPipelines = new Map<string, Promise<LocalWhisperPipeline>>();
-let transformersModule: typeof import("@huggingface/transformers") | null =
-  null;
+let transformersModule: typeof import("@huggingface/transformers") | null = null;
 let webgpuFailedForWorker = false;
-let transformersModulePromise: Promise<
-  typeof import("@huggingface/transformers")
-> | null = null;
+let transformersModulePromise: Promise<typeof import("@huggingface/transformers")> | null = null;
 
 class ModelInitializationTimeoutError extends Error {
   constructor() {
@@ -97,9 +91,10 @@ function getActualBackend(
   transcriber: LocalWhisperPipeline,
   requested: WhisperBackend,
 ): WhisperBackend {
-  const devices = Object.values(transcriber.model.sessions).flatMap(
-    (session) => [session.config?.device, session.handler?.config?.device],
-  );
+  const devices = Object.values(transcriber.model.sessions).flatMap((session) => [
+    session.config?.device,
+    session.handler?.config?.device,
+  ]);
   if (devices.includes("webgpu")) return "webgpu";
   if (devices.includes("wasm") || devices.includes("cpu")) return "wasm";
   return requested;
@@ -112,15 +107,10 @@ type ModelProgress = {
   total?: number;
 };
 
-function reportDownload(
-  progress: ModelProgress,
-  onProgress: WhisperRunOptions["onProgress"],
-) {
+function reportDownload(progress: ModelProgress, onProgress: WhisperRunOptions["onProgress"]) {
   if (progress.status === "ready") return;
   const details =
-    progress.status === "progress"
-      ? { completed: progress.loaded, total: progress.total }
-      : {};
+    progress.status === "progress" ? { completed: progress.loaded, total: progress.total } : {};
   onProgress({
     stage: "download",
     message:
@@ -134,9 +124,7 @@ function reportDownload(
 async function loadTransformers() {
   if (!transformersModule) {
     transformersModulePromise ??= import("@huggingface/transformers");
-    transformersModule = await withInitializationTimeout(
-      transformersModulePromise,
-    );
+    transformersModule = await withInitializationTimeout(transformersModulePromise);
   }
   return transformersModule;
 }
@@ -191,8 +179,7 @@ async function getPipeline(
         revision,
         dtype: "q8",
         device: backend,
-        progress_callback: (progress: ModelProgress) =>
-          reportDownload(progress, onProgress),
+        progress_callback: (progress: ModelProgress) => reportDownload(progress, onProgress),
       })) as LocalWhisperPipeline;
     })();
     loadedPipelines.set(key, promise);
@@ -206,13 +193,9 @@ function buildWindowSegments(output: AutomaticSpeechRecognitionOutput) {
   if (supplied.length === 0) return [] as GeneratedCueInput[];
   return supplied.flatMap((segment) => {
     const start = segment.timestamp?.[0];
-    if (typeof start !== "number" || !Number.isFinite(start) || start < 0)
-      return [];
+    if (typeof start !== "number" || !Number.isFinite(start) || start < 0) return [];
     const candidateEnd = segment.timestamp?.[1];
-    const text =
-      typeof segment.text === "string"
-        ? segment.text.replace(/\s+/gu, " ").trim()
-        : "";
+    const text = typeof segment.text === "string" ? segment.text.replace(/\s+/gu, " ").trim() : "";
     if (!text) return [];
     const endMs =
       typeof candidateEnd === "number" && Number.isFinite(candidateEnd)
@@ -238,8 +221,7 @@ export async function transcribeLocalWhisper(
   options: WhisperRunOptions,
 ): Promise<WhisperRunResult> {
   const { waveform, durationMs, model, onProgress } = options;
-  if (waveform.length === 0)
-    throw new Error("No audio samples are available for transcription.");
+  if (waveform.length === 0) throw new Error("No audio samples are available for transcription.");
   const starts = getWindowStarts(waveform.length);
   const collected: GeneratedCue[] = [];
   const notices: string[] = [];
@@ -257,16 +239,10 @@ export async function transcribeLocalWhisper(
     try {
       transcriber = await getPipeline(model, backend, onProgress);
     } catch (error) {
-      if (
-        backend !== "webgpu" ||
-        error instanceof ModelInitializationTimeoutError
-      )
-        throw error;
+      if (backend !== "webgpu" || error instanceof ModelInitializationTimeoutError) throw error;
       webgpuFailedForWorker = true;
       backend = "wasm";
-      notices.push(
-        "Whisper WebGPU could not start; the same model continued on the CPU.",
-      );
+      notices.push("Whisper WebGPU could not start; the same model continued on the CPU.");
       transcriber = await getPipeline(model, backend, onProgress);
     }
 
@@ -284,9 +260,7 @@ export async function transcribeLocalWhisper(
       );
       const ownsStartMs = index === 0 ? 0 : (previousEndMs + startMs) / 2;
       const ownsEndMs =
-        nextStart === null
-          ? durationMs
-          : (endMs + (nextStart / SAMPLE_RATE) * 1000) / 2;
+        nextStart === null ? durationMs : (endMs + (nextStart / SAMPLE_RATE) * 1000) / 2;
       let output: AutomaticSpeechRecognitionOutput;
 
       const run = async (activePipeline: LocalWhisperPipeline) => {
@@ -303,9 +277,7 @@ export async function transcribeLocalWhisper(
       } catch (error) {
         if (backend !== "webgpu") throw error;
         const failedPipeline = transcriber;
-        loadedPipelines.delete(
-          `${model}@${WHISPER_MODEL_REVISIONS[model]}:webgpu`,
-        );
+        loadedPipelines.delete(`${model}@${WHISPER_MODEL_REVISIONS[model]}:webgpu`);
         await disposePipeline(failedPipeline);
         webgpuFailedForWorker = true;
         backend = "wasm";
@@ -336,9 +308,7 @@ export async function transcribeLocalWhisper(
       });
     }
   } catch (error) {
-    throw error instanceof Error
-      ? error
-      : new Error("Whisper transcription failed.");
+    throw error instanceof Error ? error : new Error("Whisper transcription failed.");
   }
 
   return {

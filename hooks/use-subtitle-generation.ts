@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SubtitleCue } from "@/lib/subtitles";
 import {
   assessLyricsInput,
@@ -45,8 +39,7 @@ export type UseSubtitleGenerationOptions = {
   serverKeyAvailable?: boolean;
 };
 
-export type SubtitleGenerationPhase =
-  "idle" | "running" | "complete" | "error" | "canceled";
+export type SubtitleGenerationPhase = "idle" | "running" | "complete" | "error" | "canceled";
 
 type GenerationSnapshot = {
   source: LyricsSource;
@@ -68,14 +61,11 @@ type ActiveJob = {
   method: LyricsMethod;
   preset: LyricsPreset;
   startedAt: number;
-  cancelReason:
-    "user" | "source" | "revision" | "method" | "preset" | "unmount" | null;
+  cancelReason: "user" | "source" | "revision" | "method" | "preset" | "unmount" | null;
   lockOwned: boolean;
 };
 
-export type SubtitleGenerationController = ReturnType<
-  typeof useSubtitleGeneration
->;
+export type SubtitleGenerationController = ReturnType<typeof useSubtitleGeneration>;
 
 const DEFAULT_METHOD: LyricsMethod = "local";
 const DEFAULT_PRESET: LyricsPreset = "auto";
@@ -85,17 +75,11 @@ function fileIdentity(source: LyricsSource) {
   return `${source.generation}:${file.name}:${file.size}:${file.lastModified}:${file.type}:${source.duration}`;
 }
 
-function sourceIdFor(
-  source: LyricsSource,
-  revision: SubtitleGenerationRevision,
-) {
+function sourceIdFor(source: LyricsSource, revision: SubtitleGenerationRevision) {
   return `${fileIdentity(source)}:${revision.sourceIdentity ?? ""}`;
 }
 
-function sameRevision(
-  left: SubtitleGenerationRevision,
-  right: SubtitleGenerationRevision,
-) {
+function sameRevision(left: SubtitleGenerationRevision, right: SubtitleGenerationRevision) {
   return (
     left.sourceGeneration === right.sourceGeneration &&
     left.cueRevision === right.cueRevision &&
@@ -103,10 +87,7 @@ function sameRevision(
   );
 }
 
-function sameMedia(
-  left: SubtitleGenerationRevision,
-  right: SubtitleGenerationRevision,
-) {
+function sameMedia(left: SubtitleGenerationRevision, right: SubtitleGenerationRevision) {
   return (
     left.sourceGeneration === right.sourceGeneration &&
     (left.sourceIdentity ?? "") === (right.sourceIdentity ?? "")
@@ -114,9 +95,7 @@ function sameMedia(
 }
 
 function cuesFingerprint(cues: readonly SubtitleCue[]) {
-  return JSON.stringify(
-    cues.map(({ id, start, end, text }) => ({ id, start, end, text })),
-  );
+  return JSON.stringify(cues.map(({ id, start, end, text }) => ({ id, start, end, text })));
 }
 
 function isAbort(error: unknown) {
@@ -126,10 +105,7 @@ function isAbort(error: unknown) {
 }
 
 function userError(error: unknown, apiKey: string) {
-  const message =
-    error instanceof Error
-      ? error.message
-      : "Subtitle generation could not finish.";
+  const message = error instanceof Error ? error.message : "Subtitle generation could not finish.";
   const exactKey = apiKey;
   const trimmedKey = apiKey.trim();
   return [exactKey, trimmedKey]
@@ -153,11 +129,8 @@ function estimatedBytes(audio: AudioBuffer) {
 
 function availableMemoryGiB() {
   if (typeof navigator === "undefined") return undefined;
-  const hint = (navigator as Navigator & { deviceMemory?: number })
-    .deviceMemory;
-  return typeof hint === "number" && Number.isFinite(hint) && hint > 0
-    ? hint
-    : undefined;
+  const hint = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  return typeof hint === "number" && Number.isFinite(hint) && hint > 0 ? hint : undefined;
 }
 
 function estimateMayIsolate(method: LyricsMethod, preset: LyricsPreset) {
@@ -171,23 +144,13 @@ function estimateMayIsolate(method: LyricsMethod, preset: LyricsPreset) {
 function readAudio(audio: AudioBuffer, trackDuration: number): LyricsAudio {
   if (audio.numberOfChannels < 1 || audio.numberOfChannels > 2)
     throw new Error("Automatic subtitles support mono or stereo audio.");
-  const fullChannels = Array.from(
-    { length: audio.numberOfChannels },
-    (_, index) => audio.getChannelData(index),
+  const fullChannels = Array.from({ length: audio.numberOfChannels }, (_, index) =>
+    audio.getChannelData(index),
   );
-  const maximumSamples = Math.max(
-    1,
-    Math.ceil(trackDuration * audio.sampleRate),
-  );
+  const maximumSamples = Math.max(1, Math.ceil(trackDuration * audio.sampleRate));
   const channelLength = Math.min(fullChannels[0]?.length ?? 0, maximumSamples);
-  const channels = fullChannels.map((channel) =>
-    channel.subarray(0, channelLength),
-  );
-  if (
-    channels.some(
-      (channel) => !channel.length || channel.length !== channels[0].length,
-    )
-  )
+  const channels = fullChannels.map((channel) => channel.subarray(0, channelLength));
+  if (channels.some((channel) => !channel.length || channel.length !== channels[0].length))
     throw new Error("The decoded audio has an invalid or empty sample layout.");
   const durationMs = (channels[0].length / audio.sampleRate) * 1000;
   if (!Number.isFinite(durationMs) || durationMs <= 0)
@@ -200,17 +163,8 @@ function readAudio(audio: AudioBuffer, trackDuration: number): LyricsAudio {
   };
 }
 
-function estimatedRetainedBytes(
-  durationMs: number,
-  sampleRate: number,
-  channels: number,
-) {
-  return Math.ceil(
-    (durationMs / 1000) *
-      sampleRate *
-      channels *
-      Float32Array.BYTES_PER_ELEMENT,
-  );
+function estimatedRetainedBytes(durationMs: number, sampleRate: number, channels: number) {
+  return Math.ceil((durationMs / 1000) * sampleRate * channels * Float32Array.BYTES_PER_ELEMENT);
 }
 
 function assessAudioAdmission(
@@ -269,18 +223,13 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [resultState, setResultState] = useState<GenerationSnapshot | null>(
-    null,
-  );
+  const [resultState, setResultState] = useState<GenerationSnapshot | null>(null);
   const [needsReplacement, setNeedsReplacement] = useState(false);
-  const [cloudConsentScope, setCloudConsentScope] = useState<string | null>(
-    null,
-  );
+  const [cloudConsentScope, setCloudConsentScope] = useState<string | null>(null);
   const [serverKeyAvailable, setServerKeyAvailable] = useState<boolean | null>(
     options.serverKeyAvailable ?? null,
   );
-  const [serverKeyAvailabilityLoading, setServerKeyAvailabilityLoading] =
-    useState(false);
+  const [serverKeyAvailabilityLoading, setServerKeyAvailabilityLoading] = useState(false);
 
   const currentSource = (() => {
     try {
@@ -299,12 +248,10 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
   const currentSourceScope = currentSource
     ? `${fileIdentity(currentSource)}:${currentRevision.sourceIdentity ?? ""}`
     : null;
-  const hasCloudConsent =
-    !!currentSourceScope && cloudConsentScope === currentSourceScope;
+  const hasCloudConsent = !!currentSourceScope && cloudConsentScope === currentSourceScope;
   const currentResult = (() => {
     const snapshot = resultState;
-    if (!snapshot || !sameMedia(snapshot.revision, currentRevision))
-      return null;
+    if (!snapshot || !sameMedia(snapshot.revision, currentRevision)) return null;
     if (sameRevision(snapshot.revision, currentRevision)) return snapshot;
     const currentCues = options.getCues();
     if (
@@ -314,9 +261,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
       return snapshot;
     return null;
   })();
-  const validationError = currentSource
-    ? sourceLimitError(currentSource)
-    : null;
+  const validationError = currentSource ? sourceLimitError(currentSource) : null;
 
   const setApiKey = useCallback(
     (value: string) => {
@@ -363,11 +308,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
   const setMethod = useCallback(
     (next: LyricsMethod) => {
       const currentJob = jobRef.current;
-      if (
-        currentJob &&
-        currentJob.method !== next &&
-        !currentJob.controller.signal.aborted
-      ) {
+      if (currentJob && currentJob.method !== next && !currentJob.controller.signal.aborted) {
         currentJob.cancelReason = "method";
         setCancelRequested(true);
         currentJob.controller.abort();
@@ -396,11 +337,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
   const setPreset = useCallback(
     (next: LyricsPreset) => {
       const currentJob = jobRef.current;
-      if (
-        currentJob &&
-        currentJob.preset !== next &&
-        !currentJob.controller.signal.aborted
-      ) {
+      if (currentJob && currentJob.preset !== next && !currentJob.controller.signal.aborted) {
         currentJob.cancelReason = "preset";
         setCancelRequested(true);
         currentJob.controller.abort();
@@ -423,23 +360,20 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
     setApiKeyState("");
     cloudConsentScopeRef.current = null;
     setCloudConsentScope(null);
-    if (lastRequestRef.current?.method === "gemini")
-      lastRequestRef.current = null;
+    if (lastRequestRef.current?.method === "gemini") lastRequestRef.current = null;
     disposeAdapter("gemini");
   }, [disposeAdapter]);
 
   const ensureAdapter = useCallback(async (target: LyricsMethod) => {
     if (target === "local") {
       if (localAdapterRef.current) return localAdapterRef.current;
-      const { createLocalLyricsAdapter } =
-        await import("@/lib/lyrics/local-client");
+      const { createLocalLyricsAdapter } = await import("@/lib/lyrics/local-client");
       const adapter = createLocalLyricsAdapter();
       localAdapterRef.current = adapter;
       return adapter;
     }
     if (geminiAdapterRef.current) return geminiAdapterRef.current;
-    const { createGeminiLyricsAdapter } =
-      await import("@/lib/lyrics/gemini-client");
+    const { createGeminiLyricsAdapter } = await import("@/lib/lyrics/gemini-client");
     const adapter = createGeminiLyricsAdapter({
       getApiKey: () => apiKeyRef.current || null,
     });
@@ -463,33 +397,20 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
         source.retainedAudio,
       );
       if (!preflight.admitted)
-        throw new Error(
-          preflight.reason || "This track exceeds the memory budget.",
-        );
-      if (signal.aborted)
-        throw new DOMException("Audio preparation canceled.", "AbortError");
+        throw new Error(preflight.reason || "This track exceeds the memory budget.");
+      if (signal.aborted) throw new DOMException("Audio preparation canceled.", "AbortError");
 
       let audio = source.retainedAudio ?? null;
       if (!audio) {
         const { decodeMediaAudio } = await import("@/lib/media-audio");
         audio = await decodeMediaAudio(source.file, signal);
       }
-      if (signal.aborted)
-        throw new DOMException("Audio preparation canceled.", "AbortError");
+      if (signal.aborted) throw new DOMException("Audio preparation canceled.", "AbortError");
       if (!audio)
-        throw new Error(
-          "This media file has no readable audio track for subtitle generation.",
-        );
-      const admission = assessAudioAdmission(
-        source,
-        targetMethod,
-        targetPreset,
-        audio,
-      );
+        throw new Error("This media file has no readable audio track for subtitle generation.");
+      const admission = assessAudioAdmission(source, targetMethod, targetPreset, audio);
       if (!admission.admitted)
-        throw new Error(
-          admission.reason || "This track exceeds the estimated memory budget.",
-        );
+        throw new Error(admission.reason || "This track exceeds the estimated memory budget.");
       return readAudio(audio, source.duration);
     },
     [],
@@ -515,9 +436,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
       }
       const revision = currentOptions.getRevision();
       if (revision.sourceGeneration !== source.generation) {
-        setError(
-          "The active media changed. Wait for the committed track, then try again.",
-        );
+        setError("The active media changed. Wait for the committed track, then try again.");
         setPhase("error");
         return false;
       }
@@ -534,10 +453,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
           setPhase("error");
           return false;
         }
-        if (
-          cloudConsentScopeRef.current !== sourceScope ||
-          cloudConsentScope !== sourceScope
-        ) {
+        if (cloudConsentScopeRef.current !== sourceScope || cloudConsentScope !== sourceScope) {
           setError(
             "Confirm that this track's audio may be sent to Google before starting Gemini generation.",
           );
@@ -576,8 +492,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
       const release = () => {
         if (job.lockOwned) {
           job.lockOwned = false;
-          if (currentOptions.lockedRef.current)
-            currentOptions.lockedRef.current = false;
+          if (currentOptions.lockedRef.current) currentOptions.lockedRef.current = false;
         }
         if (jobRef.current === job) jobRef.current = null;
         if (mountedRef.current) {
@@ -587,14 +502,8 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
       };
 
       try {
-        const audio = await getAudio(
-          source,
-          targetMethod,
-          targetPreset,
-          controller.signal,
-        );
-        if (controller.signal.aborted)
-          throw new DOMException("Generation canceled.", "AbortError");
+        const audio = await getAudio(source, targetMethod, targetPreset, controller.signal);
+        if (controller.signal.aborted) throw new DOMException("Generation canceled.", "AbortError");
         if (!sameRevision(currentOptions.getRevision(), revision)) {
           job.cancelReason = "revision";
           throw new Error(
@@ -602,27 +511,20 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
           );
         }
         const adapter = await ensureAdapter(targetMethod);
-        if (controller.signal.aborted)
-          throw new DOMException("Generation canceled.", "AbortError");
+        if (controller.signal.aborted) throw new DOMException("Generation canceled.", "AbortError");
         const result = await adapter.generate(audio, {
           preset: targetPreset,
           sourceId: job.sourceId,
           signal: controller.signal,
           onProgress: (next) => {
-            if (
-              jobRef.current !== job ||
-              controller.signal.aborted ||
-              !mountedRef.current
-            )
-              return;
+            if (jobRef.current !== job || controller.signal.aborted || !mountedRef.current) return;
             setProgress({
               ...next,
               elapsedMs: Math.max(0, Date.now() - job.startedAt),
             });
           },
         });
-        if (controller.signal.aborted)
-          throw new DOMException("Generation canceled.", "AbortError");
+        if (controller.signal.aborted) throw new DOMException("Generation canceled.", "AbortError");
         const latestOptions = optionsRef.current;
         const latestRevision = latestOptions.getRevision();
         if (!sameRevision(latestRevision, revision)) {
@@ -642,10 +544,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
           source.duration * 1000,
           result.durationMs > 0 ? result.durationMs : source.duration * 1000,
         );
-        const application = generatedCuesToSubtitles(
-          result.cues,
-          applyDurationMs,
-        );
+        const application = generatedCuesToSubtitles(result.cues, applyDurationMs);
         const existingCues = latestOptions.getCues();
         const snapshot: GenerationSnapshot = {
           source,
@@ -658,10 +557,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
           startedAt: job.startedAt,
           appliedCueFingerprint: null,
         };
-        const autoApply =
-          !existingCues.length &&
-          application.cues.length > 0 &&
-          !application.error;
+        const autoApply = !existingCues.length && application.cues.length > 0 && !application.error;
         if (autoApply) {
           // `setSubtitles` checks the shared lock. Release it in this stack and
           // immediately perform the synchronous canonical state update.
@@ -697,9 +593,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
               "Generated subtitles were applied. Machine-generated lyrics; wording and timing may be inaccurate.",
             );
           else if (result.cues.length)
-            notices.unshift(
-              "Machine-generated lyrics; wording and timing may be inaccurate.",
-            );
+            notices.unshift("Machine-generated lyrics; wording and timing may be inaccurate.");
           setNotice(notices.length ? notices.join(" ") : null);
         }
         release();
@@ -740,9 +634,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
           if (providerNotices.length)
             setNotice(
               providerNotices
-                .map((message) =>
-                  userError(new Error(message), apiKeyRef.current),
-                )
+                .map((message) => userError(new Error(message), apiKeyRef.current))
                 .join(" "),
             );
         }
@@ -751,14 +643,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
         release();
       }
     },
-    [
-      cloudConsentScope,
-      ensureAdapter,
-      getAudio,
-      method,
-      preset,
-      serverKeyAvailable,
-    ],
+    [cloudConsentScope, ensureAdapter, getAudio, method, preset, serverKeyAvailable],
   );
 
   const retry = useCallback(() => {
@@ -781,23 +666,14 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
   const applyGenerated = useCallback(() => {
     const snapshot = resultRef.current;
     const currentOptions = optionsRef.current;
-    if (
-      !snapshot ||
-      !snapshot.application.cues.length ||
-      snapshot.application.error
-    )
-      return false;
+    if (!snapshot || !snapshot.application.cues.length || snapshot.application.error) return false;
     if (currentOptions.lockedRef.current) {
-      setError(
-        "Subtitles cannot be changed while another operation is running.",
-      );
+      setError("Subtitles cannot be changed while another operation is running.");
       return false;
     }
     const currentRevision = currentOptions.getRevision();
     if (!sameRevision(snapshot.revision, currentRevision)) {
-      setError(
-        "The subtitles changed after generation. Generate again before replacing them.",
-      );
+      setError("The subtitles changed after generation. Generate again before replacing them.");
       setPhase("error");
       return false;
     }
@@ -822,15 +698,10 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
   const keepExisting = useCallback(() => {
     const snapshot = resultRef.current;
     if (optionsRef.current.lockedRef.current) {
-      setError(
-        "Wait for the current operation to finish before keeping subtitles.",
-      );
+      setError("Wait for the current operation to finish before keeping subtitles.");
       return false;
     }
-    if (
-      !snapshot ||
-      !sameRevision(snapshot.revision, optionsRef.current.getRevision())
-    ) {
+    if (!snapshot || !sameRevision(snapshot.revision, optionsRef.current.getRevision())) {
       setError(
         "The subtitles changed after generation. Generate again to review a current result.",
       );
@@ -838,9 +709,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
       return false;
     }
     setNeedsReplacement(false);
-    setNotice(
-      "Existing subtitles were kept. The generated result remains available to download.",
-    );
+    setNotice("Existing subtitles were kept. The generated result remains available to download.");
     return true;
   }, []);
 
@@ -851,14 +720,8 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
   useEffect(() => {
     const job = jobRef.current;
     const revision = optionsRef.current.getRevision();
-    if (
-      job &&
-      !sameRevision(job.revision, revision) &&
-      !job.controller.signal.aborted
-    ) {
-      job.cancelReason = sameMedia(job.revision, revision)
-        ? "revision"
-        : "source";
+    if (job && !sameRevision(job.revision, revision) && !job.controller.signal.aborted) {
+      job.cancelReason = sameMedia(job.revision, revision) ? "revision" : "source";
       setCancelRequested(true);
       job.controller.abort();
     }
@@ -873,18 +736,13 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
       resultRef.current = null;
       setResultState(null);
       setNeedsReplacement(false);
-      setNotice(
-        "The active track changed. Generate subtitles again for the new track.",
-      );
+      setNotice("The active track changed. Generate subtitles again for the new track.");
       return;
     }
     if (sameRevision(snapshot.revision, revision)) return;
     const cues = optionsRef.current.getCues();
     const fingerprint = cuesFingerprint(cues);
-    if (
-      snapshot.appliedCueFingerprint &&
-      fingerprint === snapshot.appliedCueFingerprint
-    ) {
+    if (snapshot.appliedCueFingerprint && fingerprint === snapshot.appliedCueFingerprint) {
       snapshot.revision = revision;
       setResultState({ ...snapshot });
       return;
@@ -898,14 +756,11 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
   }, [options.revisionKey]);
 
   useEffect(() => {
-    if (method !== "gemini" || typeof options.serverKeyAvailable === "boolean")
-      return;
+    if (method !== "gemini" || typeof options.serverKeyAvailable === "boolean") return;
     let current = true;
     const controller = new AbortController();
     import("@/lib/lyrics/gemini-client")
-      .then(({ getGeminiAvailability }) =>
-        getGeminiAvailability(controller.signal),
-      )
+      .then(({ getGeminiAvailability }) => getGeminiAvailability(controller.signal))
       .then((availability) => {
         if (current) setServerKeyAvailable(availability.serverKeyConfigured);
       })
@@ -954,8 +809,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
     !!currentSource &&
     !validationError &&
     !running &&
-    (method !== "gemini" ||
-      ((!!apiKey.trim() || !serverKeyUnavailable) && hasCloudConsent));
+    (method !== "gemini" || ((!!apiKey.trim() || !serverKeyUnavailable) && hasCloudConsent));
 
   return {
     method,
@@ -967,9 +821,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
     disconnectGemini,
     serverKeyAvailable: effectiveServerKeyAvailable,
     serverKeyAvailabilityLoading:
-      typeof options.serverKeyAvailable === "boolean"
-        ? false
-        : serverKeyAvailabilityLoading,
+      typeof options.serverKeyAvailable === "boolean" ? false : serverKeyAvailabilityLoading,
     cloudConsent: hasCloudConsent,
     acknowledgeCloudUpload,
     running,
@@ -983,9 +835,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
     notice,
     result: running ? null : currentResultValid ? currentResult : null,
     needsReplacement: currentResultValid && needsReplacement,
-    applicationError: currentResultValid
-      ? (currentResult?.application.error ?? null)
-      : null,
+    applicationError: currentResultValid ? (currentResult?.application.error ?? null) : null,
     validationError,
     canGenerate,
     generate,

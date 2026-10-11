@@ -83,8 +83,7 @@ input:focus-visible {
 
 .studio-shell {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 43% 9%, #18213a 0, transparent 35%), #090e1b;
+  background: radial-gradient(circle at 43% 9%, #18213a 0, transparent 35%), #090e1b;
 }
 .topbar {
   height: 76px;
@@ -628,11 +627,7 @@ h2 {
   border: 0;
   border-radius: 0;
   box-shadow: 0 0 12px var(--look-primary);
-  background: repeating-linear-gradient(
-    90deg,
-    var(--look-secondary) 0 3px,
-    transparent 3px 7px
-  );
+  background: repeating-linear-gradient(90deg, var(--look-secondary) 0 3px, transparent 3px 7px);
   mask-image: radial-gradient(ellipse at center, #000 38%, transparent 78%);
 }
 .look-art.spectrum::after {
@@ -2351,11 +2346,7 @@ h2 {
 .mode-glyph.edges i {
   width: 3px;
   height: 60%;
-  background: linear-gradient(
-    currentColor 0 40%,
-    transparent 40% 60%,
-    currentColor 60%
-  );
+  background: linear-gradient(currentColor 0 40%, transparent 40% 60%, currentColor 60%);
 }
 .mode-glyph.edges i:nth-child(2) {
   height: 80%;
