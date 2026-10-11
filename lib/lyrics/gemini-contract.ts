@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { MAX_SUBTITLE_TEXT_LENGTH } from "../subtitles.js";
 import { MAX_LYRICS_DURATION_MS } from "./policy.js";
-import { GEMINI_LANGUAGE_CODES } from "./gemini-languages.js";
+import { GEMINI_LANGUAGE_CODES } from "./languages.js";
 
 /** Constants shared by Gemini audio preparation, the browser client, and the server route. */
 export const GEMINI_SAMPLE_RATE = 16_000;

@@ -13,7 +13,7 @@ for (const name of [
   "subtitles",
   "lyrics/mdx-config",
   "lyrics/policy",
-  "lyrics/gemini-languages",
+  "lyrics/languages",
   "lyrics/gemini-contract",
   "lyrics/gemini-server",
 ]) {

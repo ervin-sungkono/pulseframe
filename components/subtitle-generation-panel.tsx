@@ -14,7 +14,7 @@ import type { SubtitleGenerationController } from "@/hooks/use-subtitle-generati
 import { serializeGeneratedSubtitles } from "@/lib/lyrics/cues";
 import type { GeneratedSubtitleFormat } from "@/lib/lyrics/cues";
 import type { LyricsStage } from "@/lib/lyrics/types";
-import { GEMINI_LANGUAGE_OPTIONS, type GeminiLanguageCode } from "@/lib/lyrics/gemini-languages";
+import { getLanguageOptions } from "@/lib/lyrics/languages";
 
 const stageLabels: Record<LyricsStage, string> = {
   prepare: "Prepare audio",
@@ -210,32 +210,6 @@ export function SubtitleGenerationPanel({
                 ? "A server key is available."
                 : "No server key is available."}
           </small>
-          <label className="subtitle-language">
-            <span className="subtitle-language-label">
-              <Languages size={14} aria-hidden="true" /> Song language
-            </span>
-            <span className="subtitle-language-control">
-              <select
-                value={generation.languageCode}
-                onChange={(event) =>
-                  generation.setLanguageCode(event.target.value as GeminiLanguageCode)
-                }
-                disabled={!canEditOptions}
-                aria-label="Song language"
-                aria-describedby={languageHintId}
-              >
-                {GEMINI_LANGUAGE_OPTIONS.map(([code, label]) => (
-                  <option key={code || "auto"} value={code}>
-                    {code ? label : "Auto · detect language"}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={16} aria-hidden="true" />
-            </span>
-            <small id={languageHintId} className="subtitle-generation-note">
-              Choose the language you know, or let Gemini detect it.
-            </small>
-          </label>
           <label className="subtitle-cloud-consent">
             <input
               type="checkbox"
@@ -247,6 +221,31 @@ export function SubtitleGenerationPanel({
           </label>
         </div>
       )}
+      <label className="subtitle-language">
+        <span className="subtitle-language-label">
+          <Languages size={14} aria-hidden="true" /> Song language
+        </span>
+        <span className="subtitle-language-control">
+          <select
+            value={generation.languageCode}
+            onChange={(event) => generation.setLanguageCode(event.target.value)}
+            disabled={!canEditOptions}
+            aria-label="Song language"
+            aria-describedby={languageHintId}
+          >
+            {getLanguageOptions(generation.method).map(([code, label]) => (
+              <option key={code || "auto"} value={code}>
+                {code ? label : "Auto · detect language"}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={16} aria-hidden="true" />
+        </span>
+        <small id={languageHintId} className="subtitle-generation-note">
+          Choose the language you know, or let{" "}
+          {generation.method === "local" ? "Whisper" : "Gemini"} detect it.
+        </small>
+      </label>
 
       <fieldset className="subtitle-generation-presets" disabled={!canEditOptions}>
         <legend>Processing</legend>

@@ -195,3 +195,27 @@ cards do not declare a license field; linked OpenAI model metadata declares
 Apache 2.0 while the upstream source repository declares MIT. Those declarations
 do not settle the converted-weight redistribution terms. No model weights are
 bundled or committed; resolve those terms before redistributing weights.
+
+## Song language for on-device transcription
+
+The same Song language control is available for on-device and Gemini generation,
+with Auto as the default. Whisper Tiny and Base use 99 language tokens in their
+pinned model configurations; this is not the expanded vocabulary of newer
+Whisper models. Their sources are the [Tiny configuration](https://huggingface.co/onnx-community/whisper-tiny/blob/ff4177021cc41f7db950912b73ea4fdf7d01d8e7/generation_config.json),
+[Base configuration](https://huggingface.co/onnx-community/whisper-base/blob/1846881b6b3a3024392c1eea3ad983695bc23925/generation_config.json),
+and [OpenAI language names](https://github.com/openai/whisper/blob/main/whisper/tokenizer.py).
+
+`lib/lyrics/languages.ts` owns shared display names, provider-specific choices,
+validation sets and method-switch conversion. Gemini retains its region/script
+choices; Whisper uses its supported language tokens (including `jw` for
+Javanese). Switching providers preserves exact supported selections, maps shared
+languages and aliases (Mandarin/Chinese, Filipino/Tagalog, Norwegian), and resets
+unsupported choices to Auto. Switching back to Gemini chooses its first listed
+locale when a general Whisper language has multiple regional choices.
+
+The controller snapshots the selected language for generation and retry. The
+existing worker receives it and validates it before transcription. Each Whisper
+window receives the same `language` hint, including when WebGPU falls back to
+WASM. Auto omits the hint for model detection; `task: "transcribe"` keeps output
+in the original language. Language changes invalidate the previous retry request
+without discarding reusable audio preparation or reloading the same model.

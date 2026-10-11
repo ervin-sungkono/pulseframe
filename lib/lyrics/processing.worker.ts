@@ -1,3 +1,4 @@
+import { WHISPER_LANGUAGE_CODES } from "./languages";
 import { resampleMono16k, resampleStereo44100 } from "./audio";
 import type { IsolationBackend } from "./isolation";
 import { assessLyricsInput, getCpuThreadCount, resolveLocalLyricsPolicy } from "./policy";
@@ -117,6 +118,8 @@ function getThreadCount() {
 }
 
 function validateStart(request: LyricsWorkerStart) {
+  if (!request.isolationOnly && !WHISPER_LANGUAGE_CODES.has(request.languageCode ?? ""))
+    throw new Error("The selected song language is not supported by Whisper.");
   if (
     !Number.isInteger(request.jobId) ||
     !Number.isSafeInteger(request.sampleCount) ||
@@ -475,6 +478,7 @@ async function run(request: LyricsWorkerStart) {
     model: plan.model as WhisperModelId,
     preferredBackend: gpuAdapter ? "webgpu" : "wasm",
     waveform,
+    languageCode: request.languageCode,
     durationMs: request.durationMs,
     onProgress: (value) => progress(jobId, value),
   });

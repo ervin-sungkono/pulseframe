@@ -203,6 +203,7 @@ export function createLocalLyricsAdapter(): LyricsAdapter & {
         channelCount: audio.channels.length,
         retainedBytes: audio.retainedBytes,
         isolationOnly,
+        languageCode: isolationOnly ? undefined : options.languageCode,
       };
       try {
         getWorker().postMessage(request);
