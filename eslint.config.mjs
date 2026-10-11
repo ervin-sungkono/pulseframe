@@ -5,7 +5,14 @@ import reactHooks from "eslint-plugin-react-hooks";
 import eslintConfigPrettier from "eslint-config-prettier";
 
 export default defineConfig([
-  globalIgnores(["dist/**", "build/**", "public/dsp/**", "crates/pulseframe-dsp/target/**"]),
+  globalIgnores([
+    "dist/**",
+    "build/**",
+    "public/dsp/**",
+    "public/mdx-ort/**",
+    "public/whisper-ort/**",
+    "crates/pulseframe-dsp/target/**",
+  ]),
   { ...js.configs.recommended, files: ["**/*.{ts,tsx}"] },
   tseslint.configs.recommended,
   { ...reactHooks.configs.flat.recommended, files: ["**/*.{ts,tsx}"] },

@@ -25,16 +25,16 @@ flowchart LR
 
 ## Responsibilities
 
-| Boundary | Files | Responsibility |
-| --- | --- | --- |
-| View and composition | `app/page.tsx`, `components/*` | Layout, dialogs, editor actions and presentation |
-| Domain contracts | `lib/visual-settings-model.ts`, `lib/customizer-config.ts`, `lib/presets.ts`, `lib/project-file.ts`, `lib/subtitles.ts` | Settings, defaults, validation and serialization |
-| Analysis | `lib/audio-analysis-config.ts`, `lib/audio-features.ts`, `lib/audio-dsp.mjs`, `lib/art-reactivity.mjs`, `lib/drop-detector.mjs`, `lib/live-sound.ts` | Shared cadence, PCM/live features and drop detection |
-| Browser resource ownership | `lib/media-session.ts`, `hooks/use-media-session.ts` | Media elements, audio graph, decoded sound, image assets and transport |
-| Preview orchestration | `hooks/use-visualizer-preview.ts`, `lib/preview-state.ts` | Frame loop, sizing, reduced motion, seek response replay and PNG capture |
-| Canvas rendering | `lib/visualizer.ts`, `lib/track-overlay.ts`, `lib/beat-lighting.ts`, `lib/glitch.ts` | Existing visual composition and response equations |
-| Export orchestration | `hooks/use-export-controller.ts`, `lib/export-job.ts`, `lib/export-time-estimate.ts` | Input snapshot, shared lock, measured progress and estimates, successful-run history, cancellation and download cleanup |
-| Persistence | `hooks/use-presets.ts`, `lib/preset-store.ts` | Validated browser-local preset persistence and cross-tab refresh |
+| Boundary                   | Files                                                                                                                                                | Responsibility                                                                                                          |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| View and composition       | `app/page.tsx`, `components/*`                                                                                                                       | Layout, dialogs, editor actions and presentation                                                                        |
+| Domain contracts           | `lib/visual-settings-model.ts`, `lib/customizer-config.ts`, `lib/presets.ts`, `lib/project-file.ts`, `lib/subtitles.ts`                              | Settings, defaults, validation and serialization                                                                        |
+| Analysis                   | `lib/audio-analysis-config.ts`, `lib/audio-features.ts`, `lib/audio-dsp.mjs`, `lib/art-reactivity.mjs`, `lib/drop-detector.mjs`, `lib/live-sound.ts` | Shared cadence, PCM/live features and drop detection                                                                    |
+| Browser resource ownership | `lib/media-session.ts`, `hooks/use-media-session.ts`                                                                                                 | Media elements, audio graph, decoded sound, image assets and transport                                                  |
+| Preview orchestration      | `hooks/use-visualizer-preview.ts`, `lib/preview-state.ts`                                                                                            | Frame loop, sizing, reduced motion, seek response replay and PNG capture                                                |
+| Canvas rendering           | `lib/visualizer.ts`, `lib/track-overlay.ts`, `lib/beat-lighting.ts`, `lib/glitch.ts`                                                                 | Existing visual composition and response equations                                                                      |
+| Export orchestration       | `hooks/use-export-controller.ts`, `lib/export-job.ts`, `lib/export-time-estimate.ts`                                                                 | Input snapshot, shared lock, measured progress and estimates, successful-run history, cancellation and download cleanup |
+| Persistence                | `hooks/use-presets.ts`, `lib/preset-store.ts`                                                                                                        | Validated browser-local preset persistence and cross-tab refresh                                                        |
 
 The browser session snapshot exposes resource handles for preview and export.
 It is an infrastructure API, not a persisted project or a UI-independent model.
@@ -78,3 +78,11 @@ Run regression checks with `node --test tests/*.test.mjs`, type checking with
 `pnpm build`. Browser verification should cover both desktop and mobile
 viewports, long seeks, preset metadata/reset behavior, project restoration,
 PNG capture, and successful/canceled short video exports.
+
+Automatic subtitle generation holds the same editor/export lock as media
+replacement and video export. On-device inference runs in a dedicated worker.
+Gemini audio is sent only after explicit method selection, consent and a Generate
+action; all provider requests pass through the same-origin serverless function.
+The supplied session key takes precedence, with the server key used only when no
+client key is supplied. The canvas renderer draws simultaneous cues in stable
+start-time order so preview and exported frames share the same layout.

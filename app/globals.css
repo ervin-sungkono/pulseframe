@@ -83,7 +83,8 @@ input:focus-visible {
 
 .studio-shell {
   min-height: 100vh;
-  background: radial-gradient(circle at 43% 9%, #18213a 0, transparent 35%), #090e1b;
+  background:
+    radial-gradient(circle at 43% 9%, #18213a 0, transparent 35%), #090e1b;
 }
 .topbar {
   height: 76px;
@@ -627,7 +628,11 @@ h2 {
   border: 0;
   border-radius: 0;
   box-shadow: 0 0 12px var(--look-primary);
-  background: repeating-linear-gradient(90deg, var(--look-secondary) 0 3px, transparent 3px 7px);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--look-secondary) 0 3px,
+    transparent 3px 7px
+  );
   mask-image: radial-gradient(ellipse at center, #000 38%, transparent 78%);
 }
 .look-art.spectrum::after {
@@ -1633,6 +1638,15 @@ h2 {
   max-height: min(88dvh, 780px);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+.subtitle-dialog-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 .subtitle-topline {
   display: flex;
@@ -1653,9 +1667,6 @@ h2 {
   align-content: start;
   gap: 12px;
   min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
-  scrollbar-width: thin;
 }
 .subtitle-empty {
   color: #a5b3c7;
@@ -2340,7 +2351,11 @@ h2 {
 .mode-glyph.edges i {
   width: 3px;
   height: 60%;
-  background: linear-gradient(currentColor 0 40%, transparent 40% 60%, currentColor 60%);
+  background: linear-gradient(
+    currentColor 0 40%,
+    transparent 40% 60%,
+    currentColor 60%
+  );
 }
 .mode-glyph.edges i:nth-child(2) {
   height: 80%;
@@ -2673,5 +2688,330 @@ h2 {
 @media (max-width: 480px) {
   .export-resolution-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.subtitle-generation {
+  display: grid;
+  gap: 10px;
+  flex: 0 0 auto;
+  margin: 0 0 13px;
+  padding: 13px;
+  border: 1px solid #4e5c77;
+  border-radius: 11px;
+  background: #19263a;
+}
+.subtitle-generation-heading,
+.subtitle-generated-result-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  color: #dcd0ff;
+}
+.subtitle-generation-heading > div,
+.subtitle-generated-result-heading > div {
+  display: grid;
+  gap: 4px;
+}
+.subtitle-generation-heading strong,
+.subtitle-generated-result-heading strong {
+  font-size: 14px;
+}
+.subtitle-generation-heading span,
+.subtitle-generated-result-heading span {
+  color: #aab8cd;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.subtitle-generation-heading > svg {
+  flex: 0 0 auto;
+  color: #a9dfc3;
+}
+.subtitle-generation fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.subtitle-generation fieldset legend {
+  margin-bottom: 5px;
+  color: #aebbd0;
+  font-size: 11px;
+  font-weight: 700;
+}
+.subtitle-generation-method,
+.subtitle-generation-presets {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.subtitle-generation-method label,
+.subtitle-generation-presets label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px solid #45536d;
+  border-radius: 8px;
+  background: #111b2c;
+  color: #d9e1ef;
+  font-size: 12px;
+  cursor: pointer;
+}
+.subtitle-generation-method label:has(input:checked),
+.subtitle-generation-presets label:has(input:checked) {
+  border-color: #9785ce;
+  background: #282743;
+  color: #fff;
+}
+.subtitle-generation-method input,
+.subtitle-generation-presets input,
+.subtitle-cloud-consent input {
+  accent-color: #ac9adf;
+}
+.subtitle-generation-note,
+.subtitle-key-memory-hint,
+.subtitle-server-key-status {
+  margin: 0;
+  color: #aab8cd;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.subtitle-cloud-settings {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #675b52;
+  border-radius: 9px;
+  background: #28251f;
+}
+.subtitle-cloud-warning {
+  margin: 0;
+  color: #ffdaad;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.subtitle-api-key {
+  display: grid;
+  gap: 5px;
+  color: #c0cbdb;
+  font-size: 11px;
+}
+.subtitle-api-key > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.subtitle-api-key input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid #59647a;
+  border-radius: 7px;
+  background: #101a2a;
+  color: #f2f5fb;
+  font:
+    13px ui-monospace,
+    Menlo,
+    monospace;
+}
+.subtitle-key-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.subtitle-key-actions .button {
+  min-height: 36px;
+  font-size: 11px;
+}
+.subtitle-key-actions > span {
+  color: #bbc6d6;
+  font-size: 11px;
+}
+.subtitle-cloud-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #f0e8d8;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.subtitle-cloud-consent input {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+.subtitle-generation-actions,
+.subtitle-generated-downloads,
+.subtitle-replacement-prompt > div {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.subtitle-generation-actions .button,
+.subtitle-generated-downloads .button,
+.subtitle-replacement-prompt .button {
+  min-height: 38px;
+  font-size: 11px;
+}
+.subtitle-generation-progress {
+  display: grid;
+  gap: 5px;
+  padding: 9px 10px;
+  border: 1px solid #405371;
+  border-radius: 8px;
+  background: #111c2d;
+}
+.subtitle-generation-progress > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+}
+.subtitle-generation-progress strong {
+  color: #e4d8ff;
+  font-size: 12px;
+}
+.subtitle-generation-progress > div:first-child span {
+  color: #9eacc1;
+  font:
+    11px ui-monospace,
+    Menlo,
+    monospace;
+}
+.subtitle-generation-progress p {
+  margin: 0;
+  color: #c1ccdc;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.subtitle-generation-work {
+  display: grid;
+  gap: 4px;
+  color: #aebbd0;
+  font-size: 10px;
+}
+.subtitle-generation-work progress {
+  width: 100%;
+  height: 5px;
+  accent-color: #a893dd;
+}
+.subtitle-generation-error {
+  margin: 0;
+  color: #ffc7b8;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.subtitle-generation-result-note {
+  margin: 0;
+  color: #f1d9a8;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.subtitle-generated-result {
+  display: grid;
+  gap: 8px;
+  padding-top: 9px;
+  border-top: 1px solid #41506a;
+}
+.subtitle-generated-result-heading {
+  align-items: center;
+}
+.subtitle-generated-result-heading > svg {
+  flex: 0 0 auto;
+  color: #b5a4e4;
+}
+.subtitle-replacement-prompt {
+  display: grid;
+  gap: 6px;
+  padding: 9px;
+  border: 1px solid #85734e;
+  border-radius: 8px;
+  background: #2b281f;
+}
+.subtitle-replacement-prompt strong {
+  color: #ffe3a8;
+  font-size: 12px;
+}
+.subtitle-replacement-prompt > span {
+  color: #c9c2b1;
+  font-size: 11px;
+}
+.subtitle-generation-diagnostics {
+  color: #aebbd0;
+  font-size: 11px;
+}
+.subtitle-generation-diagnostics summary {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+.subtitle-generation-diagnostics dl {
+  display: grid;
+  gap: 4px;
+  margin: 5px 0 0;
+}
+.subtitle-generation-diagnostics dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.subtitle-generation-diagnostics dt {
+  color: #8798b1;
+}
+.subtitle-generation-diagnostics dd {
+  max-width: 65%;
+  margin: 0;
+  color: #d0d9e7;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.subtitle-generated-attribution {
+  margin: 0;
+  color: #8899b0;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.subtitle-key-memory-hint {
+  color: #c1ccdc;
+}
+.subtitle-generation-status {
+  position: fixed;
+  z-index: 44;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 46px;
+  padding: 0 13px;
+  border: 1px solid #675b8e;
+  border-radius: 999px;
+  background: #292641;
+  color: #eee9ff;
+  box-shadow: 0 8px 25px #050b1590;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.subtitle-generation-status time {
+  color: #c2b9e0;
+  font:
+    11px ui-monospace,
+    Menlo,
+    monospace;
+}
+.subtitle-spinner {
+  animation: subtitle-generation-spin 1.1s linear infinite;
+}
+@keyframes subtitle-generation-spin {
+  to {
+    transform: rotate(360deg);
   }
 }

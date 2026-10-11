@@ -1,6 +1,6 @@
 import { ANALYSIS_FPS } from "./audio-analysis-config";
 import type { ResponseStyle, VisualSettings } from "./visual-settings-model";
-import { activeSubtitle, type SubtitleCue } from "./subtitles";
+import { activeSubtitles, type SubtitleCue } from "./subtitles";
 import type { SoundEnvelope } from "./audio-features";
 import { drawGlitch } from "./glitch";
 import { drawTrackOverlay, trackOverlayLayout } from "./track-overlay";
@@ -48,7 +48,8 @@ export function createAudioReactiveState(): AudioReactiveState {
 
 export function makeParticles(count: number): Particle[] {
   let seed = 0x5f3759df;
-  const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+  const random = () =>
+    (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
   return Array.from({ length: count }, (_, i) => ({
     x: random(),
     y: random(),
@@ -107,15 +108,20 @@ function updateRingResponse(
   speed: number,
 ) {
   const power = (db: number) => 10 ** (db / 10);
-  const totalPower = power(frame.bassDb) + power(frame.middleDb) + power(frame.highDb);
-  const bassShare = power(frame.ringBassDb ?? frame.bassDb) / Math.max(1e-12, totalPower);
+  const totalPower =
+    power(frame.bassDb) + power(frame.middleDb) + power(frame.highDb);
+  const bassShare =
+    power(frame.ringBassDb ?? frame.bassDb) / Math.max(1e-12, totalPower);
   const mix = activity > 0.05 ? clamp((0.65 - bassShare) / 0.5) : state.ringMix;
   state.ringMix = smooth(state.ringMix, mix, deltaMs, 160, 400);
   const amplitude = 10 ** ((frame.bassHitDb ?? frame.bassDb) / 20);
   // Compare bass with its recent local level: sustained bass should not hold
   // the logo permanently expanded. No beat grid or future samples are used.
-  const rise = Math.max(0, amplitude - state.ringBaseline) / Math.max(0.018, state.ringBaseline);
-  const level = 1 - Math.exp(-amplitude * settings.bassBoost * settings.sensitivity * 4);
+  const rise =
+    Math.max(0, amplitude - state.ringBaseline) /
+    Math.max(0.018, state.ringBaseline);
+  const level =
+    1 - Math.exp(-amplitude * settings.bassBoost * settings.sensitivity * 4);
   const impact = Math.tanh(rise * 0.85 * settings.bassBoost);
   state.ringPulse = smooth(
     state.ringPulse,
@@ -125,7 +131,10 @@ function updateRingResponse(
     85 * speed,
   );
   state.ringBaseline = smooth(state.ringBaseline, amplitude, deltaMs, 260, 420);
-  if (state.ringBands.length !== 4 || state.ringBands[0]?.length !== frame.bands.length) {
+  if (
+    state.ringBands.length !== 4 ||
+    state.ringBands[0]?.length !== frame.bands.length
+  ) {
     state.ringBands = Array.from({ length: 4 }, () =>
       frame.bands.map((channel) => new Float32Array(channel.length)),
     );
@@ -152,7 +161,11 @@ export function soundResponse(
   deltaMs: number,
 ) {
   const speed =
-    settings.responseStyle === "punchy" ? 0.55 : settings.responseStyle === "smooth" ? 1.7 : 1;
+    settings.responseStyle === "punchy"
+      ? 0.55
+      : settings.responseStyle === "smooth"
+        ? 1.7
+        : 1;
   const activity = clamp((frame.rms - settings.quietThreshold) / 0.018);
   const level = (value: number, floor: number, ceiling: number) =>
     clamp((value - floor) / (ceiling - floor));
@@ -163,8 +176,20 @@ export function soundResponse(
     level(frame.middleDb, -62, -18) * 0.55,
     level(frame.highDb, -72, -24) * 0.4,
   );
-  state.activity = smooth(state.activity, activity, deltaMs, 28 * speed, 210 * speed);
-  state.bass = smooth(state.bass, clamp(bass), deltaMs, 16 * speed, 170 * speed);
+  state.activity = smooth(
+    state.activity,
+    activity,
+    deltaMs,
+    28 * speed,
+    210 * speed,
+  );
+  state.bass = smooth(
+    state.bass,
+    clamp(bass),
+    deltaMs,
+    16 * speed,
+    170 * speed,
+  );
   // Soft saturation preserves contrast in loud masters without changing measurements.
   state.energy = smooth(
     state.energy,
@@ -186,7 +211,11 @@ export function soundResponse(
       );
     }
   updateRingResponse(frame, settings, state, activity, deltaMs, speed);
-  return { activity: state.activity, bassPulse: state.bass * state.activity, energy: state.energy };
+  return {
+    activity: state.activity,
+    bassPulse: state.bass * state.activity,
+    energy: state.energy,
+  };
 }
 
 export function warmSoundResponse(
@@ -208,7 +237,12 @@ export function warmSoundResponse(
   if (!envelopes.length || count > envelopes.length + 10 * ANALYSIS_FPS)
     return { state, lastTime: time };
   for (let i = 0; i < count; i++)
-    soundResponse(envelopes[i] ?? silence, settings, state, i ? 1000 / ANALYSIS_FPS : 0);
+    soundResponse(
+      envelopes[i] ?? silence,
+      settings,
+      state,
+      i ? 1000 / ANALYSIS_FPS : 0,
+    );
   return { state, lastTime: count ? (count - 1) / ANALYSIS_FPS : 0 };
 }
 
@@ -244,15 +278,35 @@ export function audioResponse(
   const bin = (hz: number) =>
     Math.max(
       1,
-      Math.min(frequency.length - 1, Math.round((hz * frequency.length * 2) / sampleRate)),
+      Math.min(
+        frequency.length - 1,
+        Math.round((hz * frequency.length * 2) / sampleRate),
+      ),
     );
   const bass = band(frequency, bin(30), Math.max(bin(30) + 1, bin(180)));
   const mid = band(frequency, bin(180), Math.max(bin(180) + 1, bin(2500)));
-  const treble = band(frequency, bin(2500), Math.max(bin(2500) + 1, bin(10000)));
+  const treble = band(
+    frequency,
+    bin(2500),
+    Math.max(bin(2500) + 1, bin(10000)),
+  );
   const activity = audioActivity(wave, threshold);
-  const speed = responseStyle === "punchy" ? 0.55 : responseStyle === "smooth" ? 1.7 : 1;
-  state.activity = smooth(state.activity, activity, deltaMs, 42 * speed, 210 * speed);
-  state.bass = smooth(state.bass, clamp(bass * bassBoost), deltaMs, 28 * speed, 170 * speed);
+  const speed =
+    responseStyle === "punchy" ? 0.55 : responseStyle === "smooth" ? 1.7 : 1;
+  state.activity = smooth(
+    state.activity,
+    activity,
+    deltaMs,
+    42 * speed,
+    210 * speed,
+  );
+  state.bass = smooth(
+    state.bass,
+    clamp(bass * bassBoost),
+    deltaMs,
+    28 * speed,
+    170 * speed,
+  );
   const boostedBass = clamp(bass * bassBoost);
   const targetEnergy =
     clamp(
@@ -263,8 +317,18 @@ export function audioResponse(
         boostedBass * 0.52 + mid * 0.32 + treble * 0.16,
       ) * sensitivity,
     ) * activity;
-  state.energy = smooth(state.energy, targetEnergy, deltaMs, 32 * speed, 180 * speed);
-  return { activity: state.activity, bassPulse: state.bass * state.activity, energy: state.energy };
+  state.energy = smooth(
+    state.energy,
+    targetEnergy,
+    deltaMs,
+    32 * speed,
+    180 * speed,
+  );
+  return {
+    activity: state.activity,
+    bassPulse: state.bass * state.activity,
+    energy: state.energy,
+  };
 }
 
 function drawCover(
@@ -325,7 +389,10 @@ function drawBackdrop(
     h * 0.45,
     Math.max(w, h) * 0.8,
   );
-  wash.addColorStop(0, rgba(s.primary, (s.backdrop === "clean" ? 0.055 : 0.1) * s.atmosphere));
+  wash.addColorStop(
+    0,
+    rgba(s.primary, (s.backdrop === "clean" ? 0.055 : 0.1) * s.atmosphere),
+  );
   wash.addColorStop(0.55, rgba(s.secondary, 0.035 * s.atmosphere));
   wash.addColorStop(1, "rgba(0,0,0,.54)");
   ctx.fillStyle = wash;
@@ -335,11 +402,19 @@ function drawBackdrop(
     ctx.globalCompositeOperation = "screen";
     const span = Math.max(w, h);
     for (let i = 0; i < 3; i++) {
-      const x = w * (0.23 + i * 0.29) + Math.sin(t * 0.12 + i * 2.1) * w * 0.055;
-      const y = h * (0.38 + (i % 2) * 0.22) + Math.cos(t * 0.16 + i) * h * 0.045;
+      const x =
+        w * (0.23 + i * 0.29) + Math.sin(t * 0.12 + i * 2.1) * w * 0.055;
+      const y =
+        h * (0.38 + (i % 2) * 0.22) + Math.cos(t * 0.16 + i) * h * 0.045;
       const bloom = ctx.createRadialGradient(x, y, 0, x, y, span * 0.42);
-      bloom.addColorStop(0, rgba(i === 1 ? s.secondary : s.primary, 0.16 * s.atmosphere));
-      bloom.addColorStop(0.45, rgba(i === 1 ? s.secondary : s.primary, 0.055 * s.atmosphere));
+      bloom.addColorStop(
+        0,
+        rgba(i === 1 ? s.secondary : s.primary, 0.16 * s.atmosphere),
+      );
+      bloom.addColorStop(
+        0.45,
+        rgba(i === 1 ? s.secondary : s.primary, 0.055 * s.atmosphere),
+      );
       bloom.addColorStop(1, rgba(s.primary, 0));
       ctx.fillStyle = bloom;
       ctx.fillRect(0, 0, w, h);
@@ -367,7 +442,8 @@ function drawBackdrop(
   }
 }
 
-const ringInnerRadius = (unit: number, bass: number) => unit * (0.205 + bass * 0.016) * 0.88;
+const ringInnerRadius = (unit: number, bass: number) =>
+  unit * (0.205 + bass * 0.016) * 0.88;
 
 export function ringMagnitude(
   bands: Float32Array[],
@@ -380,8 +456,22 @@ export function ringMagnitude(
   bassBoost = 1,
 ): number {
   if (focus === "auto") {
-    const bass = ringMagnitude(bands, position, sensitivity * bassBoost, mirrored, "bass", top);
-    const full = ringMagnitude(bands, position, sensitivity, mirrored, "full", top);
+    const bass = ringMagnitude(
+      bands,
+      position,
+      sensitivity * bassBoost,
+      mirrored,
+      "bass",
+      top,
+    );
+    const full = ringMagnitude(
+      bands,
+      position,
+      sensitivity,
+      mirrored,
+      "full",
+      top,
+    );
     return bass + (full - bass) * clamp(autoMix);
   }
   const u = ((position % 1) + 1) % 1,
@@ -390,22 +480,29 @@ export function ringMagnitude(
   // a few points of a 35–16000 Hz spectrum. Full sound retains that range.
   const mapped =
     focus === "bass"
-      ? Math.log((35 + folded * (Math.min(450, top) - 35)) / 35) / Math.log(Math.max(36, top) / 35)
+      ? Math.log((35 + folded * (Math.min(450, top) - 35)) / 35) /
+        Math.log(Math.max(36, top) / 35)
       : folded;
   const sample = (channel: Float32Array | undefined) => {
     if (!channel?.length) return 0;
     const index = mapped * (channel.length - 1),
       a = Math.floor(index),
       f = index - a;
-    const value = (i: number) => channel[Math.max(0, Math.min(channel.length - 1, i))] || 0;
-    return 0.65 * (value(a) * (1 - f) + value(a + 1) * f) + 0.175 * (value(a - 1) + value(a + 2));
+    const value = (i: number) =>
+      channel[Math.max(0, Math.min(channel.length - 1, i))] || 0;
+    return (
+      0.65 * (value(a) * (1 - f) + value(a + 1) * f) +
+      0.175 * (value(a - 1) + value(a + 2))
+    );
   };
   const left = sample(bands[0]),
     right = sample(bands[Math.min(1, bands.length - 1)]);
   const shared = Math.sqrt((left * left + right * right) / 2);
   const edge = clamp(Math.min(folded, 1 - folded) / 0.055),
     blend = edge * edge * (3 - 2 * edge);
-  const magnitude = mirrored ? shared : shared + ((u < 0.5 ? left : right) - shared) * blend;
+  const magnitude = mirrored
+    ? shared
+    : shared + ((u < 0.5 ? left : right) - shared) * blend;
   const contour = focus === "bass" ? Math.sin(Math.PI * folded) ** 0.45 : 1;
   return (1 - Math.exp(-magnitude * sensitivity * 3)) * contour;
 }
@@ -430,7 +527,12 @@ function drawRing(
   // Paint outside-in: offset contours expose contrasting, solid ribbons,
   // while the common inner aperture stays free for a fitted logo.
   for (let layer = layers - 1; layer >= 0; layer--) {
-    const gradient = ctx.createLinearGradient(w * 0.23, h * 0.25, w * 0.76, h * 0.76);
+    const gradient = ctx.createLinearGradient(
+      w * 0.23,
+      h * 0.25,
+      w * 0.76,
+      h * 0.76,
+    );
     const primary = layer % 2 ? s.secondary : s.primary,
       secondary = layer % 2 ? s.primary : s.secondary;
     gradient.addColorStop(0, secondary);
@@ -451,7 +553,10 @@ function drawRing(
         autoMix,
         s.bassBoost,
       );
-      const r = radius + layer * unit * 0.003 + response * unit * (0.16 + layer * 0.008);
+      const r =
+        radius +
+        layer * unit * 0.003 +
+        response * unit * (0.16 + layer * 0.008);
       const x = w / 2 + Math.cos(angle) * r,
         y = h / 2 + Math.sin(angle) * r;
       points.push({ x, y });
@@ -469,7 +574,9 @@ function drawRing(
     ctx.moveTo(w / 2 + innerRadius, h / 2);
     ctx.arc(w / 2, h / 2, innerRadius, 0, Math.PI * 2);
     ctx.closePath();
-    ctx.globalAlpha = layer ? clamp((s.ringRearOpacity ?? 30) / 100) * (1 - 0.18 * (layer - 1)) : 1;
+    ctx.globalAlpha = layer
+      ? clamp((s.ringRearOpacity ?? 30) / 100) * (1 - 0.18 * (layer - 1))
+      : 1;
     ctx.fillStyle = gradient;
     ctx.shadowColor = primary;
     ctx.shadowBlur = s.glow * unit * (layer ? 0.01 : 0.012);
@@ -524,7 +631,11 @@ export function spectrumLayout(
   };
 }
 
-export function sampleBarBand(channel: Float32Array | undefined, position: number, count: number) {
+export function sampleBarBand(
+  channel: Float32Array | undefined,
+  position: number,
+  count: number,
+) {
   if (!channel?.length) return 0;
   const index = clamp(position) * (channel.length - 1),
     halfStep = (channel.length - 1) / Math.max(1, count - 1);
@@ -551,7 +662,11 @@ export function edgeBarLayout(
     ...base,
     maxHeight: Math.max(
       2,
-      Math.min(Math.min(w, h) * 0.32 * scale, h * 0.38, h / 2 - centerClearance - base.margin),
+      Math.min(
+        Math.min(w, h) * 0.32 * scale,
+        h * 0.38,
+        h / 2 - centerClearance - base.margin,
+      ),
     ),
   };
 }
@@ -562,10 +677,18 @@ export function edgeBarResponse(
   edge: "top" | "bottom",
   sensitivity: number,
 ) {
-  const position = edge === "top" ? index / (count - 1) : 1 - index / (count - 1);
+  const position =
+    edge === "top" ? index / (count - 1) : 1 - index / (count - 1);
   const left = sampleBarBand(bands[0], position, count),
-    right = sampleBarBand(bands[Math.min(1, bands.length - 1)], position, count);
-  return 1 - Math.exp(-Math.sqrt((left * left + right * right) / 2) * sensitivity * 3.8);
+    right = sampleBarBand(
+      bands[Math.min(1, bands.length - 1)],
+      position,
+      count,
+    );
+  return (
+    1 -
+    Math.exp(-Math.sqrt((left * left + right * right) / 2) * sensitivity * 3.8)
+  );
 }
 function drawEdgeBars(
   ctx: CanvasRenderingContext2D,
@@ -578,7 +701,13 @@ function drawEdgeBars(
   const clear = fittedLogo
     ? Math.min(w, h) * 0.085 * (s.logoFitScale.edges / 100) + s.glow * 16
     : 0;
-  const { x, count, gap, barWidth, maxHeight } = edgeBarLayout(w, h, s.visualScale, s.glow, clear),
+  const { x, count, gap, barWidth, maxHeight } = edgeBarLayout(
+      w,
+      h,
+      s.visualScale,
+      s.glow,
+      clear,
+    ),
     idle = Math.min(3, maxHeight);
   ctx.save();
   for (const edge of ["top", "bottom"] as const) {
@@ -595,14 +724,18 @@ function drawEdgeBars(
     ctx.shadowColor = s.primary;
     ctx.shadowBlur = s.glow * Math.min(w, h) * 0.009;
     for (let i = 0; i < count; i++) {
-      const amp = idle + edgeBarResponse(bands, i, count, edge, s.sensitivity) * (maxHeight - idle);
+      const amp =
+        idle +
+        edgeBarResponse(bands, i, count, edge, s.sensitivity) *
+          (maxHeight - idle);
       ctx.beginPath();
       ctx.roundRect(
         x + i * (barWidth + gap),
         edge === "top" ? 0 : h - amp,
         barWidth,
         amp,
-        Math.min(barWidth / 2, amp / 2) * clamp((s.spectrumRoundness ?? 100) / 100),
+        Math.min(barWidth / 2, amp / 2) *
+          clamp((s.spectrumRoundness ?? 100) / 100),
       );
       ctx.fill();
     }
@@ -624,7 +757,9 @@ function drawSpectrum(
   const short = Math.min(w, h),
     edge = Math.max(22, short * 0.055);
   // Reserve the same caption lane for the whole track, preventing layout jumps.
-  let top = fittedLogo ? h * 0.21 + short * 0.085 * (s.logoFitScale.spectrum / 100) : 0;
+  let top = fittedLogo
+    ? h * 0.21 + short * 0.085 * (s.logoFitScale.spectrum / 100)
+    : 0;
   let bottom = captionLane ? edge + captionLane : 0;
   const overlay = trackOverlayLayout(w, h, s, captionLane);
   top = Math.max(top, overlay.topSpace);
@@ -638,11 +773,14 @@ function drawSpectrum(
       right = sampleBarBand(bands[Math.min(1, bands.length - 1)], pos, count);
     const value = Math.sqrt((left * left + right * right) / 2);
     const response = clamp(
-      1 - Math.exp(-value * s.sensitivity * 3.8) + impact * 0.12 * (1 - pos) ** 2,
+      1 -
+        Math.exp(-value * s.sensitivity * 3.8) +
+        impact * 0.12 * (1 - pos) ** 2,
     );
     const amp = idle + response * (maxHalf - idle),
       bx = x + i * (barWidth + gap);
-    const radius = Math.min(barWidth / 2, amp) * clamp((s.spectrumRoundness ?? 100) / 100);
+    const radius =
+      Math.min(barWidth / 2, amp) * clamp((s.spectrumRoundness ?? 100) / 100);
     return { amp, bx, radius };
   });
   ctx.save();
@@ -694,25 +832,38 @@ function drawSpectrum(
 }
 
 /** Log-frequency, linear-amplitude bands for the non-PCM demo fallback. */
-function fallbackBands(frequency: Uint8Array, sampleRate: number, activity: number) {
+function fallbackBands(
+  frequency: Uint8Array,
+  sampleRate: number,
+  activity: number,
+) {
   const top = Math.min(16000, sampleRate / 2);
   return [
     Float32Array.from({ length: 96 }, (_, i) => {
       const low = 35 * (top / 35) ** (i / 96),
         high = 35 * (top / 35) ** ((i + 1) / 96);
-      const first = Math.max(1, Math.round((low * frequency.length * 2) / sampleRate));
+      const first = Math.max(
+        1,
+        Math.round((low * frequency.length * 2) / sampleRate),
+      );
       const last = Math.min(
         frequency.length - 1,
         Math.max(first, Math.round((high * frequency.length * 2) / sampleRate)),
       );
       let peak = 0;
-      for (let k = first; k <= last; k++) peak = Math.max(peak, frequency[k] ?? 0);
+      for (let k = first; k <= last; k++)
+        peak = Math.max(peak, frequency[k] ?? 0);
       return ringBandAmplitude(peak / 255) * activity;
     }),
   ];
 }
 
-export function coverCrop(sourceW: number, sourceH: number, targetW: number, targetH: number) {
+export function coverCrop(
+  sourceW: number,
+  sourceH: number,
+  targetW: number,
+  targetH: number,
+) {
   const sourceAspect = sourceW / sourceH,
     targetAspect = targetW / targetH;
   const width = sourceAspect > targetAspect ? sourceH * targetAspect : sourceW;
@@ -736,10 +887,15 @@ function drawLogo(
   if (s.logoAutoFit[s.mode]) {
     const short = Math.min(w, h);
     const circle = s.mode === "ring";
-    const width = circle ? ringInnerRadius(short, bass) * 2 * s.visualScale : short * 0.36;
+    const width = circle
+      ? ringInnerRadius(short, bass) * 2 * s.visualScale
+      : short * 0.36;
     const height = circle ? width : short * 0.17;
     const centerY = circle || s.mode === "edges" ? h / 2 : h * 0.21;
-    const scale = Math.max(0.5, Math.min(1, (s.logoFitScale?.[s.mode] ?? 100) / 100));
+    const scale = Math.max(
+      0.5,
+      Math.min(1, (s.logoFitScale?.[s.mode] ?? 100) / 100),
+    );
     const clipScale = Math.min(1, scale),
       clipW = width * clipScale,
       clipH = height * clipScale;
@@ -797,7 +953,12 @@ function drawParticles(
 ) {
   const boost = 1 + energy * 1.5;
   const visible = Math.min(s.particleCount, particles.length);
-  const drift = s.particleMode === "comets" ? 2.2 : s.particleMode === "sparks" ? 1.55 : 0.65;
+  const drift =
+    s.particleMode === "comets"
+      ? 2.2
+      : s.particleMode === "sparks"
+        ? 1.55
+        : 0.65;
   const wrap = (n: number) => ((n % 1) + 1) % 1;
   const positions = particles.slice(0, visible).map((p) => {
     if (s.particleFlow === "rise")
@@ -813,7 +974,10 @@ function drawParticles(
         y: 0.5 + Math.sin(angle) * radius * Math.min(1, w / h),
       };
     }
-    return { x: wrap(p.x + p.vx * t * 1000 * drift), y: wrap(p.y + p.vy * t * 1000 * drift) };
+    return {
+      x: wrap(p.x + p.vx * t * 1000 * drift),
+      y: wrap(p.y + p.vy * t * 1000 * drift),
+    };
   });
   ctx.save();
   if (s.particleMode === "constellation") {
@@ -843,15 +1007,24 @@ function drawParticles(
       position = positions[i];
     const twinkle = 0.5 + 0.5 * Math.sin(t * 2 + p.phase);
     const r = p.size * (w / 900) * s.particleSize * (1 + energy * 0.8);
-    ctx.fillStyle = rgba(i % 4 ? s.primary : s.secondary, 0.22 + twinkle * 0.48);
+    ctx.fillStyle = rgba(
+      i % 4 ? s.primary : s.secondary,
+      0.22 + twinkle * 0.48,
+    );
     ctx.shadowColor = i % 4 ? s.primary : s.secondary;
     ctx.shadowBlur = s.glow * (s.particleMode === "comets" ? 14 : 7);
     ctx.beginPath();
     ctx.arc(position.x * w, position.y * h, Math.max(0.7, r), 0, Math.PI * 2);
     ctx.fill();
-    if ((s.particleMode === "sparks" && i % 4 === 0) || s.particleMode === "comets") {
+    if (
+      (s.particleMode === "sparks" && i % 4 === 0) ||
+      s.particleMode === "comets"
+    ) {
       ctx.strokeStyle = rgba(s.secondary, 0.13 + twinkle * 0.3);
-      ctx.lineWidth = Math.max(1, r * (s.particleMode === "comets" ? 1.1 : 0.5));
+      ctx.lineWidth = Math.max(
+        1,
+        r * (s.particleMode === "comets" ? 1.1 : 0.5),
+      );
       const length = s.particleMode === "comets" ? 430 : 100;
       ctx.beginPath();
       ctx.moveTo(position.x * w, position.y * h);
@@ -873,19 +1046,28 @@ function fitText(ctx: CanvasRenderingContext2D, raw: string, maxWidth: number) {
     high = chars.length;
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
-    if (ctx.measureText(chars.slice(0, mid).join("") + "…").width <= maxWidth) low = mid;
+    if (ctx.measureText(chars.slice(0, mid).join("") + "…").width <= maxWidth)
+      low = mid;
     else high = mid - 1;
   }
   return chars.slice(0, low).join("").trimEnd() + "…";
 }
 
-function subtitleLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+function subtitleLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+) {
   const words = text.trim().replace(/\s+/g, " ").split(" ");
   const lines: string[] = [];
   let line = "";
   for (const word of words) {
     const candidate = line ? `${line} ${word}` : word;
-    if (line && ctx.measureText(candidate).width > maxWidth && lines.length < 2) {
+    if (
+      line &&
+      ctx.measureText(candidate).width > maxWidth &&
+      lines.length < 2
+    ) {
       lines.push(line);
       line = word;
     } else line = candidate;
@@ -894,7 +1076,31 @@ function subtitleLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: nu
   return lines;
 }
 const subtitleLaneCache = new WeakMap<SubtitleCue[], Map<string, number>>();
-function subtitleLane(ctx: CanvasRenderingContext2D, w: number, h: number, cues: SubtitleCue[]) {
+
+function subtitleFontSize(w: number, h: number) {
+  return Math.round(Math.max(24, Math.min(w, h) * 0.046));
+}
+
+function wrappedSubtitleLines(
+  ctx: CanvasRenderingContext2D,
+  cue: SubtitleCue,
+  width: number,
+) {
+  return subtitleLines(ctx, cue.text, width)
+    .slice(0, 3)
+    .map((line) => fitText(ctx, line, width));
+}
+
+function subtitleBlockHeight(lines: string[], fontSize: number) {
+  return lines.length * fontSize * 1.3 + fontSize * 0.55;
+}
+
+function subtitleLane(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  cues: SubtitleCue[],
+) {
   if (!cues.length) return 0;
   const key = `${w}:${h}`;
   let sizes = subtitleLaneCache.get(cues);
@@ -904,13 +1110,37 @@ function subtitleLane(ctx: CanvasRenderingContext2D, w: number, h: number, cues:
   }
   const cached = sizes.get(key);
   if (cached !== undefined) return cached;
-  const fontSize = Math.round(Math.max(24, Math.min(w, h) * 0.046));
+
+  const fontSize = subtitleFontSize(w, h);
+  const lineHeight = fontSize * 1.3;
+  const gap = fontSize * 0.16;
   ctx.save();
   ctx.font = `700 ${fontSize}px ui-sans-serif,system-ui,sans-serif`;
-  let rows = 1;
-  for (const cue of cues) rows = Math.max(rows, subtitleLines(ctx, cue.text, w * 0.84).length);
+  const heights = new Map<SubtitleCue, number>();
+  for (const cue of cues) {
+    if (
+      !Number.isFinite(cue.start) ||
+      !Number.isFinite(cue.end) ||
+      cue.end <= cue.start ||
+      !cue.text.trim()
+    )
+      continue;
+    heights.set(
+      cue,
+      subtitleBlockHeight(wrappedSubtitleLines(ctx, cue, w * 0.84), fontSize),
+    );
+  }
+  let peak = 0;
+  for (const cue of heights.keys()) {
+    const active = activeSubtitles(cues, cue.start);
+    const stackHeight =
+      active.reduce((sum, item) => sum + (heights.get(item) ?? 0), 0) +
+      Math.max(0, active.length - 1) * gap;
+    peak = Math.max(peak, stackHeight);
+  }
   ctx.restore();
-  const height = Math.min(3, rows) * fontSize * 1.3 + fontSize * 0.55;
+
+  const height = Math.min(h * 0.42, peak);
   sizes.set(key, height);
   return height;
 }
@@ -922,29 +1152,64 @@ function drawSubtitle(
   cues: SubtitleCue[],
   time: number,
 ) {
-  const cue = activeSubtitle(cues, time);
-  if (!cue) return;
-  const unit = Math.min(w, h),
-    fontSize = Math.round(Math.max(24, unit * 0.046));
-  const maxWidth = w * 0.84;
+  const active = activeSubtitles(cues, time);
+  if (!active.length) return;
+
+  const unit = Math.min(w, h);
+  const naturalFontSize = subtitleFontSize(w, h);
+  const laneCapacity = subtitleLane(ctx, w, h, cues);
+  if (laneCapacity <= 0) return;
+
+  const naturalLineHeight = naturalFontSize * 1.3;
+  const naturalPadding = naturalFontSize * 0.55;
+  const naturalGap = naturalFontSize * 0.16;
   ctx.save();
-  ctx.font = `700 ${fontSize}px ui-sans-serif,system-ui,sans-serif`;
-  const lines = subtitleLines(ctx, cue.text, maxWidth);
-  const shown = lines.slice(0, 3).map((item) => fitText(ctx, item, maxWidth));
-  const lineH = fontSize * 1.3,
-    blockH = shown.length * lineH + fontSize * 0.55;
+  ctx.font = `700 ${naturalFontSize}px ui-sans-serif,system-ui,sans-serif`;
+  const lines = active.map((cue) => wrappedSubtitleLines(ctx, cue, w * 0.84));
+  const blockHeights = lines.map((items) =>
+    subtitleBlockHeight(items, naturalFontSize),
+  );
+  const totalHeight =
+    blockHeights.reduce((sum, height) => sum + height, 0) +
+    Math.max(0, active.length - 1) * naturalGap;
+  const scale = Math.min(1, laneCapacity / Math.max(1, totalHeight));
+  const fontSize = naturalFontSize * scale;
+  const lineHeight = naturalLineHeight * scale;
+  const padding = naturalPadding * scale;
+  const gap = naturalGap * scale;
+  const shownHeights = blockHeights.map((height) => height * scale);
+  const shownTotal =
+    shownHeights.reduce((sum, height) => sum + height, 0) +
+    Math.max(0, active.length - 1) * gap;
   const bottom = h - Math.max(unit * 0.055, 22);
-  const top = bottom - blockH;
-  ctx.fillStyle = "rgba(5,8,18,.76)";
+  const laneTop = bottom - laneCapacity;
   ctx.beginPath();
-  ctx.roundRect(w * 0.07, top, w * 0.86, blockH, fontSize * 0.38);
-  ctx.fill();
+  ctx.rect(0, laneTop, w, laneCapacity);
+  ctx.clip();
+  ctx.font = `700 ${fontSize}px ui-sans-serif,system-ui,sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#fff";
   ctx.shadowColor = "#000";
   ctx.shadowBlur = fontSize * 0.22;
-  shown.forEach((item, i) => ctx.fillText(item, w / 2, top + fontSize * 0.42 + (i + 0.5) * lineH));
+
+  let top = bottom - shownTotal;
+  for (let cueIndex = 0; cueIndex < active.length; cueIndex += 1) {
+    const blockHeight = shownHeights[cueIndex];
+    ctx.fillStyle = "rgba(5,8,18,.76)";
+    ctx.beginPath();
+    ctx.roundRect(w * 0.07, top, w * 0.86, blockHeight, fontSize * 0.38);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    lines[cueIndex].forEach((line, lineIndex) => {
+      ctx.fillText(
+        line,
+        w / 2,
+        top + padding * 0.76 + (lineIndex + 0.5) * lineHeight,
+      );
+    });
+    top += blockHeight + gap;
+  }
   ctx.restore();
 }
 
@@ -990,7 +1255,8 @@ export function drawVisualization(
     ? (state.ringBands[0] ?? [])
     : fallbackBands(frequency, sampleRate, activity);
   ctx.clearRect(0, 0, w, h);
-  const drop = settings.dropEffects && !extras.reducedMotion ? (extras.drop ?? 0) : 0;
+  const drop =
+    settings.dropEffects && !extras.reducedMotion ? (extras.drop ?? 0) : 0;
   drawBackdrop(ctx, w, h, settings, motionTime, video, extras.background, drop);
   if (drop > 0) {
     const aura = ctx.createRadialGradient(
@@ -1008,7 +1274,15 @@ export function drawVisualization(
     ctx.fillRect(0, 0, w, h);
   }
   if (settings.beatRays && activity > 0)
-    drawBeatLighting(ctx, w, h, settings, ringPulse, motionTime, extras.reducedMotion);
+    drawBeatLighting(
+      ctx,
+      w,
+      h,
+      settings,
+      ringPulse,
+      motionTime,
+      extras.reducedMotion,
+    );
   if (settings.particles) {
     ctx.save();
     ctx.globalAlpha = 0.26 + activity * 0.74;
@@ -1035,7 +1309,14 @@ export function drawVisualization(
       extras.sound ? state.ringMix : 1,
     );
   if (settings.mode === "edges")
-    drawEdgeBars(ctx, w, h, settings, bands, !!logo && settings.logoAutoFit.edges);
+    drawEdgeBars(
+      ctx,
+      w,
+      h,
+      settings,
+      bands,
+      !!logo && settings.logoAutoFit.edges,
+    );
   if (settings.mode === "spectrum")
     drawSpectrum(
       ctx,
@@ -1056,8 +1337,17 @@ export function drawVisualization(
     for (let i = 0; i < 5; i++) {
       const angle = (i * Math.PI * 2) / 5 + motionTime * 0.18;
       ctx.beginPath();
-      ctx.arc(0, 0, reach + i * 3 + energy * 12, angle, angle + 0.32 + energy * 0.42);
-      ctx.strokeStyle = rgba(i % 2 ? settings.secondary : settings.primary, 0.16 + energy * 0.2);
+      ctx.arc(
+        0,
+        0,
+        reach + i * 3 + energy * 12,
+        angle,
+        angle + 0.32 + energy * 0.42,
+      );
+      ctx.strokeStyle = rgba(
+        i % 2 ? settings.secondary : settings.primary,
+        0.16 + energy * 0.2,
+      );
       ctx.lineWidth = Math.max(1.5, w / 680);
       ctx.lineCap = "round";
       ctx.shadowColor = i % 2 ? settings.secondary : settings.primary;
@@ -1079,10 +1369,26 @@ export function drawVisualization(
   vignette.addColorStop(1, "rgba(0,0,0,.42)");
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, w, h);
-  const glitchActivity = extras.sound && extras.sound.rms <= settings.quietThreshold ? 0 : activity;
+  const glitchActivity =
+    extras.sound && extras.sound.rms <= settings.quietThreshold ? 0 : activity;
   if (settings.glitch && !extras.reducedMotion)
-    drawGlitch(ctx, time, energy, bassPulse, glitchActivity, settings.glitchStrength);
-  if (logo) drawLogo(ctx, w, h, settings, logo, settings.mode === "ring" ? ringPulse : bassPulse);
+    drawGlitch(
+      ctx,
+      time,
+      energy,
+      bassPulse,
+      glitchActivity,
+      settings.glitchStrength,
+    );
+  if (logo)
+    drawLogo(
+      ctx,
+      w,
+      h,
+      settings,
+      logo,
+      settings.mode === "ring" ? ringPulse : bassPulse,
+    );
   drawTrackOverlay(ctx, w, h, settings, time, duration, captionHeight);
   drawSubtitle(ctx, w, h, subtitles, time);
 }
