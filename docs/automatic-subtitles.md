@@ -93,7 +93,10 @@ Word endings beyond the uploaded WAV are clipped to its exact duration when
 that word starts within the chunk. These adjustments flag the chunk for the
 existing bounded Quality recheck and show a timing-review notice if still
 present in the final result. Fast and Auto keep their existing request budgets.
-Reversed intervals and words starting beyond the upload remain invalid.
+Minor reversed intervals of up to 100 ms are repaired by ordering the two
+supplied endpoints, preserving the word without inventing a duration. This
+flags the chunk for the same bounded Quality recheck and timing-review notice.
+Larger reversals and words entirely beyond the upload remain invalid.
 
 The server validates origin, request size, WAV format and response structure, and
 applies bounded execution/retry limits. Process-local admission limits are only

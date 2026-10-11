@@ -77,16 +77,28 @@ function interaction(annotations = [], text = "") {
 let requestSequence = 0;
 async function transcribe(
   providerBody,
-  { languageCode = "", preset = "fast", recheck = false } = {},
+  { languageCode = "", preset = "fast", recheck = false, durationMs = 1000 } = {},
 ) {
   const calls = [];
+  const audio = Buffer.alloc(44 + durationMs * 16 * 2);
+  wav.copy(audio, 0, 0, 44);
+  audio.writeUInt32LE(audio.length - 8, 4);
+  audio.writeUInt32LE(audio.length - 44, 40);
   const request = new Request("https://pulseframe.test/api/lyrics/transcribe", {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-goog-api-key": `session-secret-${requestSequence++}`,
     },
-    body: JSON.stringify({ ...JSON.parse(payload), languageCode, preset, recheck }),
+    body: JSON.stringify({
+      ...JSON.parse(payload),
+      languageCode,
+      preset,
+      recheck,
+      chunkDurationMs: durationMs,
+      sourceDurationMs: durationMs,
+      audioBase64: audio.toString("base64"),
+    }),
   });
   const response = await handleGeminiLyricsRequest(request, {
     fetcher: async (url, options) => {
@@ -320,7 +332,7 @@ test("Transcribe reports stable issues for malformed timestamped responses", asy
     [
       "word_timing_out_of_bounds",
       interaction([
-        { type: "word_info", text: "reversed", start_offset: "0.400s", end_offset: "0.300s" },
+        { type: "word_info", text: "reversed", start_offset: "0.400s", end_offset: "0.299s" },
       ]),
     ],
     [
@@ -356,7 +368,7 @@ test("Transcribe reports stable issues for malformed timestamped responses", asy
   assert.deepEqual(warnings.at(-2)[1].responseTiming, {
     reason: "reversed_interval",
     startMs: 400,
-    endMs: 300,
+    endMs: 299,
     chunkDurationMs: 1000,
   });
   assert.deepEqual(warnings.at(-1)[1].responseTiming, {
@@ -414,4 +426,37 @@ test("Transcribe rejects positive intervals starting exactly at EOF", async () =
   assert.equal(response.status, 502);
   assert.equal(body.responseTiming.reason, "word_start_outside_chunk");
   assert.equal(body.responseTiming.chunkDurationMs, 1000);
+});
+
+test("Transcribe repairs the reported 100ms Quality reversal using supplied endpoints", async () => {
+  const { response, body } = await transcribe(
+    interaction([
+      { type: "word_info", text: "word.", start_offset: "2.400s", end_offset: "2.300s" },
+    ]),
+    { preset: "quality", durationMs: 90312 },
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.segments, [{ startMs: 2300, endMs: 2400, text: "word." }]);
+  assert.equal(body.flags.timing, true);
+  assert.equal(body.providerAttempts, 1);
+});
+
+test("Minor reversal repair is shared by modes and never moves outside words inside", async () => {
+  for (const preset of ["auto", "fast", "quality"]) {
+    const repaired = await transcribe(
+      interaction([
+        { type: "word_info", text: "hello", start_offset: "0.1s", end_offset: "0.2s" },
+        { type: "word_info", text: "world.", start_offset: "0.4s", end_offset: "0.3s" },
+      ]),
+      { preset },
+    );
+    assert.equal(repaired.response.status, 200);
+    assert.deepEqual(repaired.body.segments, [{ startMs: 100, endMs: 400, text: "hello world." }]);
+    assert.equal(repaired.body.flags.timing, true);
+  }
+  const outside = await transcribe(
+    interaction([{ type: "word_info", text: "outside", start_offset: "1.2s", end_offset: "1.1s" }]),
+  );
+  assert.equal(outside.response.status, 502);
+  assert.equal(outside.body.responseTiming.reason, "word_start_outside_chunk");
 });
