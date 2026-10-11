@@ -1,3 +1,4 @@
+import { WHISPER_LANGUAGE_CODES } from "./languages";
 import type { AutomaticSpeechRecognitionOutput } from "@huggingface/transformers";
 import type { GeneratedCue, LyricsProgress } from "./types";
 import { isNearDigitalSilence } from "./audio";
@@ -35,6 +36,7 @@ type LocalWhisperPipeline = ((
 
 export type WhisperRunOptions = {
   model: WhisperModelId;
+  languageCode?: string;
   preferredBackend: WhisperBackend;
   waveform: Float32Array;
   durationMs: number;
@@ -221,6 +223,9 @@ export async function transcribeLocalWhisper(
   options: WhisperRunOptions,
 ): Promise<WhisperRunResult> {
   const { waveform, durationMs, model, onProgress } = options;
+  const languageCode = options.languageCode ?? "";
+  if (!WHISPER_LANGUAGE_CODES.has(languageCode))
+    throw new Error("The selected song language is not supported by Whisper.");
   if (waveform.length === 0) throw new Error("No audio samples are available for transcription.");
   const starts = getWindowStarts(waveform.length);
   const collected: GeneratedCue[] = [];
@@ -268,6 +273,7 @@ export async function transcribeLocalWhisper(
         return (await activePipeline(windowAudio, {
           return_timestamps: true,
           task: "transcribe",
+          ...(languageCode ? { language: languageCode } : {}),
           do_sample: false,
         })) as AutomaticSpeechRecognitionOutput;
       };

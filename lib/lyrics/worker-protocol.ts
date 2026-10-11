@@ -12,6 +12,7 @@ export type LyricsWorkerStart = {
   channelCount: number;
   retainedBytes: number;
   isolationOnly?: boolean;
+  languageCode?: string;
 };
 
 export type LyricsWorkerAudioSlice = {
