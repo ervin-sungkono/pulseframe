@@ -48,6 +48,11 @@ file URI, an optional language hint, and verbatim word timestamps. It deletes
 the uploaded file after the attempt; if deletion fails, Google may retain it for
 up to 48 hours. Timed word annotations are grouped into bounded subtitle phrases
 and validated before returning Pulseframe's existing JSON contract.
+Word annotations may provide text directly or UTF-8 byte indices into their
+containing text block. The parser handles both, preserves sub-millisecond
+intervals, orders words by time, and keeps point-timed tokens inside a timed
+phrase without inventing a new cue duration. Phrase limits scale with chunk
+duration.
 
 Google permits up to 30 minutes with word timestamps, but the Vercel request
 size limit bounds each upload to 100 seconds here. A five-minute track uses four
@@ -79,6 +84,10 @@ model/request shape. Only `provider_unavailable` indicates a temporary provider
 failure. The Function logs Google's HTTP status and status name, but never the
 key, audio, or provider message. Vercel Hobby runtime logs have short retention,
 so inspect them soon after reproducing an issue.
+Timestamp-response validation errors include a fixed `responseIssue` code,
+such as `missing_word_annotations` or `word_timing_out_of_bounds`. The Function
+logs only that code and the chunk index, so parser failures can be diagnosed
+without exposing lyrics or the upstream response body.
 
 The server validates origin, request size, WAV format and response structure, and
 applies bounded execution/retry limits. Process-local admission limits are only
