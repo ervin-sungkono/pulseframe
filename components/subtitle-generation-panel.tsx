@@ -1,7 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Download, KeyRound, LoaderCircle, ShieldCheck, X } from "lucide-react";
+import { useEffect, useId, useState } from "react";
+import {
+  ChevronDown,
+  Download,
+  KeyRound,
+  Languages,
+  LoaderCircle,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 import type { SubtitleGenerationController } from "@/hooks/use-subtitle-generation";
 import { serializeGeneratedSubtitles } from "@/lib/lyrics/cues";
 import type { GeneratedSubtitleFormat } from "@/lib/lyrics/cues";
@@ -104,6 +112,7 @@ export function SubtitleGenerationPanel({
   disabled?: boolean;
 }) {
   const elapsedMs = useVisibleElapsedTime(generation);
+  const languageHintId = useId();
   const { items: diagnostics, timings } = generation.result
     ? diagnosticSummary(generation.result.result)
     : { items: [], timings: [] };
@@ -201,22 +210,31 @@ export function SubtitleGenerationPanel({
                 ? "A server key is available."
                 : "No server key is available."}
           </small>
-          <label className="subtitle-api-key">
-            <span>Song language</span>
-            <select
-              value={generation.languageCode}
-              onChange={(event) =>
-                generation.setLanguageCode(event.target.value as GeminiLanguageCode)
-              }
-              disabled={!canEditOptions}
-              aria-label="Song language"
-            >
-              {GEMINI_LANGUAGE_OPTIONS.map(([code, label]) => (
-                <option key={code || "auto"} value={code}>
-                  {label}
-                </option>
-              ))}
-            </select>
+          <label className="subtitle-language">
+            <span className="subtitle-language-label">
+              <Languages size={14} aria-hidden="true" /> Song language
+            </span>
+            <span className="subtitle-language-control">
+              <select
+                value={generation.languageCode}
+                onChange={(event) =>
+                  generation.setLanguageCode(event.target.value as GeminiLanguageCode)
+                }
+                disabled={!canEditOptions}
+                aria-label="Song language"
+                aria-describedby={languageHintId}
+              >
+                {GEMINI_LANGUAGE_OPTIONS.map(([code, label]) => (
+                  <option key={code || "auto"} value={code}>
+                    {code ? label : "Auto · detect language"}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={16} aria-hidden="true" />
+            </span>
+            <small id={languageHintId} className="subtitle-generation-note">
+              Choose the language you know, or let Gemini detect it.
+            </small>
           </label>
           <label className="subtitle-cloud-consent">
             <input
