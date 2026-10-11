@@ -79,6 +79,12 @@ test("Gemini failures preserve actionable upstream categories without exposing k
         env: { GEMINI_API_KEY: "server-secret" },
         fetcher: async (_url, options) => {
           assert.equal(options.headers["x-goog-api-key"], "session-secret");
+          const providerRequest = JSON.parse(options.body);
+          assert.equal(providerRequest.generationConfig.temperature, undefined);
+          assert.equal(
+            providerRequest.generationConfig.responseFormat.text.mimeType,
+            "application/json",
+          );
           return Response.json(
             { error: { status: upstreamCode, message: "Rejected session-secret" } },
             { status: upstreamStatus },

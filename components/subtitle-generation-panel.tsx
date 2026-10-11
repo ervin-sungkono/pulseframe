@@ -117,9 +117,10 @@ export function SubtitleGenerationPanel({
   const busy = generation.running;
   const canEditOptions = !busy && !disabled;
   const canStart = generation.canGenerate && !disabled;
-  const canRetry =
+  const canRecover =
     generation.phase === "error" ||
     (!!generation.result && !result?.cues.length);
+  const canRetry = canRecover && generation.retryable;
   const baseName = trackFile?.name || "subtitles";
 
   return (
@@ -315,7 +316,7 @@ export function SubtitleGenerationPanel({
             Retry
           </button>
         )}
-        {canRetry &&
+        {canRecover &&
           generation.method === "local" &&
           generation.preset !== "fast" &&
           !busy && (
@@ -328,7 +329,7 @@ export function SubtitleGenerationPanel({
               Use Fast
             </button>
           )}
-        {canRetry && generation.method === "gemini" && !busy && (
+        {canRecover && generation.method === "gemini" && !busy && (
           <button
             type="button"
             className="button button-soft"

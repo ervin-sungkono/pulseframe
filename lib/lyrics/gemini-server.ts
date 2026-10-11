@@ -689,7 +689,6 @@ export async function handleGeminiLyricsRequest(
           },
         ],
         generationConfig: {
-          temperature: 0,
           responseFormat: {
             text: {
               mimeType: "application/json",
