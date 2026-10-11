@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Download, KeyRound, LoaderCircle, ShieldCheck, X } from "lucide-react";
 import type { SubtitleGenerationController } from "@/hooks/use-subtitle-generation";
 import { serializeGeneratedSubtitles } from "@/lib/lyrics/cues";
@@ -19,6 +20,19 @@ function elapsedLabel(milliseconds: number) {
   const seconds = Math.floor(Math.max(0, milliseconds) / 1000);
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function useVisibleElapsedTime(generation: SubtitleGenerationController) {
+  const [elapsedMs, setElapsedMs] = useState(generation.elapsedMs);
+  useEffect(() => {
+    if (!generation.running || generation.startedAt === null) return;
+    const startedAt = generation.startedAt;
+    const update = () => setElapsedMs(Math.max(0, Date.now() - startedAt));
+    update();
+    const timer = window.setInterval(update, 500);
+    return () => window.clearInterval(timer);
+  }, [generation.running, generation.startedAt]);
+  return generation.running ? elapsedMs : generation.elapsedMs;
 }
 
 function displaySize(bytes: number) {
@@ -95,6 +109,7 @@ export function SubtitleGenerationPanel({
   trackFile?: File | null;
   disabled?: boolean;
 }) {
+  const elapsedMs = useVisibleElapsedTime(generation);
   const { items: diagnostics, timings } = generation.result
     ? diagnosticSummary(generation.result.result)
     : { items: [], timings: [] };
@@ -337,8 +352,8 @@ export function SubtitleGenerationPanel({
             <span>
               {elapsedLabel(
                 busy
-                  ? generation.elapsedMs
-                  : (generation.progress.elapsedMs ?? generation.elapsedMs),
+                  ? elapsedMs
+                  : (generation.progress.elapsedMs ?? elapsedMs),
               )}
             </span>
           </div>
@@ -393,7 +408,7 @@ export function SubtitleGenerationPanel({
                 {result.method === "local"
                   ? "On-device"
                   : "Gemini-generated; timing is estimated"}{" "}
-                · {elapsedLabel(generation.elapsedMs)}
+                · {elapsedLabel(elapsedMs)}
               </span>
             </div>
             <Download size={16} aria-hidden="true" />
@@ -498,6 +513,7 @@ export function SubtitleGenerationStatus({
   generation: SubtitleGenerationController;
   onOpen: () => void;
 }) {
+  const elapsedMs = useVisibleElapsedTime(generation);
   if (!generation.running) return null;
   const message =
     generation.progress?.message || "Preparing subtitle generation…";
@@ -512,7 +528,7 @@ export function SubtitleGenerationStatus({
       <span>
         Subtitles · {stageLabels[generation.progress?.stage ?? "prepare"]}
       </span>
-      <time>{elapsedLabel(generation.elapsedMs)}</time>
+      <time>{elapsedLabel(elapsedMs)}</time>
     </button>
   );
 }
