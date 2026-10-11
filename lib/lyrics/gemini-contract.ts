@@ -14,7 +14,8 @@ export const GEMINI_MAX_CHUNK_COUNT =
 export const GEMINI_MAX_REQUEST_BYTES = 4_500_000;
 export const GEMINI_MAX_WAV_BYTES = 44 + (GEMINI_SAMPLE_RATE * GEMINI_AUDIO_CHUNK_MS * 2) / 1000;
 export const GEMINI_MAX_BASE64_CHARS = 4 * Math.ceil(GEMINI_MAX_WAV_BYTES / 3);
-export const GEMINI_MAX_SEGMENTS_PER_CHUNK = 120;
+// Preserve the original allowance of two phrases per second when chunk sizes change.
+export const GEMINI_MAX_SEGMENTS_PER_CHUNK = 2 * Math.ceil(GEMINI_AUDIO_CHUNK_MS / 1000);
 export const GEMINI_TIMING_BOUNDARY_TOLERANCE_MS = 100;
 export const GEMINI_MAX_SEGMENT_TEXT_LENGTH = MAX_SUBTITLE_TEXT_LENGTH;
 

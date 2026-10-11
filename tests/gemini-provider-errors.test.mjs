@@ -32,6 +32,9 @@ process.on("exit", () => rmSync(directory, { recursive: true, force: true }));
 const { handleGeminiLyricsRequest } = await import(
   pathToFileURL(join(directory, "lyrics/gemini-server.mjs")).href
 );
+const { GEMINI_MAX_SEGMENTS_PER_CHUNK } = await import(
+  pathToFileURL(join(directory, "lyrics/gemini-contract.mjs")).href
+);
 
 const wav = Buffer.alloc(44 + 16_000 * 2);
 wav.write("RIFF", 0);
@@ -58,6 +61,49 @@ const payload = JSON.stringify({
   languageCode: "",
   audioBase64: wav.toString("base64"),
 });
+
+function interaction(annotations = [], text = "") {
+  return {
+    status: "completed",
+    steps: [
+      {
+        type: "model_output",
+        content: [{ type: "text", text, annotations }],
+      },
+    ],
+  };
+}
+
+async function transcribe(providerBody, { languageCode = "" } = {}) {
+  const calls = [];
+  const request = new Request("https://pulseframe.test/api/lyrics/transcribe", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": "session-secret" },
+    body: JSON.stringify({ ...JSON.parse(payload), languageCode }),
+  });
+  const response = await handleGeminiLyricsRequest(request, {
+    fetcher: async (url, options) => {
+      calls.push({ url, options });
+      if (url.endsWith("/upload/v1beta/files"))
+        return new Response(null, {
+          headers: {
+            "x-goog-upload-url": "https://generativelanguage.googleapis.com/upload/session",
+          },
+        });
+      if (url.endsWith("/upload/session"))
+        return Response.json({
+          file: {
+            name: "files/test",
+            uri: "https://generativelanguage.googleapis.com/v1beta/files/test",
+          },
+        });
+      if (options.method === "DELETE") return new Response(null);
+      assert.equal(url, "https://generativelanguage.googleapis.com/v1beta/interactions");
+      return Response.json(providerBody);
+    },
+  });
+  return { response, body: await response.json(), calls };
+}
 
 test("Gemini failures preserve actionable upstream categories without exposing keys", async () => {
   const cases = [
@@ -127,61 +173,17 @@ test("Gemini failures preserve actionable upstream categories without exposing k
 });
 
 test("Transcribe uploads server-side and converts timed words with a language hint", async () => {
-  const calls = [];
-  const request = new Request("https://pulseframe.test/api/lyrics/transcribe", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-goog-api-key": "session-secret" },
-    body: JSON.stringify({ ...JSON.parse(payload), languageCode: "id-ID" }),
-  });
-  const response = await handleGeminiLyricsRequest(request, {
-    fetcher: async (url, options) => {
-      calls.push({ url, options });
-      if (url.endsWith("/upload/v1beta/files"))
-        return new Response(null, {
-          headers: {
-            "x-goog-upload-url": "https://generativelanguage.googleapis.com/upload/session",
-          },
-        });
-      if (url.endsWith("/upload/session"))
-        return Response.json({
-          file: {
-            name: "files/test",
-            uri: "https://generativelanguage.googleapis.com/v1beta/files/test",
-          },
-        });
-      if (options.method === "DELETE") return new Response(null);
-      return Response.json({
-        status: "completed",
-        steps: [
-          {
-            type: "model_output",
-            content: [
-              {
-                type: "text",
-                text: "Hello world.",
-                annotations: [
-                  {
-                    type: "word_info",
-                    text: "Hello",
-                    start_offset: "0.100s",
-                    end_offset: "0.400s",
-                  },
-                  {
-                    type: "word_info",
-                    text: "world.",
-                    start_offset: "0.500s",
-                    end_offset: "0.900s",
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      });
-    },
-  });
+  const { response, body, calls } = await transcribe(
+    interaction(
+      [
+        { type: "word_info", text: "Hello", start_offset: "0.100s", end_offset: "0.400s" },
+        { type: "word_info", text: "world.", start_offset: "0.500s", end_offset: "0.900s" },
+      ],
+      "Hello world.",
+    ),
+    { languageCode: "id-ID" },
+  );
   assert.equal(response.status, 200);
-  const body = await response.json();
   assert.deepEqual(body.segments, [{ startMs: 100, endMs: 900, text: "Hello world." }]);
   assert.equal(body.model, "gemini-3.5-transcribe");
   assert.equal(calls.length, 4);
@@ -191,4 +193,179 @@ test("Transcribe uploads server-side and converts timed words with a language hi
     ["id-ID"],
   );
   assert.equal(calls[3].options.method, "DELETE");
+});
+
+test("Transcribe extracts missing WordInfo text with UTF-8 byte indices", async () => {
+  const { response, body } = await transcribe(
+    interaction(
+      [
+        {
+          type: "word_info",
+          start_index: 0,
+          end_index: 6,
+          start_offset: "0s",
+          end_offset: "0.050s",
+        },
+        {
+          type: "word_info",
+          start_index: 7,
+          end_index: 12,
+          start_offset: "0.100s",
+          end_offset: "0.400s",
+        },
+        {
+          type: "word_info",
+          start_index: 12,
+          end_index: 13,
+          start_offset: "0.500s",
+          end_offset: "0.900s",
+        },
+      ],
+      "音楽 hello!",
+    ),
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.segments, [{ startMs: 0, endMs: 900, text: "音楽 hello!" }]);
+});
+
+test("Transcribe preserves sub-millisecond word timing", async () => {
+  const { response, body } = await transcribe(
+    interaction([
+      {
+        type: "word_info",
+        text: "a",
+        start_offset: "0.0001s",
+        end_offset: "0.0004s",
+      },
+    ]),
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.segments, [{ startMs: 0.1, endMs: 0.4, text: "a" }]);
+});
+
+test("Transcribe keeps zero-duration punctuation in a timed phrase", async () => {
+  const { response, body } = await transcribe(
+    interaction([
+      { type: "word_info", text: "Hello", start_offset: "0.100s", end_offset: "0.400s" },
+      { type: "word_info", text: ",", start_offset: "0.400s", end_offset: "0.400s" },
+      { type: "word_info", text: "world.", start_offset: "0.500s", end_offset: "0.900s" },
+    ]),
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.segments, [{ startMs: 100, endMs: 900, text: "Hello, world." }]);
+  assert.equal(body.flags.timing, false);
+});
+
+test("Transcribe sorts reordered WordInfo annotations by start time", async () => {
+  const { response, body } = await transcribe(
+    interaction([
+      { type: "word_info", text: "world.", start_offset: "0.500s", end_offset: "0.900s" },
+      { type: "word_info", text: "Hello", start_offset: "0.100s", end_offset: "0.400s" },
+    ]),
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.segments, [{ startMs: 100, endMs: 900, text: "Hello world." }]);
+});
+
+test("Transcribe reports stable issues for malformed timestamped responses", async () => {
+  const invalidCases = [
+    ["invalid_interaction_shape", { status: "completed", steps: null }],
+    ["interaction_not_completed", { status: "in_progress", steps: [] }],
+    [
+      "no_positive_phrase_timing",
+      interaction([{ type: "word_info", text: "point", start_offset: "0.2s", end_offset: "0.2s" }]),
+    ],
+    [
+      "missing_or_invalid_word_timing",
+      interaction([{ type: "word_info", text: "PRIVATE_LYRICS", start_offset: "0.100s" }]),
+    ],
+    [
+      "invalid_word_text_indices",
+      interaction(
+        [
+          {
+            type: "word_info",
+            start_index: 0,
+            end_index: 1,
+            start_offset: "0.100s",
+            end_offset: "0.400s",
+          },
+        ],
+        "éclair",
+      ),
+    ],
+    [
+      "invalid_word_text_indices",
+      interaction(
+        [
+          {
+            type: "word_info",
+            start_index: 0,
+            end_index: 99,
+            start_offset: "0.100s",
+            end_offset: "0.400s",
+          },
+        ],
+        "hello",
+      ),
+    ],
+    ["missing_word_annotations", interaction([], "PRIVATE_LYRICS")],
+    [
+      "word_timing_out_of_bounds",
+      interaction([
+        { type: "word_info", text: "reversed", start_offset: "0.400s", end_offset: "0.300s" },
+      ]),
+    ],
+    [
+      "word_timing_out_of_bounds",
+      interaction([
+        { type: "word_info", text: "outside", start_offset: "0.900s", end_offset: "1.101s" },
+      ]),
+    ],
+  ];
+  const originalWarn = console.warn;
+  const warnings = [];
+  console.warn = (...args) => warnings.push(args);
+  try {
+    for (const [responseIssue, providerBody] of invalidCases) {
+      const { response, body } = await transcribe(providerBody);
+      assert.equal(response.status, 502);
+      assert.equal(body.error.code, "invalid_response");
+      assert.equal(body.providerAttempts, 1);
+      assert.equal(body.responseIssue, responseIssue);
+    }
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.doesNotMatch(JSON.stringify(warnings), /session-secret|server-secret|PRIVATE_LYRICS/);
+  assert.deepEqual(
+    warnings,
+    invalidCases.map(([responseIssue]) => [
+      "Gemini transcription response rejected",
+      { responseIssue, chunkIndex: 0 },
+    ]),
+  );
+});
+
+test("Transcribe rejects too many segments and accepts valid silence", async () => {
+  const annotations = Array.from({ length: GEMINI_MAX_SEGMENTS_PER_CHUNK + 1 }, (_, index) => ({
+    type: "word_info",
+    text: `word${index}.`,
+    start_offset: "0.100s",
+    end_offset: "0.200s",
+  }));
+  const tooMany = await transcribe(interaction(annotations));
+  assert.equal(tooMany.response.status, 502);
+  assert.equal(tooMany.body.responseIssue, "segment_limit_exceeded");
+  assert.equal(tooMany.body.providerAttempts, 1);
+
+  const atLimit = await transcribe(
+    interaction(annotations.slice(0, GEMINI_MAX_SEGMENTS_PER_CHUNK)),
+  );
+  assert.equal(atLimit.response.status, 200);
+  assert.equal(atLimit.body.segments.length, GEMINI_MAX_SEGMENTS_PER_CHUNK);
+
+  const silence = await transcribe({ status: "completed", steps: [] });
+  assert.equal(silence.response.status, 200);
+  assert.deepEqual(silence.body.segments, []);
 });

@@ -95,6 +95,24 @@ type ApiErrorCode =
   | "invalid_response"
   | "server_configuration";
 
+type TranscriptionResponseIssue =
+  | "invalid_interaction_shape"
+  | "interaction_not_completed"
+  | "missing_word_annotations"
+  | "missing_word_text"
+  | "invalid_word_text_indices"
+  | "missing_or_invalid_word_timing"
+  | "word_timing_out_of_bounds"
+  | "no_positive_phrase_timing"
+  | "segment_limit_exceeded"
+  | "invalid_subtitle_contract";
+
+class TranscriptionResponseError extends Error {
+  constructor(readonly issue: TranscriptionResponseIssue) {
+    super(issue);
+  }
+}
+
 function json(status: number, body: unknown, headers?: HeadersInit) {
   const resultHeaders = new Headers(headers);
   resultHeaders.set("content-type", "application/json; charset=utf-8");
@@ -111,12 +129,14 @@ function apiError(
     retryable?: boolean;
     retryAfterMs?: number;
     providerAttempts?: number;
+    responseIssue?: TranscriptionResponseIssue;
   } = {},
 ) {
   return json(status, {
     error: { code, message, retryable: details.retryable ?? false },
     ...(details.retryAfterMs === undefined ? {} : { retryAfterMs: details.retryAfterMs }),
     providerAttempts: details.providerAttempts ?? 0,
+    ...(details.responseIssue ? { responseIssue: details.responseIssue } : {}),
   });
 }
 
@@ -375,63 +395,108 @@ function tokenUsage(body: unknown) {
 }
 
 function normalizeInteraction(body: unknown, chunkDurationMs: number) {
-  if (!body || typeof body !== "object") throw new Error("invalid_response");
+  if (!body || typeof body !== "object")
+    throw new TranscriptionResponseError("invalid_interaction_shape");
   const interaction = body as { status?: unknown; steps?: unknown };
-  if (interaction.status !== "completed" || !Array.isArray(interaction.steps))
-    throw new Error("invalid_response");
+  if (interaction.status !== "completed")
+    throw new TranscriptionResponseError("interaction_not_completed");
+  if (!Array.isArray(interaction.steps))
+    throw new TranscriptionResponseError("invalid_interaction_shape");
+
   const words: Array<{ startMs: number; endMs: number; text: string }> = [];
   let transcript = "";
+  let timingAdjusted = false;
   const offsetMs = (value: unknown) => {
     if (typeof value !== "string" || !/^\d+(?:\.\d+)?s$/.test(value))
-      throw new Error("invalid_response");
-    return Math.round(Number(value.slice(0, -1)) * 1000);
+      throw new TranscriptionResponseError("missing_or_invalid_word_timing");
+    // Preserve sub-millisecond intervals; rounding individual words can turn a
+    // valid positive interval into a zero-duration word.
+    const milliseconds = Number(value.slice(0, -1)) * 1000;
+    if (!Number.isFinite(milliseconds))
+      throw new TranscriptionResponseError("missing_or_invalid_word_timing");
+    return milliseconds;
   };
+
   for (const step of interaction.steps) {
     if (!step || typeof step !== "object" || !Array.isArray(step.content)) continue;
     for (const content of step.content) {
       if (!content || typeof content !== "object" || content.type !== "text") continue;
       if (typeof content.text === "string") transcript += content.text;
       if (!Array.isArray(content.annotations)) continue;
+      let contentBytes: Uint8Array | undefined;
       for (const annotation of content.annotations) {
         if (!annotation || typeof annotation !== "object" || annotation.type !== "word_info")
           continue;
-        if (typeof annotation.text !== "string" || !annotation.text.trim())
-          throw new Error("invalid_response");
-        words.push({
-          text: annotation.text.trim(),
-          startMs: offsetMs(annotation.start_offset),
-          endMs: offsetMs(annotation.end_offset),
-        });
+        let text = typeof annotation.text === "string" ? annotation.text.trim() : undefined;
+        if (text === undefined) {
+          // WordInfo.text is optional. The REST schema's indices address UTF-8
+          // bytes in this content block, not JavaScript string positions.
+          if (typeof content.text !== "string")
+            throw new TranscriptionResponseError("missing_word_text");
+          contentBytes ??= new TextEncoder().encode(content.text);
+          const start = annotation.start_index;
+          const end = annotation.end_index;
+          if (
+            !Number.isSafeInteger(start) ||
+            !Number.isSafeInteger(end) ||
+            start < 0 ||
+            end <= start ||
+            end > contentBytes.length
+          )
+            throw new TranscriptionResponseError("invalid_word_text_indices");
+          try {
+            text = new TextDecoder("utf-8", { fatal: true })
+              .decode(contentBytes.subarray(start, end))
+              .trim();
+          } catch {
+            throw new TranscriptionResponseError("invalid_word_text_indices");
+          }
+        }
+        // Whitespace annotations do not contribute any subtitle text.
+        if (!text) continue;
+        const startMs = offsetMs(annotation.start_offset);
+        const endMs = offsetMs(annotation.end_offset);
+        if (
+          endMs < startMs ||
+          startMs < 0 ||
+          endMs > chunkDurationMs + GEMINI_TIMING_BOUNDARY_TOLERANCE_MS
+        )
+          throw new TranscriptionResponseError("word_timing_out_of_bounds");
+        const boundedStart = Math.min(startMs, chunkDurationMs);
+        const boundedEnd = Math.min(endMs, chunkDurationMs);
+        if ((boundedStart === boundedEnd && /[\p{L}\p{N}]/u.test(text)) || endMs > chunkDurationMs)
+          timingAdjusted = true;
+        words.push({ text, startMs: boundedStart, endMs: boundedEnd });
       }
     }
   }
-  if (!words.length && transcript.trim()) throw new Error("invalid_response");
+  if (!words.length && transcript.trim())
+    throw new TranscriptionResponseError("missing_word_annotations");
+
+  // WordInfo's schema does not promise chronological annotation ordering.
+  words.sort((left, right) => left.startMs - right.startMs);
   const segments: Array<{ startMs: number; endMs: number; text: string }> = [];
   let phrase: typeof words = [];
   const flush = () => {
     if (!phrase.length) return;
+    const endMs = Math.max(...phrase.map((word) => word.endMs));
+    // Point-timed tokens (including punctuation) belong to a neighbouring timed
+    // phrase; they must never become fabricated positive-duration subtitles.
+    if (endMs <= phrase[0].startMs) return;
     segments.push({
       startMs: phrase[0].startMs,
-      endMs: Math.max(...phrase.map((word) => word.endMs)),
+      endMs,
       text: phrase
         .map((word) => word.text)
         .join(" ")
-        .replace(/\s+([,.!?;:])/g, "$1"),
+        .replace(/\s+([,.!?;:，。！？；：])/gu, "$1"),
     });
     phrase = [];
   };
   let previousEnd = 0;
-  let previousStart = 0;
   for (const word of words) {
-    if (
-      word.startMs < previousStart ||
-      word.endMs <= word.startMs ||
-      word.startMs < 0 ||
-      word.startMs >= chunkDurationMs ||
-      word.endMs > chunkDurationMs + GEMINI_TIMING_BOUNDARY_TOLERANCE_MS ||
-      word.text.length > GEMINI_MAX_SEGMENT_TEXT_LENGTH
-    )
-      throw new Error("invalid_response");
+    if (word.text.length > GEMINI_MAX_SEGMENT_TEXT_LENGTH)
+      throw new TranscriptionResponseError("invalid_subtitle_contract");
     if (
       phrase.length &&
       (word.startMs - previousEnd > 800 ||
@@ -441,16 +506,20 @@ function normalizeInteraction(body: unknown, chunkDurationMs: number) {
           GEMINI_MAX_SEGMENT_TEXT_LENGTH)
     )
       flush();
-    phrase.push({ ...word, endMs: Math.min(word.endMs, chunkDurationMs) });
-    previousEnd = word.endMs;
-    previousStart = word.startMs;
+    phrase.push(word);
+    previousEnd = Math.max(previousEnd, word.endMs);
     if (/[.!?。！？]$/.test(word.text)) flush();
   }
   flush();
-  return geminiProviderContentSchema.parse({
+  if (phrase.length) throw new TranscriptionResponseError("no_positive_phrase_timing");
+  if (segments.length > GEMINI_MAX_SEGMENTS_PER_CHUNK)
+    throw new TranscriptionResponseError("segment_limit_exceeded");
+  const result = geminiProviderContentSchema.safeParse({
     segments,
-    flags: { uncertain: false, timing: false },
+    flags: { uncertain: false, timing: timingAdjusted },
   });
+  if (!result.success) throw new TranscriptionResponseError("invalid_subtitle_contract");
+  return result.data;
 }
 
 export async function handleGeminiLyricsRequest(request: Request, config: ServerConfig = {}) {
@@ -684,9 +753,18 @@ export async function handleGeminiLyricsRequest(request: Request, config: Server
   let result: ReturnType<typeof normalizeInteraction>;
   try {
     result = normalizeInteraction(providerBody, input.chunkDurationMs);
-  } catch {
+  } catch (error) {
+    const responseIssue =
+      error instanceof TranscriptionResponseError ? error.issue : "invalid_subtitle_contract";
+    // Fixed diagnostic codes only: never log the response body, lyric text,
+    // keys, or exception messages that could contain provider content.
+    console.warn("Gemini transcription response rejected", {
+      responseIssue,
+      chunkIndex: input.chunkIndex,
+    });
     return apiError(502, "invalid_response", publicErrorMessage("invalid_response"), {
       providerAttempts: 1,
+      responseIssue,
     });
   }
 
