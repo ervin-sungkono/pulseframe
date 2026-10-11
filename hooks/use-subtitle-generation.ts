@@ -135,8 +135,8 @@ function availableMemoryGiB() {
 }
 
 function estimateMayIsolate(method: LyricsMethod, preset: LyricsPreset) {
-  if (method !== "local") return false;
   if (preset === "quality") return true;
+  if (method !== "local") return false;
   if (preset !== "auto" || typeof navigator === "undefined") return false;
   const hasWebGpu = "gpu" in navigator;
   return hasWebGpu && (availableMemoryGiB() ?? 3) >= 3;
