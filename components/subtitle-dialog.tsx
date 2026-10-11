@@ -10,20 +10,12 @@ import {
 import { SubtitleGenerationPanel } from "@/components/subtitle-generation-panel";
 import type { SubtitleGenerationController } from "@/hooks/use-subtitle-generation";
 import { timestamp } from "./export-dialog";
-import {
-  MAX_SUBTITLE_CUES,
-  MAX_SUBTITLE_TEXT_LENGTH,
-  type SubtitleCue,
-} from "@/lib/subtitles";
+import { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH, type SubtitleCue } from "@/lib/subtitles";
 
 function readTime(value: string): number | null {
   const parts = value.trim().split(":");
-  if (parts.length > 2 || parts.some((part) => !/^\d+(\.\d+)?$/.test(part)))
-    return null;
-  const seconds =
-    parts.length === 2
-      ? Number(parts[0]) * 60 + Number(parts[1])
-      : Number(parts[0]);
+  if (parts.length > 2 || parts.some((part) => !/^\d+(\.\d+)?$/.test(part))) return null;
+  const seconds = parts.length === 2 ? Number(parts[0]) * 60 + Number(parts[1]) : Number(parts[0]);
   return Number.isFinite(seconds) ? seconds : null;
 }
 
@@ -96,9 +88,7 @@ export function SubtitleDialog({
     onChange([...cues, { id, start, end, text: "" }]);
   };
   const sorted = [...cues].sort((a, b) => a.start - b.start);
-  const overlaps = sorted.some(
-    (cue, index) => index > 0 && cue.start < sorted[index - 1].end,
-  );
+  const overlaps = sorted.some((cue, index) => index > 0 && cue.start < sorted[index - 1].end);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -109,8 +99,7 @@ export function SubtitleDialog({
           </div>
           <DialogTitle>Subtitles</DialogTitle>
           <DialogDescription>
-            Add timed caption blocks or generate subtitles from the complete
-            audio track.
+            Add timed caption blocks or generate subtitles from the complete audio track.
           </DialogDescription>
         </DialogHeader>
         <div className="subtitle-dialog-scroll">
@@ -128,9 +117,7 @@ export function SubtitleDialog({
             <button
               className="button button-soft"
               onClick={add}
-              disabled={
-                editingDisabled || !duration || cues.length >= MAX_SUBTITLE_CUES
-              }
+              disabled={editingDisabled || !duration || cues.length >= MAX_SUBTITLE_CUES}
             >
               <Plus size={16} /> Add at {timestamp(position, true)}
             </button>
@@ -159,9 +146,7 @@ export function SubtitleDialog({
                     </button>
                     <button
                       disabled={editingDisabled}
-                      onClick={() =>
-                        onChange(cues.filter((item) => item.id !== cue.id))
-                      }
+                      onClick={() => onChange(cues.filter((item) => item.id !== cue.id))}
                       title="Remove block"
                       aria-label={"Remove block " + (index + 1)}
                     >
@@ -176,9 +161,7 @@ export function SubtitleDialog({
                   maxLength={MAX_SUBTITLE_TEXT_LENGTH}
                   value={cue.text}
                   disabled={editingDisabled}
-                  onChange={(event) =>
-                    update(cue.id, { text: event.target.value })
-                  }
+                  onChange={(event) => update(cue.id, { text: event.target.value })}
                 />
                 <div className="cue-range">
                   <CueTime
@@ -193,9 +176,7 @@ export function SubtitleDialog({
                     value={cue.end}
                     max={duration}
                     disabled={editingDisabled}
-                    onChange={(end) =>
-                      update(cue.id, { end: Math.max(cue.start + 0.1, end) })
-                    }
+                    onChange={(end) => update(cue.id, { end: Math.max(cue.start + 0.1, end) })}
                   />
                 </div>
               </div>
@@ -203,15 +184,11 @@ export function SubtitleDialog({
           </div>
           {overlaps && (
             <p className="subtitle-warning">
-              Overlapping blocks stack by start time. Earlier blocks appear
-              above later blocks.
+              Overlapping blocks stack by start time. Earlier blocks appear above later blocks.
             </p>
           )}
         </div>
-        <button
-          className="button done-button subtitle-done"
-          onClick={() => onOpenChange(false)}
-        >
+        <button className="button done-button subtitle-done" onClick={() => onOpenChange(false)}>
           Done
         </button>
       </DialogContent>

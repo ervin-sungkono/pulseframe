@@ -24,9 +24,7 @@ function factorize(length: number): number[] {
   while (remainder > 1) {
     const radix = RADICES.find((candidate) => remainder % candidate === 0);
     if (radix === undefined) {
-      throw new RangeError(
-        `FFT length ${length} has a factor other than 2, 3, or 5`,
-      );
+      throw new RangeError(`FFT length ${length} has a factor other than 2, 3, or 5`);
     }
     factors.push(radix);
     remainder /= radix;
@@ -57,10 +55,7 @@ function makeStages(factors: readonly number[]): FFTStage[] {
   return stages;
 }
 
-function makeInputPermutation(
-  length: number,
-  factors: readonly number[],
-): Int32Array {
+function makeInputPermutation(length: number, factors: readonly number[]): Int32Array {
   const permutation = new Int32Array(length);
   const digits = new Int32Array(factors.length);
   for (let destination = 0; destination < length; destination += 1) {
@@ -120,9 +115,7 @@ export class FFTPlan {
       outputReal.length < this.length ||
       outputImag.length < this.length
     ) {
-      throw new RangeError(
-        `FFT buffers must each contain at least ${this.length} samples`,
-      );
+      throw new RangeError(`FFT buffers must each contain at least ${this.length} samples`);
     }
 
     const inverse = direction === "inverse";
@@ -150,9 +143,7 @@ export class FFTPlan {
               const tableIndex = branch * length + outputFrequency;
               const factorReal = twiddleReal[tableIndex];
               const forwardTwiddleImag = twiddleImag[tableIndex];
-              const twiddleImagValue = inverse
-                ? -forwardTwiddleImag
-                : forwardTwiddleImag;
+              const twiddleImagValue = inverse ? -forwardTwiddleImag : forwardTwiddleImag;
               const valueReal = this.scratchReal[branch];
               const valueImag = this.scratchImag[branch];
               sumReal += valueReal * factorReal - valueImag * twiddleImagValue;

@@ -1,8 +1,4 @@
-import {
-  MAX_SUBTITLE_CUES,
-  MAX_SUBTITLE_TEXT_LENGTH,
-  type SubtitleCue,
-} from "../subtitles";
+import { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH, type SubtitleCue } from "../subtitles";
 import type { GeneratedApplication, GeneratedCue } from "./types";
 
 export type GeneratedCueInput = {
@@ -34,9 +30,7 @@ function estimateMissingEndMs(
   windowEndMs: number,
 ) {
   const nextBoundaryMs =
-    nextStartMs !== undefined && nextStartMs > startMs
-      ? nextStartMs
-      : windowEndMs;
+    nextStartMs !== undefined && nextStartMs > startMs ? nextStartMs : windowEndMs;
   return Math.min(nextBoundaryMs, windowEndMs);
 }
 
@@ -70,11 +64,7 @@ function mergeMatchingOverlaps(cues: GeneratedCue[]) {
   const result: GeneratedCue[] = [];
   for (const cue of cues) {
     const previous = result.at(-1);
-    if (
-      previous &&
-      previous.text === cue.text &&
-      cue.startMs < previous.endMs
-    ) {
+    if (previous && previous.text === cue.text && cue.startMs < previous.endMs) {
       previous.startMs = Math.min(previous.startMs, cue.startMs);
       previous.endMs = Math.max(previous.endMs, cue.endMs);
       continue;
@@ -112,12 +102,10 @@ export function normalizeGeneratedCues(
   input: readonly GeneratedCueInput[],
   durationMs: number,
 ): GeneratedCue[] {
-  if (!Number.isFinite(durationMs) || durationMs <= 0 || !Array.isArray(input))
-    return [];
+  if (!Number.isFinite(durationMs) || durationMs <= 0 || !Array.isArray(input)) return [];
 
   const candidates = input.flatMap((raw, order) => {
-    if (!raw || typeof raw.text !== "string" || typeof raw.startMs !== "number")
-      return [];
+    if (!raw || typeof raw.text !== "string" || typeof raw.startMs !== "number") return [];
     if (!Number.isFinite(raw.startMs)) return [];
     const text = cleanCueText(raw.text);
     if (!text) return [];
@@ -130,8 +118,7 @@ export function normalizeGeneratedCues(
       const nextStartMs = findNextValidStart(input, order, unclampedStart);
       endMs = estimateMissingEndMs(startMs, nextStartMs, durationMs);
     } else {
-      if (typeof raw.endMs !== "number" || !Number.isFinite(raw.endMs))
-        return [];
+      if (typeof raw.endMs !== "number" || !Number.isFinite(raw.endMs)) return [];
       endMs = raw.endMs;
     }
     endMs = Math.min(durationMs, endMs);
@@ -162,8 +149,7 @@ export function normalizeWindowCues(
     return [];
   const localDurationMs = window.endMs - window.startMs;
   const owned = input.flatMap((raw, order) => {
-    if (!raw || typeof raw.text !== "string" || typeof raw.startMs !== "number")
-      return [];
+    if (!raw || typeof raw.text !== "string" || typeof raw.startMs !== "number") return [];
     if (!Number.isFinite(raw.startMs)) return [];
     const text = cleanCueText(raw.text);
     if (!text) return [];
@@ -178,8 +164,7 @@ export function normalizeWindowCues(
         localDurationMs,
       );
     } else {
-      if (typeof raw.endMs !== "number" || !Number.isFinite(raw.endMs))
-        return [];
+      if (typeof raw.endMs !== "number" || !Number.isFinite(raw.endMs)) return [];
       localEndMs = raw.endMs;
     }
     localEndMs = Math.min(localDurationMs, localEndMs);
@@ -187,8 +172,7 @@ export function normalizeWindowCues(
     const startMs = window.startMs + localStartMs;
     const endMs = Math.min(trackDurationMs, window.startMs + localEndMs);
     const midpointMs = (startMs + endMs) / 2;
-    if (midpointMs < window.ownsStartMs || midpointMs >= window.ownsEndMs)
-      return [];
+    if (midpointMs < window.ownsStartMs || midpointMs >= window.ownsEndMs) return [];
     return [{ startMs, endMs, text }];
   });
   return normalizeGeneratedCues(owned, trackDurationMs);
@@ -218,8 +202,7 @@ export function canApplyGeneratedCues(
   if (cues.length > MAX_SUBTITLE_CUES)
     return {
       canApply: false,
-      error:
-        "This result exceeds the 500-subtitle limit. Download the complete result instead.",
+      error: "This result exceeds the 500-subtitle limit. Download the complete result instead.",
       estimatedCueBytes,
     };
   if (cues.some((cue) => cue.text.length > MAX_SUBTITLE_TEXT_LENGTH))
@@ -285,10 +268,7 @@ export function generatedCuesToSubtitles(
 }
 
 function escapeVttText(text: string) {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function lrcTimestamp(valueMs: number) {

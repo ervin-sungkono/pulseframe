@@ -5,8 +5,7 @@ import { lyricsDevApi } from "./scripts/lyrics-dev-api";
 
 export default defineConfig(({ mode }) => {
   const environment = loadEnv(mode, process.cwd(), "GEMINI_");
-  for (const [name, value] of Object.entries(environment))
-    process.env[name] ??= value;
+  for (const [name, value] of Object.entries(environment)) process.env[name] ??= value;
   const isolationHeaders = {
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Embedder-Policy": "credentialless",

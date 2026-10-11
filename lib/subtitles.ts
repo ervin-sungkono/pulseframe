@@ -22,10 +22,7 @@ export function activeSubtitles(cues: SubtitleCue[], time: number) {
         typeof cue.text === "string" &&
         !!cue.text.trim(),
     )
-    .sort(
-      (left, right) =>
-        left.cue.start - right.cue.start || left.index - right.index,
-    )
+    .sort((left, right) => left.cue.start - right.cue.start || left.index - right.index)
     .map(({ cue }) => cue);
 }
 

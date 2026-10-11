@@ -2,10 +2,7 @@ import * as ORT from "onnxruntime-web/webgpu";
 import { getCpuThreadCount, planIsolationBlocks } from "./policy";
 import { MDX_CHANNELS, MDX_COMPENSATION, MDX_VALID_LENGTH } from "./mdx-config";
 import { KIM_VOCAL_2_MODEL, loadVerifiedModel } from "./model-cache";
-import {
-  configureMdxRuntimeAssets,
-  type MdxRuntimeEnvironment,
-} from "./runtime-assets";
+import { configureMdxRuntimeAssets, type MdxRuntimeEnvironment } from "./runtime-assets";
 import {
   MDX_BLOCK_SAMPLES,
   MDX_MODEL_SHAPE,
@@ -63,8 +60,7 @@ const GRAPH_CAPTURE_NOTICE =
   "ONNX Runtime WebGPU graph capture is disabled pending repeated physical-browser validation.";
 
 function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted)
-    throw new DOMException("Vocal isolation was canceled", "AbortError");
+  if (signal.aborted) throw new DOMException("Vocal isolation was canceled", "AbortError");
 }
 
 function supportsSharedWasmMemory(): boolean {
@@ -86,8 +82,7 @@ function getEffectiveWasmThreads(requestedThreads?: number): number {
     sharedWasmMemoryAvailable,
     hardwareConcurrency: navigatorLike?.hardwareConcurrency ?? 1,
   });
-  if (requestedThreads === undefined || !Number.isFinite(requestedThreads))
-    return available;
+  if (requestedThreads === undefined || !Number.isFinite(requestedThreads)) return available;
   return Math.max(1, Math.min(available, Math.floor(requestedThreads)));
 }
 
@@ -95,19 +90,14 @@ async function hasHighPerformanceWebGpuAdapter(): Promise<boolean> {
   const navigatorLike = globalThis.navigator as
     | (Navigator & {
         gpu?: {
-          requestAdapter: (options?: {
-            powerPreference?: string;
-          }) => Promise<unknown | null>;
+          requestAdapter: (options?: { powerPreference?: string }) => Promise<unknown | null>;
         };
       })
     | undefined;
   const gpu = navigatorLike?.gpu;
   if (!gpu || typeof gpu.requestAdapter !== "function") return false;
   try {
-    return (
-      (await gpu.requestAdapter({ powerPreference: "high-performance" })) !==
-      null
-    );
+    return (await gpu.requestAdapter({ powerPreference: "high-performance" })) !== null;
   } catch {
     return false;
   }
@@ -143,11 +133,7 @@ function createBlendWindow(length: number): Float32Array {
   return weights;
 }
 
-function createBlockInput(
-  source: Float32Array,
-  start: number,
-  target: Float32Array,
-): void {
+function createBlockInput(source: Float32Array, start: number, target: Float32Array): void {
   target.fill(0);
   const sourceStart = Math.max(0, start);
   const sourceEnd = Math.min(source.length, start + target.length);
@@ -192,18 +178,9 @@ function createSessionWithTimeout(
       reject(error);
     };
     const onAbort = () =>
-      fail(
-        signal.reason ??
-          new DOMException("Model initialization was canceled", "AbortError"),
-      );
+      fail(signal.reason ?? new DOMException("Model initialization was canceled", "AbortError"));
     const timeout = setTimeout(
-      () =>
-        fail(
-          new DOMException(
-            "Isolation model initialization timed out",
-            "TimeoutError",
-          ),
-        ),
+      () => fail(new DOMException("Isolation model initialization timed out", "TimeoutError")),
       SESSION_INITIALIZATION_TIMEOUT_MS,
     );
     signal.addEventListener("abort", onAbort, { once: true });
@@ -245,13 +222,9 @@ async function runModelBlock(
       !(outputData instanceof Float32Array) ||
       outputData.length !== PLANAR_TENSOR_SIZE ||
       outputDims.length !== MDX_MODEL_SHAPE.length ||
-      outputDims.some(
-        (dimension, index) => dimension !== MDX_MODEL_SHAPE[index],
-      )
+      outputDims.some((dimension, index) => dimension !== MDX_MODEL_SHAPE[index])
     ) {
-      throw new Error(
-        "Kim Vocal 2 returned a tensor with an unexpected shape or data type",
-      );
+      throw new Error("Kim Vocal 2 returned a tensor with an unexpected shape or data type");
     }
     outputBuffer.set(outputData);
   } finally {
@@ -332,9 +305,7 @@ export async function isolateVocals(
   const outputImagLeft = modelOutput.subarray(planeSize, planeSize * 2);
   const outputRealRight = modelOutput.subarray(planeSize * 2, planeSize * 3);
   const outputImagRight = modelOutput.subarray(planeSize * 3, planeSize * 4);
-  const inputTensor = new runtime.Tensor("float32", inputData, [
-    ...MDX_MODEL_SHAPE,
-  ]);
+  const inputTensor = new runtime.Tensor("float32", inputData, [...MDX_MODEL_SHAPE]);
 
   let session: ModelSession | null = null;
   let backend: InferenceBackend = "wasm";
@@ -360,19 +331,11 @@ export async function isolateVocals(
         };
       } catch {
         throwIfAborted(options.signal);
-        notices.push(
-          "WebGPU could not initialize; vocal isolation continued with WASM.",
-        );
+        notices.push("WebGPU could not initialize; vocal isolation continued with WASM.");
       }
     }
     return {
-      session: await createSessionWithTimeout(
-        runtime,
-        model,
-        "wasm",
-        threads,
-        options.signal,
-      ),
+      session: await createSessionWithTimeout(runtime, model, "wasm", threads, options.signal),
       backend: "wasm",
     };
   };
@@ -380,27 +343,17 @@ export async function isolateVocals(
   try {
     const sessionLoadingStart = performance.now();
     const webgpuAvailable = await hasHighPerformanceWebGpuAdapter();
-    const initialized = await initializeSession(
-      webgpuAvailable ? "webgpu" : "wasm",
-    );
+    const initialized = await initializeSession(webgpuAvailable ? "webgpu" : "wasm");
     timings.sessionLoadingMs += performance.now() - sessionLoadingStart;
     session = initialized.session;
     backend = initialized.backend;
     if (!webgpuAvailable) {
-      notices.push(
-        "A compatible WebGPU adapter was unavailable; vocal isolation ran with WASM.",
-      );
+      notices.push("A compatible WebGPU adapter was unavailable; vocal isolation ran with WASM.");
     }
     throwIfAborted(options.signal);
 
-    if (
-      !session ||
-      session.inputNames.length !== 1 ||
-      session.outputNames.length !== 1
-    ) {
-      throw new Error(
-        "The pinned Kim Vocal 2 model must expose one input and one output tensor",
-      );
+    if (!session || session.inputNames.length !== 1 || session.outputNames.length !== 1) {
+      throw new Error("The pinned Kim Vocal 2 model must expose one input and one output tensor");
     }
     inputName = session.inputNames[0];
     outputName = session.outputNames[0];
@@ -416,13 +369,7 @@ export async function isolateVocals(
 
       let inferenceStart = performance.now();
       try {
-        await runModelBlock(
-          session,
-          inputName,
-          outputName,
-          inputTensor,
-          modelOutput,
-        );
+        await runModelBlock(session, inputName, outputName, inputTensor, modelOutput);
         timings.inferenceMs += performance.now() - inferenceStart;
       } catch (error) {
         timings.inferenceMs += performance.now() - inferenceStart;
@@ -436,21 +383,14 @@ export async function isolateVocals(
         );
         const fallbackSessionLoadingStart = performance.now();
         const fallback = await initializeSession("wasm");
-        timings.sessionLoadingMs +=
-          performance.now() - fallbackSessionLoadingStart;
+        timings.sessionLoadingMs += performance.now() - fallbackSessionLoadingStart;
         session = fallback.session;
         backend = fallback.backend;
         inputName = session.inputNames[0];
         outputName = session.outputNames[0];
         inferenceStart = performance.now();
         try {
-          await runModelBlock(
-            session,
-            inputName,
-            outputName,
-            inputTensor,
-            modelOutput,
-          );
+          await runModelBlock(session, inputName, outputName, inputTensor, modelOutput);
           timings.inferenceMs += performance.now() - inferenceStart;
         } catch (fallbackError) {
           timings.inferenceMs += performance.now() - inferenceStart;
@@ -470,10 +410,8 @@ export async function isolateVocals(
         const outputOffset = block.validInputOffset + offset;
         const target = block.validStart + offset;
         const weight = blendWindow[offset];
-        vocals[0][target] +=
-          blockOutputLeft[outputOffset] * MDX_COMPENSATION * weight;
-        vocals[1][target] +=
-          blockOutputRight[outputOffset] * MDX_COMPENSATION * weight;
+        vocals[0][target] += blockOutputLeft[outputOffset] * MDX_COMPENSATION * weight;
+        vocals[1][target] += blockOutputRight[outputOffset] * MDX_COMPENSATION * weight;
         weightSums[target] += weight;
       }
       timings.blendingMs += performance.now() - blendingStart;
@@ -508,9 +446,7 @@ export async function isolateVocals(
       sourceLength,
       blocksCompleted,
       backend:
-        completedBackends.size > 1
-          ? "mixed"
-          : (completedBackends.values().next().value ?? backend),
+        completedBackends.size > 1 ? "mixed" : (completedBackends.values().next().value ?? backend),
       graphCapture: false,
       notices,
       timings,

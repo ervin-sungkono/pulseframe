@@ -53,9 +53,7 @@ function downloadResult(
     snapshot.result.durationMs,
     format,
   );
-  const url = URL.createObjectURL(
-    new Blob([body], { type: "text/plain;charset=utf-8" }),
-  );
+  const url = URL.createObjectURL(new Blob([body], { type: "text/plain;charset=utf-8" }));
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = `${filename.replace(/\.[^.]+$/, "")}-generated.${format}`;
@@ -63,14 +61,9 @@ function downloadResult(
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-function diagnosticSummary(
-  result: NonNullable<SubtitleGenerationController["result"]>["result"],
-) {
+function diagnosticSummary(result: NonNullable<SubtitleGenerationController["result"]>["result"]) {
   const items = [
-    [
-      "Vocal isolation",
-      result.diagnostics.isolation === "none" ? "Not used" : "Used",
-    ],
+    ["Vocal isolation", result.diagnostics.isolation === "none" ? "Not used" : "Used"],
     ["Isolation backend", result.diagnostics.isolationBackend],
     ["Transcription backend", result.diagnostics.whisperBackend],
     [
@@ -117,9 +110,7 @@ export function SubtitleGenerationPanel({
   const busy = generation.running;
   const canEditOptions = !busy && !disabled;
   const canStart = generation.canGenerate && !disabled;
-  const canRecover =
-    generation.phase === "error" ||
-    (!!generation.result && !result?.cues.length);
+  const canRecover = generation.phase === "error" || (!!generation.result && !result?.cues.length);
   const canRetry = canRecover && generation.retryable;
   const baseName = trackFile?.name || "subtitles";
 
@@ -137,10 +128,7 @@ export function SubtitleGenerationPanel({
         <ShieldCheck size={18} aria-hidden="true" />
       </div>
 
-      <fieldset
-        className="subtitle-generation-method"
-        disabled={!canEditOptions}
-      >
+      <fieldset className="subtitle-generation-method" disabled={!canEditOptions}>
         <legend>Method</legend>
         <label>
           <input
@@ -166,14 +154,13 @@ export function SubtitleGenerationPanel({
 
       {generation.method === "local" ? (
         <p className="subtitle-generation-note">
-          Audio stays on this device. Model files download the first time you
-          generate.
+          Audio stays on this device. Model files download the first time you generate.
         </p>
       ) : (
         <div className="subtitle-cloud-settings">
           <p className="subtitle-cloud-warning">
-            Audio is sent to Google. API usage may incur charges. Only this
-            track&apos;s audio is sent.
+            Audio is sent to Google. API usage may incur charges. Only this track&apos;s audio is
+            sent.
           </p>
           <label className="subtitle-api-key">
             <span>
@@ -205,10 +192,7 @@ export function SubtitleGenerationPanel({
                 : "No session key entered"}
             </span>
           </div>
-          <small
-            className="subtitle-server-key-status"
-            aria-label="Server key availability"
-          >
+          <small className="subtitle-server-key-status" aria-label="Server key availability">
             {generation.serverKeyAvailabilityLoading
               ? "Checking server-key availability…"
               : generation.serverKeyAvailable
@@ -219,23 +203,15 @@ export function SubtitleGenerationPanel({
             <input
               type="checkbox"
               checked={generation.cloudConsent}
-              onChange={(event) =>
-                generation.acknowledgeCloudUpload(event.target.checked)
-              }
+              onChange={(event) => generation.acknowledgeCloudUpload(event.target.checked)}
               disabled={!trackFile || !canEditOptions}
             />
-            <span>
-              I agree to send this track&apos;s audio to Google for
-              transcription.
-            </span>
+            <span>I agree to send this track&apos;s audio to Google for transcription.</span>
           </label>
         </div>
       )}
 
-      <fieldset
-        className="subtitle-generation-presets"
-        disabled={!canEditOptions}
-      >
+      <fieldset className="subtitle-generation-presets" disabled={!canEditOptions}>
         <legend>Processing</legend>
         {(["auto", "fast", "quality"] as const).map((option) => (
           <label key={option}>
@@ -246,13 +222,7 @@ export function SubtitleGenerationPanel({
               checked={generation.preset === option}
               onChange={() => generation.setPreset(option)}
             />
-            <span>
-              {option === "auto"
-                ? "Auto"
-                : option === "fast"
-                  ? "Fast"
-                  : "Quality"}
-            </span>
+            <span>{option === "auto" ? "Auto" : option === "fast" ? "Fast" : "Quality"}</span>
           </label>
         ))}
       </fieldset>
@@ -316,19 +286,16 @@ export function SubtitleGenerationPanel({
             Retry
           </button>
         )}
-        {canRecover &&
-          generation.method === "local" &&
-          generation.preset !== "fast" &&
-          !busy && (
-            <button
-              type="button"
-              className="button button-soft"
-              onClick={() => void generation.useFast()}
-              disabled={disabled}
-            >
-              Use Fast
-            </button>
-          )}
+        {canRecover && generation.method === "local" && generation.preset !== "fast" && !busy && (
+          <button
+            type="button"
+            className="button button-soft"
+            onClick={() => void generation.useFast()}
+            disabled={disabled}
+          >
+            Use Fast
+          </button>
+        )}
         {canRecover && generation.method === "gemini" && !busy && (
           <button
             type="button"
@@ -351,11 +318,7 @@ export function SubtitleGenerationPanel({
           <div>
             <strong>{stageLabels[generation.progress.stage]}</strong>
             <span>
-              {elapsedLabel(
-                busy
-                  ? elapsedMs
-                  : (generation.progress.elapsedMs ?? elapsedMs),
-              )}
+              {elapsedLabel(busy ? elapsedMs : (generation.progress.elapsedMs ?? elapsedMs))}
             </span>
           </div>
           <p>
@@ -374,10 +337,7 @@ export function SubtitleGenerationPanel({
                 <span>
                   {generation.progress.completed} of {generation.progress.total}
                 </span>
-                <progress
-                  value={generation.progress.completed}
-                  max={generation.progress.total}
-                />
+                <progress value={generation.progress.completed} max={generation.progress.total} />
               </div>
             )}
         </div>
@@ -394,10 +354,7 @@ export function SubtitleGenerationPanel({
       )}
 
       {result && (
-        <section
-          className="subtitle-generated-result"
-          aria-label="Generated subtitles"
-        >
+        <section className="subtitle-generated-result" aria-label="Generated subtitles">
           <div className="subtitle-generated-result-heading">
             <div>
               <strong>
@@ -406,9 +363,7 @@ export function SubtitleGenerationPanel({
                   : "No lyrics detected"}
               </strong>
               <span>
-                {result.method === "local"
-                  ? "On-device"
-                  : "Gemini-generated; timing is estimated"}{" "}
+                {result.method === "local" ? "On-device" : "Gemini-generated; timing is estimated"}{" "}
                 · {elapsedLabel(elapsedMs)}
               </span>
             </div>
@@ -426,9 +381,7 @@ export function SubtitleGenerationPanel({
               aria-label="Replace existing subtitles?"
             >
               <strong>Replace existing subtitles?</strong>
-              <span>
-                The current cues remain until you choose to replace them.
-              </span>
+              <span>The current cues remain until you choose to replace them.</span>
               <div>
                 <button
                   type="button"
@@ -498,8 +451,7 @@ export function SubtitleGenerationPanel({
       </p>
       {generation.apiKey && generation.method === "gemini" && (
         <p className="subtitle-key-memory-hint">
-          Your key stays in this browser session. Disconnect or reload to clear
-          it.
+          Your key stays in this browser session. Disconnect or reload to clear it.
         </p>
       )}
     </section>
@@ -516,8 +468,7 @@ export function SubtitleGenerationStatus({
 }) {
   const elapsedMs = useVisibleElapsedTime(generation);
   if (!generation.running) return null;
-  const message =
-    generation.progress?.message || "Preparing subtitle generation…";
+  const message = generation.progress?.message || "Preparing subtitle generation…";
   return (
     <button
       type="button"
@@ -526,9 +477,7 @@ export function SubtitleGenerationStatus({
       aria-label={`Subtitle generation in progress. ${message} Open subtitles.`}
     >
       <LoaderCircle size={15} className="subtitle-spinner" />
-      <span>
-        Subtitles · {stageLabels[generation.progress?.stage ?? "prepare"]}
-      </span>
+      <span>Subtitles · {stageLabels[generation.progress?.stage ?? "prepare"]}</span>
       <time>{elapsedLabel(elapsedMs)}</time>
     </button>
   );

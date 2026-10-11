@@ -6,18 +6,12 @@ import { MAX_LYRICS_DURATION_MS } from "./policy.js";
 export const GEMINI_SAMPLE_RATE = 24_000;
 export const GEMINI_AUDIO_CHUNK_MS = 60_000;
 export const GEMINI_AUDIO_OVERLAP_MS = 2_000;
-export const GEMINI_AUDIO_STRIDE_MS =
-  GEMINI_AUDIO_CHUNK_MS - GEMINI_AUDIO_OVERLAP_MS;
+export const GEMINI_AUDIO_STRIDE_MS = GEMINI_AUDIO_CHUNK_MS - GEMINI_AUDIO_OVERLAP_MS;
 export const GEMINI_MAX_SOURCE_DURATION_MS = MAX_LYRICS_DURATION_MS;
 export const GEMINI_MAX_CHUNK_COUNT =
-  1 +
-  Math.ceil(
-    (GEMINI_MAX_SOURCE_DURATION_MS - GEMINI_AUDIO_CHUNK_MS) /
-      GEMINI_AUDIO_STRIDE_MS,
-  );
+  1 + Math.ceil((GEMINI_MAX_SOURCE_DURATION_MS - GEMINI_AUDIO_CHUNK_MS) / GEMINI_AUDIO_STRIDE_MS);
 export const GEMINI_MAX_REQUEST_BYTES = 4_500_000;
-export const GEMINI_MAX_WAV_BYTES =
-  44 + (GEMINI_SAMPLE_RATE * GEMINI_AUDIO_CHUNK_MS * 2) / 1000;
+export const GEMINI_MAX_WAV_BYTES = 44 + (GEMINI_SAMPLE_RATE * GEMINI_AUDIO_CHUNK_MS * 2) / 1000;
 export const GEMINI_MAX_BASE64_CHARS = 4 * Math.ceil(GEMINI_MAX_WAV_BYTES / 3);
 export const GEMINI_MAX_SEGMENTS_PER_CHUNK = 120;
 export const GEMINI_TIMING_BOUNDARY_TOLERANCE_MS = 100;
@@ -31,13 +25,9 @@ export const geminiSegmentSchema = z
   })
   .strict();
 
-export const geminiSegmentsSchema = z
-  .array(geminiSegmentSchema)
-  .max(GEMINI_MAX_SEGMENTS_PER_CHUNK);
+export const geminiSegmentsSchema = z.array(geminiSegmentSchema).max(GEMINI_MAX_SEGMENTS_PER_CHUNK);
 
-export const geminiFlagsSchema = z
-  .object({ uncertain: z.boolean(), timing: z.boolean() })
-  .strict();
+export const geminiFlagsSchema = z.object({ uncertain: z.boolean(), timing: z.boolean() }).strict();
 
 export const geminiTranscriptionRequestSchema = z
   .object({
@@ -49,11 +39,7 @@ export const geminiTranscriptionRequestSchema = z
     totalChunks: z.number().int().min(1).max(GEMINI_MAX_CHUNK_COUNT),
     chunkStartMs: z.number().finite().min(0).max(GEMINI_MAX_SOURCE_DURATION_MS),
     chunkDurationMs: z.number().finite().positive().max(GEMINI_AUDIO_CHUNK_MS),
-    sourceDurationMs: z
-      .number()
-      .finite()
-      .positive()
-      .max(GEMINI_MAX_SOURCE_DURATION_MS),
+    sourceDurationMs: z.number().finite().positive().max(GEMINI_MAX_SOURCE_DURATION_MS),
     preset: z.enum(["auto", "fast", "quality"]),
     recheck: z.boolean(),
     audioBase64: z.string().min(1).max(GEMINI_MAX_BASE64_CHARS),
@@ -78,8 +64,6 @@ export const geminiSuccessResponseSchema = geminiProviderContentSchema
   })
   .strict();
 
-export type GeminiTranscriptionRequest = z.infer<
-  typeof geminiTranscriptionRequestSchema
->;
+export type GeminiTranscriptionRequest = z.infer<typeof geminiTranscriptionRequestSchema>;
 export type GeminiProviderContent = z.infer<typeof geminiProviderContentSchema>;
 export type GeminiSuccessResponse = z.infer<typeof geminiSuccessResponseSchema>;

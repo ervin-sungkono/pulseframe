@@ -1,8 +1,5 @@
 import type { LyricsAdapter, LyricsAudio, LyricsRunOptions } from "./types";
-import type {
-  LyricsWorkerRequest,
-  LyricsWorkerResponse,
-} from "./worker-protocol";
+import type { LyricsWorkerRequest, LyricsWorkerResponse } from "./worker-protocol";
 
 const AUDIO_SLICE_SAMPLES = 65_536;
 const WORKER_HANDSHAKE_TIMEOUT_MS = 30_000;
@@ -37,8 +34,7 @@ export function createLocalLyricsAdapter(): LyricsAdapter {
   };
 
   const getWorker = () => {
-    if (disposed)
-      throw new Error("The local subtitle worker has been disposed.");
+    if (disposed) throw new Error("The local subtitle worker has been disposed.");
     if (worker) return worker;
     worker = new Worker(new URL("./processing.worker.ts", import.meta.url), {
       type: "module",
@@ -51,17 +47,11 @@ export function createLocalLyricsAdapter(): LyricsAdapter {
   };
 
   const onWorkerError = (event: ErrorEvent) => {
-    terminate(
-      new Error(
-        event.message || "The local subtitle worker stopped unexpectedly.",
-      ),
-    );
+    terminate(new Error(event.message || "The local subtitle worker stopped unexpectedly."));
   };
 
   const onMessageError = () => {
-    terminate(
-      new Error("The local subtitle worker returned an unreadable response."),
-    );
+    terminate(new Error("The local subtitle worker returned an unreadable response."));
   };
 
   const onMessage = (event: MessageEvent<LyricsWorkerResponse>) => {
@@ -100,9 +90,7 @@ export function createLocalLyricsAdapter(): LyricsAdapter {
         const channels = current.audio.channels.map((channel) =>
           channel.subarray(offset, end).slice(),
         );
-        const transfer = channels.map(
-          (channel) => channel.buffer as ArrayBuffer,
-        );
+        const transfer = channels.map((channel) => channel.buffer as ArrayBuffer);
         getWorker().postMessage(
           {
             type: "audio-slice",
@@ -161,34 +149,19 @@ export function createLocalLyricsAdapter(): LyricsAdapter {
   return {
     generate(audio, options) {
       if (disposed)
-        return Promise.reject(
-          new Error("The local subtitle worker has been disposed."),
-        );
-      if (active)
-        return Promise.reject(
-          new Error("Local subtitle generation is already running."),
-        );
+        return Promise.reject(new Error("The local subtitle worker has been disposed."));
+      if (active) return Promise.reject(new Error("Local subtitle generation is already running."));
       if (options.signal.aborted)
-        return Promise.reject(
-          new DOMException("Generation canceled.", "AbortError"),
-        );
+        return Promise.reject(new DOMException("Generation canceled.", "AbortError"));
       if (!audio.channels.length || audio.channels.length > 2)
-        return Promise.reject(
-          new Error("Automatic subtitles support mono or stereo audio."),
-        );
+        return Promise.reject(new Error("Automatic subtitles support mono or stereo audio."));
       const sampleCount = audio.channels[0]?.length ?? 0;
-      if (
-        !sampleCount ||
-        audio.channels.some((channel) => channel.length !== sampleCount)
-      )
-        return Promise.reject(
-          new Error("The audio data is empty or inconsistent."),
-        );
+      if (!sampleCount || audio.channels.some((channel) => channel.length !== sampleCount))
+        return Promise.reject(new Error("The audio data is empty or inconsistent."));
 
       const currentId = nextJobId++;
       return new Promise((resolve, reject) => {
-        const abort = () =>
-          terminate(new DOMException("Generation canceled.", "AbortError"));
+        const abort = () => terminate(new DOMException("Generation canceled.", "AbortError"));
         active = {
           id: currentId,
           audio,
@@ -213,11 +186,7 @@ export function createLocalLyricsAdapter(): LyricsAdapter {
         try {
           getWorker().postMessage(request);
           active.handshakeTimer = setTimeout(() => {
-            terminate(
-              new Error(
-                "The local subtitle worker did not start. Reload and try again.",
-              ),
-            );
+            terminate(new Error("The local subtitle worker did not start. Reload and try again."));
           }, WORKER_HANDSHAKE_TIMEOUT_MS);
         } catch (error) {
           terminate(

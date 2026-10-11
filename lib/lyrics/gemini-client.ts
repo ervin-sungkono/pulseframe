@@ -127,8 +127,7 @@ function makeCombinedSignal(signal: AbortSignal) {
 }
 
 function throwIfAborted(signal: AbortSignal) {
-  if (signal.aborted)
-    throw new DOMException("Gemini transcription canceled.", "AbortError");
+  if (signal.aborted) throw new DOMException("Gemini transcription canceled.", "AbortError");
 }
 
 function sleep(ms: number, signal: AbortSignal) {
@@ -150,14 +149,10 @@ function sleep(ms: number, signal: AbortSignal) {
 }
 
 function encodeBase64(bytes: Uint8Array) {
-  if (typeof btoa !== "function")
-    throw new Error("This browser cannot encode audio for Gemini.");
+  if (typeof btoa !== "function") throw new Error("This browser cannot encode audio for Gemini.");
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += 24_576) {
-    const slice = bytes.subarray(
-      offset,
-      Math.min(bytes.length, offset + 24_576),
-    );
+    const slice = bytes.subarray(offset, Math.min(bytes.length, offset + 24_576));
     binary += String.fromCharCode(...slice);
   }
   return btoa(binary);
@@ -167,13 +162,8 @@ async function fingerprintKey(key: string | null): Promise<string | null> {
   if (!key) return "server-key";
   try {
     if (typeof crypto === "undefined" || !crypto.subtle) return null;
-    const digest = await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(key),
-    );
-    return [...new Uint8Array(digest)]
-      .map((part) => part.toString(16).padStart(2, "0"))
-      .join("");
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
+    return [...new Uint8Array(digest)].map((part) => part.toString(16).padStart(2, "0")).join("");
   } catch {
     return null;
   }
@@ -200,12 +190,9 @@ function checkResponseSegments(result: ApiChunkResult, durationMs: number) {
       segment.endMs > durationMs ||
       segment.startMs < previousStartMs
     ) {
-      throw new GeminiLyricsError(
-        "Gemini returned invalid timestamped lyrics.",
-        {
-          code: "invalid_response",
-        },
-      );
+      throw new GeminiLyricsError("Gemini returned invalid timestamped lyrics.", {
+        code: "invalid_response",
+      });
     }
     previousStartMs = segment.startMs;
   }
@@ -216,29 +203,19 @@ async function fetchApiFailure(response: Response): Promise<ApiFailure> {
   try {
     value = await response.json();
   } catch {
-    throw new GeminiLyricsError(
-      "The subtitle service returned an invalid response.",
-      {
-        code: "invalid_response",
-        unknownAttempts: 1,
-        notices: [
-          "The request reached the subtitle service, but its outcome is unknown.",
-        ],
-      },
-    );
+    throw new GeminiLyricsError("The subtitle service returned an invalid response.", {
+      code: "invalid_response",
+      unknownAttempts: 1,
+      notices: ["The request reached the subtitle service, but its outcome is unknown."],
+    });
   }
   const parsed = errorSchema.safeParse(value);
   if (!parsed.success) {
-    throw new GeminiLyricsError(
-      "The subtitle service returned an invalid response.",
-      {
-        code: "invalid_response",
-        unknownAttempts: 1,
-        notices: [
-          "The request reached the subtitle service, but its outcome is unknown.",
-        ],
-      },
-    );
+    throw new GeminiLyricsError("The subtitle service returned an invalid response.", {
+      code: "invalid_response",
+      unknownAttempts: 1,
+      notices: ["The request reached the subtitle service, but its outcome is unknown."],
+    });
   }
   return {
     status: response.status,
@@ -267,12 +244,9 @@ async function requestChunk(input: {
   throwIfAborted(input.signal);
   const audioBase64 = encodeBase64(input.wav);
   if (audioBase64.length > GEMINI_MAX_BASE64_CHARS) {
-    throw new GeminiLyricsError(
-      "This audio chunk exceeds the Gemini upload size limit.",
-      {
-        code: "invalid_audio",
-      },
-    );
+    throw new GeminiLyricsError("This audio chunk exceeds the Gemini upload size limit.", {
+      code: "invalid_audio",
+    });
   }
   const requestValue: GeminiTranscriptionRequest = {
     chunkIndex: input.chunkIndex,
@@ -285,15 +259,10 @@ async function requestChunk(input: {
     audioBase64,
   };
   const requestBody = JSON.stringify(requestValue);
-  if (
-    new TextEncoder().encode(requestBody).byteLength > GEMINI_MAX_REQUEST_BYTES
-  ) {
-    throw new GeminiLyricsError(
-      "This audio chunk exceeds the Gemini upload size limit.",
-      {
-        code: "invalid_audio",
-      },
-    );
+  if (new TextEncoder().encode(requestBody).byteLength > GEMINI_MAX_REQUEST_BYTES) {
+    throw new GeminiLyricsError("This audio chunk exceeds the Gemini upload size limit.", {
+      code: "invalid_audio",
+    });
   }
 
   let providerAttempts = 0;
@@ -326,10 +295,7 @@ async function requestChunk(input: {
         signal: combined.signal,
       });
     } catch (error) {
-      if (
-        input.signal.aborted ||
-        (isAbortError(error) && !combined.timeout.aborted)
-      ) {
+      if (input.signal.aborted || (isAbortError(error) && !combined.timeout.aborted)) {
         throw new DOMException("Gemini transcription canceled.", "AbortError");
       }
       unknownAttempts += 1;
@@ -393,8 +359,7 @@ async function requestChunk(input: {
       }
       if (failure.retryable && retries < MAX_RETRIES_PER_CHUNK) {
         retries += 1;
-        const delay =
-          failure.retryAfterMs ?? Math.min(8_000, 500 * 2 ** (retries - 1));
+        const delay = failure.retryAfterMs ?? Math.min(8_000, 500 * 2 ** (retries - 1));
         notices.push(
           failure.code === "rate_limit_or_quota"
             ? `Gemini requested a retry delay of ${Math.ceil(delay / 1000)} seconds.`
@@ -417,44 +382,36 @@ async function requestChunk(input: {
     try {
       raw = await response.json();
     } catch {
-      throw new GeminiLyricsError(
-        "The subtitle service returned an invalid response.",
-        {
-          code: "invalid_response",
-          providerAttempts,
-          unknownAttempts: unknownAttempts + 1,
-          tokenUsage,
-          notices: [
-            ...notices,
-            "The request reached the subtitle service, but its outcome is unknown.",
-          ],
-        },
-      );
+      throw new GeminiLyricsError("The subtitle service returned an invalid response.", {
+        code: "invalid_response",
+        providerAttempts,
+        unknownAttempts: unknownAttempts + 1,
+        tokenUsage,
+        notices: [
+          ...notices,
+          "The request reached the subtitle service, but its outcome is unknown.",
+        ],
+      });
     }
     const parsed = geminiSuccessResponseSchema.safeParse(raw);
     if (!parsed.success) {
-      throw new GeminiLyricsError(
-        "The subtitle service returned an invalid response.",
-        {
-          code: "invalid_response",
-          providerAttempts,
-          unknownAttempts: unknownAttempts + 1,
-          tokenUsage,
-          notices: [
-            ...notices,
-            "The request reached the subtitle service, but its outcome is unknown.",
-          ],
-        },
-      );
+      throw new GeminiLyricsError("The subtitle service returned an invalid response.", {
+        code: "invalid_response",
+        providerAttempts,
+        unknownAttempts: unknownAttempts + 1,
+        tokenUsage,
+        notices: [
+          ...notices,
+          "The request reached the subtitle service, but its outcome is unknown.",
+        ],
+      });
     }
     providerAttempts += parsed.data.providerAttempts;
     try {
       checkResponseSegments(parsed.data, input.chunkDurationMs);
     } catch (error) {
       throw new GeminiLyricsError(
-        error instanceof Error
-          ? error.message
-          : "Gemini returned invalid timestamped lyrics.",
+        error instanceof Error ? error.message : "Gemini returned invalid timestamped lyrics.",
         {
           code: "invalid_response",
           providerAttempts,
@@ -499,11 +456,7 @@ function resultCues(
   plans: ReturnType<typeof planCloudAudioChunks>,
   durationMs: number,
 ) {
-  return normalizeWindowCues(
-    result.segments,
-    cueWindow(index, plans, durationMs),
-    durationMs,
-  );
+  return normalizeWindowCues(result.segments, cueWindow(index, plans, durationMs), durationMs);
 }
 
 function clampDuration(audio: LyricsAudio) {
@@ -512,9 +465,7 @@ function clampDuration(audio: LyricsAudio) {
     audio.durationMs <= 0 ||
     audio.durationMs > GEMINI_MAX_SOURCE_DURATION_MS
   ) {
-    throw new Error(
-      "Gemini transcription supports tracks up to ten minutes long.",
-    );
+    throw new Error("Gemini transcription supports tracks up to ten minutes long.");
   }
   return audio.durationMs;
 }
@@ -534,12 +485,8 @@ export async function getGeminiAvailability(
     return null;
   });
   if (!response?.ok) return { available: false, serverKeyConfigured: false };
-  const parsed = availabilitySchema.safeParse(
-    await response.json().catch(() => null),
-  );
-  return parsed.success
-    ? parsed.data
-    : { available: false, serverKeyConfigured: false };
+  const parsed = availabilitySchema.safeParse(await response.json().catch(() => null));
+  return parsed.success ? parsed.data : { available: false, serverKeyConfigured: false };
 }
 
 export function createGeminiLyricsAdapter(options: {
@@ -578,49 +525,30 @@ export function createGeminiLyricsAdapter(options: {
   }
 
   return {
-    async generate(
-      audio: LyricsAudio,
-      run: LyricsRunOptions,
-    ): Promise<LyricsResult> {
-      if (disposed)
-        throw new Error("The Gemini adapter has been disconnected.");
+    async generate(audio: LyricsAudio, run: LyricsRunOptions): Promise<LyricsResult> {
+      if (disposed) throw new Error("The Gemini adapter has been disconnected.");
       throwIfAborted(run.signal);
       const durationMs = clampDuration(audio);
-      if (
-        !Array.isArray(audio.channels) ||
-        audio.channels.length < 1 ||
-        audio.channels.length > 2
-      )
+      if (!Array.isArray(audio.channels) || audio.channels.length < 1 || audio.channels.length > 2)
         throw new Error("Gemini transcription supports mono or stereo audio.");
       const sourceSampleCount = audio.channels[0]?.length ?? 0;
       if (
         !Number.isSafeInteger(sourceSampleCount) ||
         sourceSampleCount < 1 ||
         audio.channels.some(
-          (channel) =>
-            !(channel instanceof Float32Array) ||
-            channel.length !== sourceSampleCount,
+          (channel) => !(channel instanceof Float32Array) || channel.length !== sourceSampleCount,
         )
       ) {
-        throw new Error(
-          "The decoded audio channels have an invalid sample layout.",
-        );
+        throw new Error("The decoded audio channels have an invalid sample layout.");
       }
       const plans = planCloudAudioChunks(sourceSampleCount, audio.sampleRate);
       if (!plans.length)
-        throw new Error(
-          "No audio samples are available for Gemini transcription.",
-        );
+        throw new Error("No audio samples are available for Gemini transcription.");
       if (plans.length > 11)
-        throw new Error(
-          "Gemini transcription supports tracks up to ten minutes long.",
-        );
-      const plannedDurationMs =
-        (plans[0].totalSamples * 1000) / plans[0].sampleRate;
+        throw new Error("Gemini transcription supports tracks up to ten minutes long.");
+      const plannedDurationMs = (plans[0].totalSamples * 1000) / plans[0].sampleRate;
       if (Math.abs(plannedDurationMs - durationMs) > 1000) {
-        throw new Error(
-          "The decoded audio duration does not match the active track.",
-        );
+        throw new Error("The decoded audio duration does not match the active track.");
       }
 
       const startedAt = Date.now();
@@ -628,8 +556,7 @@ export function createGeminiLyricsAdapter(options: {
       const keyFingerprint = await fingerprintKey(apiKey);
       const cacheNonce =
         keyFingerprint === null
-          ? typeof crypto !== "undefined" &&
-            typeof crypto.randomUUID === "function"
+          ? typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
             ? crypto.randomUUID()
             : Math.random().toString(36).slice(2)
           : "";
@@ -659,15 +586,9 @@ export function createGeminiLyricsAdapter(options: {
         }
         const plan = plans[index];
         const encodeStart = Date.now();
-        let encoded: Awaited<ReturnType<typeof encodeCloudAudioChunk>> | null =
-          null;
+        let encoded: Awaited<ReturnType<typeof encodeCloudAudioChunk>> | null = null;
         try {
-          encoded = await encodeCloudAudioChunk(
-            audio.channels,
-            audio.sampleRate,
-            plan,
-            run.signal,
-          );
+          encoded = await encodeCloudAudioChunk(audio.channels, audio.sampleRate, plan, run.signal);
           timing.prepare += Date.now() - encodeStart;
           throwIfAborted(run.signal);
           const sendStart = Date.now();
@@ -676,8 +597,7 @@ export function createGeminiLyricsAdapter(options: {
             chunkIndex: index,
             totalChunks: plans.length,
             chunkStartMs: plan.startMs,
-            chunkDurationMs:
-              ((plan.endSample - plan.startSample) * 1000) / plan.sampleRate,
+            chunkDurationMs: ((plan.endSample - plan.startSample) * 1000) / plan.sampleRate,
             sourceDurationMs: durationMs,
             preset: run.preset,
             recheck,
@@ -691,10 +611,7 @@ export function createGeminiLyricsAdapter(options: {
           accounting.attempts += result.attempts;
           accounting.rechecks += result.rechecks;
           accounting.unknownAttempts += result.unknownAttempts;
-          accounting.tokenUsage = addUsage(
-            accounting.tokenUsage,
-            result.tokenUsage,
-          );
+          accounting.tokenUsage = addUsage(accounting.tokenUsage, result.tokenUsage);
           accounting.notices.push(...result.notices);
           const cached = { result: result.result };
           cache.set(cacheId, cached);
@@ -703,20 +620,12 @@ export function createGeminiLyricsAdapter(options: {
           if (error instanceof GeminiLyricsError) {
             accounting.attempts += error.providerAttempts;
             accounting.unknownAttempts += error.unknownAttempts;
-            accounting.tokenUsage = addUsage(
-              accounting.tokenUsage,
-              error.tokenUsage,
-            );
+            accounting.tokenUsage = addUsage(accounting.tokenUsage, error.tokenUsage);
             accounting.notices.push(...error.notices);
-            if (
-              recheck &&
-              (error.providerAttempts > 0 || error.unknownAttempts > 0)
-            )
+            if (recheck && (error.providerAttempts > 0 || error.unknownAttempts > 0))
               accounting.rechecks += 1;
             if (error.message && error.code !== "invalid_api_key") {
-              accounting.notices.push(
-                `Chunk ${index + 1} request failed: ${error.message}`,
-              );
+              accounting.notices.push(`Chunk ${index + 1} request failed: ${error.message}`);
             }
           }
           throw error;
@@ -737,16 +646,11 @@ export function createGeminiLyricsAdapter(options: {
         });
       }
 
-      const recheckLimit = resolveGeminiPolicy(
-        run.preset,
-        plans.length,
-      ).maxRechecks;
+      const recheckLimit = resolveGeminiPolicy(run.preset, plans.length).maxRechecks;
       const flagged =
         run.preset === "quality"
           ? completed.flatMap((chunk, index) =>
-              chunk.result.flags.uncertain || chunk.result.flags.timing
-                ? [index]
-                : [],
+              chunk.result.flags.uncertain || chunk.result.flags.timing ? [index] : [],
             )
           : [];
       for (const index of flagged.slice(0, recheckLimit)) {
@@ -759,9 +663,7 @@ export function createGeminiLyricsAdapter(options: {
           if (isAbortError(error) || run.signal.aborted) throw error;
           notices.push(
             `Quality recheck of chunk ${index + 1} failed; its original transcription was kept. ${
-              error instanceof Error
-                ? error.message
-                : "Retry the track if needed."
+              error instanceof Error ? error.message : "Retry the track if needed."
             }`,
           );
           completed[index] = original;
@@ -779,9 +681,7 @@ export function createGeminiLyricsAdapter(options: {
       });
       const allCues: GeneratedCue[] = [];
       for (let index = 0; index < completed.length; index += 1) {
-        allCues.push(
-          ...resultCues(completed[index].result, index, plans, durationMs),
-        );
+        allCues.push(...resultCues(completed[index].result, index, plans, durationMs));
       }
       const cues = normalizeGeneratedCues(allCues, durationMs);
       timing.format = Date.now() - startedAt - timing.prepare - timing.send;

@@ -75,9 +75,7 @@ const dimensions = {
 };
 type Format = keyof typeof dimensions;
 const friendlySize = (bytes: number) =>
-  bytes > 1048576
-    ? `${(bytes / 1048576).toFixed(1)} MB`
-    : `${Math.round(bytes / 1024)} KB`;
+  bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mediaHostRef = useRef<HTMLDivElement>(null);
@@ -97,9 +95,7 @@ export default function Home() {
   const library = usePresets();
   const [activeLook, setActiveLook] = useState<ActiveLook | null>(null);
   const [lookSaveOpen, setLookSaveOpen] = useState(false);
-  const [lookSaveTarget, setLookSaveTarget] = useState<SavedPreset | null>(
-    null,
-  );
+  const [lookSaveTarget, setLookSaveTarget] = useState<SavedPreset | null>(null);
   const [subtitles, setSubtitles] = useState<SubtitleCue[]>([]);
   const [format, setFormat] = useState<Format>("landscape");
   const [frameRate, setFrameRate] = useState<ExportFrameRate>(30);
@@ -111,9 +107,7 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
   const [customizerOpen, setCustomizerOpen] = useState(false);
-  const [customizerSnap, setCustomizerSnap] = useState<number | string | null>(
-    0.62,
-  );
+  const [customizerSnap, setCustomizerSnap] = useState<number | string | null>(0.62);
   const [exportOpen, setExportOpen] = useState(false);
   const [subtitleOpen, setSubtitleOpen] = useState(false);
   const [presetOpen, setPresetOpen] = useState(false);
@@ -175,8 +169,7 @@ export default function Home() {
   const subtitleGeneration = useSubtitleGeneration({
     getSource: () => {
       const current = session.snapshot;
-      if (loadingMedia || openingProject || !current.file || !current.duration)
-        return null;
+      if (loadingMedia || openingProject || !current.file || !current.duration) return null;
       return {
         file: current.file,
         duration: current.duration,
@@ -212,8 +205,7 @@ export default function Home() {
     lockedRef: exportingRef,
     getSource: () => {
       const current = session.snapshot;
-      if (loadingMedia || openingProject || !current.file || !current.duration)
-        return null;
+      if (loadingMedia || openingProject || !current.file || !current.duration) return null;
       return {
         file: current.file,
         generation: current.generation,
@@ -245,16 +237,11 @@ export default function Home() {
     setMediaLoop(looping);
   }, [looping, setMediaLoop]);
 
-  const update = <K extends keyof VisualSettings>(
-    key: K,
-    value: VisualSettings[K],
-  ) => {
-    if (!exportingRef.current)
-      setSettings((current) => ({ ...current, [key]: value }), key);
+  const update = <K extends keyof VisualSettings>(key: K, value: VisualSettings[K]) => {
+    if (!exportingRef.current) setSettings((current) => ({ ...current, [key]: value }), key);
   };
   const applyLook = (changes: Partial<VisualSettings>) => {
-    if (!exportingRef.current)
-      setSettings((current) => ({ ...current, ...changes }));
+    if (!exportingRef.current) setSettings((current) => ({ ...current, ...changes }));
   };
   const applySavedLook = (preset: SavedPreset) => {
     if (exportingRef.current) return;
@@ -275,13 +262,9 @@ export default function Home() {
   };
   const resetAppearance = () => {
     if (exportingRef.current) return;
-    setSettings((current) =>
-      applyPreset(current, presetStyle(DEFAULT_SETTINGS)),
-    );
+    setSettings((current) => applyPreset(current, presetStyle(DEFAULT_SETTINGS)));
     setActiveLook(null);
-    setNotice(
-      "Appearance reset. Your track text and project assets are preserved.",
-    );
+    setNotice("Appearance reset. Your track text and project assets are preserved.");
   };
   const resetSection = (section: CustomizerSection) => {
     if (exportingRef.current) return;
@@ -296,9 +279,7 @@ export default function Home() {
       }
       return next;
     });
-    setNotice(
-      `Reset ${section} settings to ${activeLook ? `“${activeLook.name}”` : "defaults"}.`,
-    );
+    setNotice(`Reset ${section} settings to ${activeLook ? `“${activeLook.name}”` : "defaults"}.`);
   };
   const currentPreset = activeLook?.preset
     ? (library.pinnedPresets.find((item) => item.id === activeLook.id) ??
@@ -314,8 +295,7 @@ export default function Home() {
     : null;
   const lookModified =
     !!activeLook &&
-    JSON.stringify(presetStyle(settings)) !==
-      JSON.stringify(presetStyle(activeLook.settings));
+    JSON.stringify(presetStyle(settings)) !== JSON.stringify(presetStyle(activeLook.settings));
   const saveQuickLook = (target: SavedPreset | null = null) => {
     setLookSaveTarget(target);
     setLookSaveOpen(true);
@@ -331,9 +311,7 @@ export default function Home() {
   };
   const lookMetadataChanged = (preset: SavedPreset) => {
     setActiveLook((current) =>
-      current?.id === preset.id
-        ? { ...current, name: preset.name, preset }
-        : current,
+      current?.id === preset.id ? { ...current, name: preset.name, preset } : current,
     );
   };
   const quickLooks = (
@@ -389,9 +367,7 @@ export default function Home() {
       setProjectOpen(false);
       setNotice("Project file saved with your media and edits.");
     } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "Could not save project.",
-      );
+      setError(caught instanceof Error ? caught.message : "Could not save project.");
     }
   };
   const openProject = async (projectFile: File | undefined) => {
@@ -410,9 +386,7 @@ export default function Home() {
           : `Opened ${projectFile.name}.`,
       );
     } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "Could not open project.",
-      );
+      setError(caught instanceof Error ? caught.message : "Could not open project.");
     } finally {
       setOpeningProject(false);
     }
@@ -449,10 +423,7 @@ export default function Home() {
       }
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
-        seek(
-          (session.snapshot.media?.currentTime ?? 0) +
-            (event.key === "ArrowRight" ? 5 : -5),
-        );
+        seek((session.snapshot.media?.currentTime ?? 0) + (event.key === "ArrowRight" ? 5 : -5));
       }
     };
     window.addEventListener("keydown", keys);
@@ -532,10 +503,7 @@ export default function Home() {
           <span className="eyebrow-line" />
         </div>
         <div className="topbar-actions">
-          <button
-            className="text-button help-button"
-            onClick={() => setHelpOpen(true)}
-          >
+          <button className="text-button help-button" onClick={() => setHelpOpen(true)}>
             <CircleHelp size={17} />
             <span>How it works</span>
           </button>
@@ -593,8 +561,7 @@ export default function Home() {
               setDragging(true);
             }}
             onDragLeave={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget as Node))
-                setDragging(false);
+              if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false);
             }}
             onDrop={(event) => {
               event.preventDefault();
@@ -612,18 +579,14 @@ export default function Home() {
                 aria-label="Audio reactive visualization"
               />
               <div className="stage-corner top-left">
-                <span className="stage-indicator" />{" "}
-                {file ? "AUDIO REACTIVE" : "DEMO MODE"}
+                <span className="stage-indicator" /> {file ? "AUDIO REACTIVE" : "DEMO MODE"}
               </div>
               <div className="stage-corner top-right">PF / {canvas.label}</div>
               <div className="stage-corner bottom-left">
-                {settings.mode.toUpperCase()}{" "}
-                <span className="stage-separator">/</span>{" "}
+                {settings.mode.toUpperCase()} <span className="stage-separator">/</span>{" "}
                 {settings.particleMode.toUpperCase()}
               </div>
-              <div className="stage-corner bottom-right">
-                {file ? timestamp(position) : "0:00"}
-              </div>
+              <div className="stage-corner bottom-right">{file ? timestamp(position) : "0:00"}</div>
               {loadingMedia && (
                 <div className="media-loading" role="status">
                   Preparing your media…
@@ -639,11 +602,7 @@ export default function Home() {
           </div>
           <div className="stage-toolbar">
             <span className="toolbar-label">CANVAS SIZE</span>
-            <div
-              className="segmented"
-              role="group"
-              aria-label="Canvas aspect ratio"
-            >
+            <div className="segmented" role="group" aria-label="Canvas aspect ratio">
               {(Object.keys(dimensions) as Format[]).map((key) => (
                 <button
                   key={key}
@@ -674,16 +633,10 @@ export default function Home() {
               <Captions size={17} />
               <span>
                 Subtitles
-                {subtitleOpen || !subtitles.length
-                  ? ""
-                  : ` (${subtitles.length})`}
+                {subtitleOpen || !subtitles.length ? "" : ` (${subtitles.length})`}
               </span>
             </button>
-            <button
-              className="icon-text-button"
-              onClick={captureImage}
-              title="Save current frame"
-            >
+            <button className="icon-text-button" onClick={captureImage} title="Save current frame">
               <ImageDown size={16} />
               <span>Save frame</span>
             </button>
@@ -784,16 +737,10 @@ export default function Home() {
                     if (!volume) setVolume(0.7);
                   } else setMuted(true);
                 }}
-                aria-label={
-                  muted || !volume ? "Unmute playback" : "Mute playback"
-                }
+                aria-label={muted || !volume ? "Unmute playback" : "Mute playback"}
                 aria-pressed={muted || !volume}
               >
-                {muted || !volume ? (
-                  <VolumeX size={17} />
-                ) : (
-                  <Volume2 size={17} />
-                )}
+                {muted || !volume ? <VolumeX size={17} /> : <Volume2 size={17} />}
               </button>
               <Slider
                 className="studio-slider volume-slider"
@@ -807,23 +754,18 @@ export default function Home() {
                   setVolume(values[0] / 100);
                 }}
               />
-              <output className="volume-readout">
-                {Math.round((muted ? 0 : volume) * 100)}%
-              </output>
+              <output className="volume-readout">{Math.round((muted ? 0 : volume) * 100)}%</output>
             </div>
           </div>
           <div className="privacy-note">
             <Sparkles size={15} />
             <span>
-              On-device subtitles stay local. Gemini sends audio only after you
-              choose it, consent, and generate.
+              On-device subtitles stay local. Gemini sends audio only after you choose it, consent,
+              and generate.
             </span>
           </div>
         </section>
-        <aside
-          className="controls desktop-controls"
-          aria-label="Customization controls"
-        >
+        <aside className="controls desktop-controls" aria-label="Customization controls">
           <div className="panel-header">
             <div>
               <p className="kicker">CONTROL ROOM / 02</p>
@@ -916,27 +858,17 @@ export default function Home() {
                 aria-valuemin={62}
                 aria-valuemax={94}
                 aria-valuenow={customizerSnap === 0.94 ? 94 : 62}
-                aria-valuetext={
-                  customizerSnap === 0.94 ? "Expanded" : "Compact"
-                }
+                aria-valuetext={customizerSnap === 0.94 ? "Expanded" : "Compact"}
                 onKeyDown={(event) => {
-                  if (
-                    ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)
-                  ) {
+                  if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
                     event.preventDefault();
-                    setCustomizerSnap(
-                      event.key === "ArrowUp" || event.key === "End"
-                        ? 0.94
-                        : 0.62,
-                    );
+                    setCustomizerSnap(event.key === "ArrowUp" || event.key === "End" ? 0.94 : 0.62);
                   }
                 }}
               >
                 <span className="mobile-grip-bar" />
                 <span className="mobile-grip-hint">
-                  {customizerSnap === 0.94
-                    ? "Drag down to shrink"
-                    : "Drag up to expand"}
+                  {customizerSnap === 0.94 ? "Drag down to shrink" : "Drag up to expand"}
                 </span>
               </DrawerHandle>
             </div>
@@ -962,10 +894,7 @@ export default function Home() {
               onBackgroundFile={changeBackground}
               onReset={resetAppearance}
             />
-            <button
-              className="button done-button"
-              onClick={() => setCustomizerOpen(false)}
-            >
+            <button className="button done-button" onClick={() => setCustomizerOpen(false)}>
               Done
             </button>
           </div>
@@ -1044,8 +973,8 @@ export default function Home() {
             </div>
             <DialogTitle>Your project</DialogTitle>
             <DialogDescription>
-              Keep your visualizer, subtitles, logo, background, and source
-              media together in one file.
+              Keep your visualizer, subtitles, logo, background, and source media together in one
+              file.
             </DialogDescription>
           </DialogHeader>
           <div className="project-actions">
@@ -1066,16 +995,13 @@ export default function Home() {
             </div>
             <div>
               <strong>Open a project</strong>
-              <span>
-                Continue from a .pulseframe file saved on your device.
-              </span>
+              <span>Continue from a .pulseframe file saved on your device.</span>
               <button
                 className="button button-soft"
                 onClick={() => projectInputRef.current?.click()}
                 disabled={openingProject}
               >
-                <FolderOpen size={16} />{" "}
-                {openingProject ? "Opening…" : "Choose project file"}
+                <FolderOpen size={16} /> {openingProject ? "Opening…" : "Choose project file"}
               </button>
             </div>
           </div>
@@ -1086,16 +1012,14 @@ export default function Home() {
           <DialogHeader>
             <DialogTitle>Make a visual in three steps</DialogTitle>
             <DialogDescription>
-              Upload media, choose a look, then export any section of the
-              timeline.
+              Upload media, choose a look, then export any section of the timeline.
             </DialogDescription>
           </DialogHeader>
           <p>
-            Add optional track details and timed subtitles in the editor. Save a
-            project file to continue later. Video export renders the chosen
-            section directly, without playing through the full song. On-device
-            subtitle generation stays local; Gemini uploads audio only after you
-            select it, consent, and start generation.
+            Add optional track details and timed subtitles in the editor. Save a project file to
+            continue later. Video export renders the chosen section directly, without playing
+            through the full song. On-device subtitle generation stays local; Gemini uploads audio
+            only after you select it, consent, and start generation.
           </p>
         </DialogContent>
       </Dialog>

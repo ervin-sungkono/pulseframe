@@ -19,8 +19,7 @@ export type MdxRuntimeEnvironment = {
 };
 
 export function configureMdxRuntimeAssets(runtime: MdxRuntimeEnvironment) {
-  if (!runtime.wasm)
-    throw new Error("The vocal-isolation ONNX runtime is unavailable.");
+  if (!runtime.wasm) throw new Error("The vocal-isolation ONNX runtime is unavailable.");
   runtime.wasm.wasmPaths = new URL(
     `${import.meta.env.BASE_URL}${MDX_ORT_ASSET_DIRECTORY}`,
     self.location.href,
@@ -36,8 +35,7 @@ export function configureWhisperRuntimeAssets(
   runtime: WhisperRuntimeEnvironment,
   requestedThreads: number,
 ) {
-  if (!runtime.wasm)
-    throw new Error("The Whisper ONNX runtime is unavailable.");
+  if (!runtime.wasm) throw new Error("The Whisper ONNX runtime is unavailable.");
   runtime.wasm.wasmPaths = new URL(
     `${import.meta.env.BASE_URL}${WHISPER_ORT_ASSET_DIRECTORY}`,
     self.location.href,
