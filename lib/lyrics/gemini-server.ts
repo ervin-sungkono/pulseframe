@@ -15,6 +15,8 @@ import {
   type GeminiTranscriptionRequest,
 } from "./gemini-contract.js";
 
+// Permit only the small word-timing reversal observed in provider responses.
+const MAX_WORD_TIMING_REVERSAL_MS = 100;
 const PROVIDER_TIMEOUT_MS = 100_000;
 const DEFAULT_MODEL = "gemini-3.5-transcribe";
 const PROVIDER_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -465,22 +467,31 @@ function normalizeInteraction(body: unknown, chunkDurationMs: number) {
         }
         // Whitespace annotations do not contribute any subtitle text.
         if (!text) continue;
-        const startMs = offsetMs(annotation.start_offset);
-        const endMs = offsetMs(annotation.end_offset);
-        if (
-          endMs < startMs ||
-          startMs > chunkDurationMs ||
-          (startMs === chunkDurationMs && endMs > startMs)
-        )
+        const suppliedStartMs = offsetMs(annotation.start_offset);
+        const suppliedEndMs = offsetMs(annotation.end_offset);
+        const reversalMs = suppliedStartMs - suppliedEndMs;
+        if (reversalMs > MAX_WORD_TIMING_REVERSAL_MS + 1e-6)
           throw new TranscriptionResponseError("word_timing_out_of_bounds", {
-            reason: endMs < startMs ? "reversed_interval" : "word_start_outside_chunk",
+            reason: "reversed_interval",
+            startMs: suppliedStartMs,
+            endMs: suppliedEndMs,
+            chunkDurationMs,
+          });
+        // Retain both supplied endpoints for minor reversals; do not fabricate
+        // durations or lose a word. Quality can recheck this flagged chunk.
+        const startMs = Math.min(suppliedStartMs, suppliedEndMs);
+        const endMs = Math.max(suppliedStartMs, suppliedEndMs);
+        if (reversalMs > 0) timingAdjusted = true;
+        if (startMs > chunkDurationMs || (startMs === chunkDurationMs && endMs > startMs))
+          throw new TranscriptionResponseError("word_timing_out_of_bounds", {
+            reason: "word_start_outside_chunk",
             startMs,
             endMs,
             chunkDurationMs,
           });
         // A word that starts inside the upload can have an estimated end past
         // EOF. Clip that end to the real WAV boundary instead of rejecting all
-        // lyrics. Never repair reversed intervals or shift outside words inside.
+        // lyrics. Never shift outside words inside.
         const boundedStart = Math.min(startMs, chunkDurationMs);
         const boundedEnd = Math.min(endMs, chunkDurationMs);
         if ((boundedStart === boundedEnd && /[\p{L}\p{N}]/u.test(text)) || endMs > chunkDurationMs)
