@@ -14,13 +14,13 @@ export {
 
 export type CloudAudioChunkPlan = {
   index: number;
-  /** 24 kHz mono sample offset, inclusive. */
+  /** 16 kHz mono sample offset, inclusive. */
   startSample: number;
-  /** 24 kHz mono sample offset, exclusive. */
+  /** 16 kHz mono sample offset, exclusive. */
   endSample: number;
-  /** Total resampled 24 kHz mono sample count for the source. */
+  /** Total resampled 16 kHz mono sample count for the source. */
   totalSamples: number;
-  sampleRate: 24_000;
+  sampleRate: 16_000;
   startMs: number;
   endMs: number;
 };

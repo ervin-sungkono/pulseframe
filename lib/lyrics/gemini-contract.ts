@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { MAX_SUBTITLE_TEXT_LENGTH } from "../subtitles.js";
 import { MAX_LYRICS_DURATION_MS } from "./policy.js";
+import { GEMINI_LANGUAGE_CODES } from "./gemini-languages.js";
 
 /** Constants shared by Gemini audio preparation, the browser client, and the server route. */
-export const GEMINI_SAMPLE_RATE = 24_000;
-export const GEMINI_AUDIO_CHUNK_MS = 60_000;
+export const GEMINI_SAMPLE_RATE = 16_000;
+export const GEMINI_AUDIO_CHUNK_MS = 100_000;
 export const GEMINI_AUDIO_OVERLAP_MS = 2_000;
 export const GEMINI_AUDIO_STRIDE_MS = GEMINI_AUDIO_CHUNK_MS - GEMINI_AUDIO_OVERLAP_MS;
 export const GEMINI_MAX_SOURCE_DURATION_MS = MAX_LYRICS_DURATION_MS;
@@ -42,6 +43,7 @@ export const geminiTranscriptionRequestSchema = z
     sourceDurationMs: z.number().finite().positive().max(GEMINI_MAX_SOURCE_DURATION_MS),
     preset: z.enum(["auto", "fast", "quality"]),
     recheck: z.boolean(),
+    languageCode: z.string().refine((code) => GEMINI_LANGUAGE_CODES.has(code)),
     audioBase64: z.string().min(1).max(GEMINI_MAX_BASE64_CHARS),
   })
   .strict();

@@ -1,4 +1,5 @@
 import type { LyricsAdapter, LyricsAudio, LyricsRunOptions } from "./types";
+import type { IsolationBackend } from "./isolation";
 import type { LyricsWorkerRequest, LyricsWorkerResponse } from "./worker-protocol";
 
 const AUDIO_SLICE_SAMPLES = 65_536;
@@ -8,14 +9,23 @@ type ActiveRequest = {
   id: number;
   audio: LyricsAudio;
   options: LyricsRunOptions;
-  resolve: (value: Awaited<ReturnType<LyricsAdapter["generate"]>>) => void;
+  resolve: (value: WorkerResult) => void;
   reject: (reason: Error) => void;
   abort: () => void;
   handshakeTimer: ReturnType<typeof setTimeout> | null;
 };
 
+type IsolatedAudio = {
+  channels: [Float32Array, Float32Array];
+  backend: IsolationBackend;
+  notices: string[];
+};
+type WorkerResult = Awaited<ReturnType<LyricsAdapter["generate"]>> | IsolatedAudio;
+
 /** A worker is created only after Generate subtitles is requested. */
-export function createLocalLyricsAdapter(): LyricsAdapter {
+export function createLocalLyricsAdapter(): LyricsAdapter & {
+  isolate(audio: LyricsAudio, options: LyricsRunOptions): Promise<IsolatedAudio>;
+} {
   let worker: Worker | null = null;
   let active: ActiveRequest | null = null;
   let nextJobId = 1;
@@ -117,7 +127,15 @@ export function createLocalLyricsAdapter(): LyricsAdapter {
       finishFailure(new Error(message.message));
       return;
     }
-    finishSuccess(message.result);
+    finishSuccess(
+      message.type === "isolated"
+        ? {
+            channels: message.channels,
+            backend: message.backend,
+            notices: message.notices,
+          }
+        : message.result,
+    );
   };
 
   const finishSuccess = (result: Parameters<ActiveRequest["resolve"]>[0]) => {
@@ -146,56 +164,70 @@ export function createLocalLyricsAdapter(): LyricsAdapter {
     current.reject(error);
   };
 
-  return {
-    generate(audio, options) {
-      if (disposed)
-        return Promise.reject(new Error("The local subtitle worker has been disposed."));
-      if (active) return Promise.reject(new Error("Local subtitle generation is already running."));
-      if (options.signal.aborted)
-        return Promise.reject(new DOMException("Generation canceled.", "AbortError"));
-      if (!audio.channels.length || audio.channels.length > 2)
-        return Promise.reject(new Error("Automatic subtitles support mono or stereo audio."));
-      const sampleCount = audio.channels[0]?.length ?? 0;
-      if (!sampleCount || audio.channels.some((channel) => channel.length !== sampleCount))
-        return Promise.reject(new Error("The audio data is empty or inconsistent."));
+  const start = (
+    audio: LyricsAudio,
+    options: LyricsRunOptions,
+    isolationOnly: boolean,
+  ): Promise<WorkerResult> => {
+    if (disposed) return Promise.reject(new Error("The local subtitle worker has been disposed."));
+    if (active) return Promise.reject(new Error("Local subtitle generation is already running."));
+    if (options.signal.aborted)
+      return Promise.reject(new DOMException("Generation canceled.", "AbortError"));
+    if (!audio.channels.length || audio.channels.length > 2)
+      return Promise.reject(new Error("Automatic subtitles support mono or stereo audio."));
+    const sampleCount = audio.channels[0]?.length ?? 0;
+    if (!sampleCount || audio.channels.some((channel) => channel.length !== sampleCount))
+      return Promise.reject(new Error("The audio data is empty or inconsistent."));
 
-      const currentId = nextJobId++;
-      return new Promise((resolve, reject) => {
-        const abort = () => terminate(new DOMException("Generation canceled.", "AbortError"));
-        active = {
-          id: currentId,
-          audio,
-          options,
-          resolve,
-          reject,
-          abort,
-          handshakeTimer: null,
-        };
-        options.signal.addEventListener("abort", abort, { once: true });
-        const request: LyricsWorkerRequest = {
-          type: "start",
-          jobId: currentId,
-          preset: options.preset,
-          sourceId: options.sourceId,
-          sampleRate: audio.sampleRate,
-          durationMs: audio.durationMs,
-          sampleCount,
-          channelCount: audio.channels.length,
-          retainedBytes: audio.retainedBytes,
-        };
-        try {
-          getWorker().postMessage(request);
-          active.handshakeTimer = setTimeout(() => {
-            terminate(new Error("The local subtitle worker did not start. Reload and try again."));
-          }, WORKER_HANDSHAKE_TIMEOUT_MS);
-        } catch (error) {
-          terminate(
-            error instanceof Error
-              ? error
-              : new Error("Could not start local subtitle generation."),
-          );
-        }
-      });
+    const currentId = nextJobId++;
+    return new Promise((resolve, reject) => {
+      const abort = () => terminate(new DOMException("Generation canceled.", "AbortError"));
+      active = {
+        id: currentId,
+        audio,
+        options,
+        resolve,
+        reject,
+        abort,
+        handshakeTimer: null,
+      };
+      options.signal.addEventListener("abort", abort, { once: true });
+      const request: LyricsWorkerRequest = {
+        type: "start",
+        jobId: currentId,
+        preset: options.preset,
+        sourceId: options.sourceId,
+        sampleRate: audio.sampleRate,
+        durationMs: audio.durationMs,
+        sampleCount,
+        channelCount: audio.channels.length,
+        retainedBytes: audio.retainedBytes,
+        isolationOnly,
+      };
+      try {
+        getWorker().postMessage(request);
+        active.handshakeTimer = setTimeout(() => {
+          terminate(new Error("The local subtitle worker did not start. Reload and try again."));
+        }, WORKER_HANDSHAKE_TIMEOUT_MS);
+      } catch (error) {
+        terminate(
+          error instanceof Error ? error : new Error("Could not start local subtitle generation."),
+        );
+      }
+    });
+  };
+
+  return {
+    async generate(audio, options) {
+      const result = await start(audio, options, false);
+      if ("channels" in result) throw new Error("The local worker returned unexpected audio.");
+      return result;
+    },
+    async isolate(audio, options) {
+      const result = await start(audio, options, true);
+      if (!("channels" in result))
+        throw new Error("The local worker returned unexpected subtitles.");
+      return result;
     },
     dispose() {
       disposed = true;

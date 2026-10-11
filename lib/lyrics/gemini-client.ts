@@ -3,6 +3,7 @@ import { encodeCloudAudioChunk, planCloudAudioChunks } from "./audio";
 import { normalizeGeneratedCues, normalizeWindowCues } from "./cues";
 import {
   GEMINI_MAX_BASE64_CHARS,
+  GEMINI_MAX_CHUNK_COUNT,
   GEMINI_MAX_REQUEST_BYTES,
   GEMINI_MAX_SOURCE_DURATION_MS,
   geminiSuccessResponseSchema,
@@ -20,7 +21,7 @@ import type {
 
 const API_PATH = "/api/lyrics/transcribe";
 const MAX_RETRIES_PER_CHUNK = 2;
-const FETCH_TIMEOUT_MS = 60_000;
+const FETCH_TIMEOUT_MS = 110_000;
 const MAX_CACHED_SCOPES = 6;
 
 const availabilitySchema = z
@@ -198,6 +199,16 @@ function checkResponseSegments(result: ApiChunkResult, durationMs: number) {
   }
 }
 
+async function isolateForGemini(audio: LyricsAudio, run: LyricsRunOptions) {
+  const { createLocalLyricsAdapter } = await import("./local-client");
+  const adapter = createLocalLyricsAdapter();
+  try {
+    return await adapter.isolate(audio, run);
+  } finally {
+    adapter.dispose();
+  }
+}
+
 async function fetchApiFailure(response: Response): Promise<ApiFailure> {
   let value: unknown;
   try {
@@ -236,6 +247,7 @@ async function requestChunk(input: {
   sourceDurationMs: number;
   preset: LyricsRunOptions["preset"];
   recheck: boolean;
+  languageCode: string;
   apiKey: string | null;
   signal: AbortSignal;
   fetcher: typeof fetch;
@@ -256,6 +268,7 @@ async function requestChunk(input: {
     sourceDurationMs: input.sourceDurationMs,
     preset: input.preset,
     recheck: input.recheck,
+    languageCode: input.languageCode,
     audioBase64,
   };
   const requestBody = JSON.stringify(requestValue);
@@ -508,7 +521,7 @@ export function createGeminiLyricsAdapter(options: {
           unknownAttempts: 0,
           tokenUsage: { input: 0, output: 0 },
           notices: [],
-          model: "gemini-3.8-flash",
+          model: "gemini-3.5-transcribe",
         },
       };
       completedScopes.set(key, scope);
@@ -528,30 +541,39 @@ export function createGeminiLyricsAdapter(options: {
     async generate(audio: LyricsAudio, run: LyricsRunOptions): Promise<LyricsResult> {
       if (disposed) throw new Error("The Gemini adapter has been disconnected.");
       throwIfAborted(run.signal);
+      const startedAt = Date.now();
       const durationMs = clampDuration(audio);
-      if (!Array.isArray(audio.channels) || audio.channels.length < 1 || audio.channels.length > 2)
+      const isolation = run.preset === "quality" ? await isolateForGemini(audio, run) : null;
+      const isolationMs = Date.now() - startedAt;
+      const cloudAudio: LyricsAudio = isolation
+        ? { ...audio, channels: isolation.channels, sampleRate: 44_100 }
+        : audio;
+      if (
+        !Array.isArray(cloudAudio.channels) ||
+        cloudAudio.channels.length < 1 ||
+        cloudAudio.channels.length > 2
+      )
         throw new Error("Gemini transcription supports mono or stereo audio.");
-      const sourceSampleCount = audio.channels[0]?.length ?? 0;
+      const sourceSampleCount = cloudAudio.channels[0]?.length ?? 0;
       if (
         !Number.isSafeInteger(sourceSampleCount) ||
         sourceSampleCount < 1 ||
-        audio.channels.some(
+        cloudAudio.channels.some(
           (channel) => !(channel instanceof Float32Array) || channel.length !== sourceSampleCount,
         )
       ) {
         throw new Error("The decoded audio channels have an invalid sample layout.");
       }
-      const plans = planCloudAudioChunks(sourceSampleCount, audio.sampleRate);
+      const plans = planCloudAudioChunks(sourceSampleCount, cloudAudio.sampleRate);
       if (!plans.length)
         throw new Error("No audio samples are available for Gemini transcription.");
-      if (plans.length > 11)
+      if (plans.length > GEMINI_MAX_CHUNK_COUNT)
         throw new Error("Gemini transcription supports tracks up to ten minutes long.");
       const plannedDurationMs = (plans[0].totalSamples * 1000) / plans[0].sampleRate;
       if (Math.abs(plannedDurationMs - durationMs) > 1000) {
         throw new Error("The decoded audio duration does not match the active track.");
       }
 
-      const startedAt = Date.now();
       const apiKey = options.getApiKey()?.trim() || null;
       const keyFingerprint = await fingerprintKey(apiKey);
       const cacheNonce =
@@ -563,18 +585,19 @@ export function createGeminiLyricsAdapter(options: {
       const sourceKey = [
         run.sourceId,
         durationMs,
-        audio.sampleRate,
+        cloudAudio.sampleRate,
         sourceSampleCount,
-        audio.channels.length,
+        cloudAudio.channels.length,
         run.preset,
+        run.languageCode ?? "",
         keyFingerprint ?? cacheNonce,
       ].join(":");
       const scope = getScope(sourceKey);
       const cache = scope.chunks;
       const accounting = scope.accounting;
       const completed: CachedChunk[] = new Array(plans.length);
-      const notices: string[] = [];
-      const timing: Record<string, number> = { prepare: 0, send: 0, format: 0 };
+      const notices: string[] = [...(isolation?.notices ?? [])];
+      const timing: Record<string, number> = { prepare: isolationMs, send: 0, format: 0 };
 
       const loadOrRequest = async (index: number, recheck: boolean) => {
         throwIfAborted(run.signal);
@@ -588,7 +611,12 @@ export function createGeminiLyricsAdapter(options: {
         const encodeStart = Date.now();
         let encoded: Awaited<ReturnType<typeof encodeCloudAudioChunk>> | null = null;
         try {
-          encoded = await encodeCloudAudioChunk(audio.channels, audio.sampleRate, plan, run.signal);
+          encoded = await encodeCloudAudioChunk(
+            cloudAudio.channels,
+            cloudAudio.sampleRate,
+            plan,
+            run.signal,
+          );
           timing.prepare += Date.now() - encodeStart;
           throwIfAborted(run.signal);
           const sendStart = Date.now();
@@ -601,6 +629,7 @@ export function createGeminiLyricsAdapter(options: {
             sourceDurationMs: durationMs,
             preset: run.preset,
             recheck,
+            languageCode: run.languageCode ?? "",
             apiKey,
             signal: run.signal,
             fetcher,
@@ -698,7 +727,8 @@ export function createGeminiLyricsAdapter(options: {
         preset: run.preset,
         diagnostics: {
           model: accounting.model,
-          isolation: "none",
+          isolation: isolation ? "kim-vocal-2" : "none",
+          ...(isolation ? { isolationBackend: isolation.backend } : {}),
           overlap: 0,
           chunks: plans.length,
           attempts: accounting.attempts,

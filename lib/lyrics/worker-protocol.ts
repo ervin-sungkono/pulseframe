@@ -1,4 +1,5 @@
 import type { LyricsProgress, LyricsPreset, LyricsResult } from "./types";
+import type { IsolationBackend } from "./isolation";
 
 export type LyricsWorkerStart = {
   type: "start";
@@ -10,6 +11,7 @@ export type LyricsWorkerStart = {
   sampleCount: number;
   channelCount: number;
   retainedBytes: number;
+  isolationOnly?: boolean;
 };
 
 export type LyricsWorkerAudioSlice = {
@@ -32,4 +34,11 @@ export type LyricsWorkerResponse =
     }
   | { type: "progress"; jobId: number; progress: LyricsProgress }
   | { type: "result"; jobId: number; result: LyricsResult }
+  | {
+      type: "isolated";
+      jobId: number;
+      channels: [Float32Array, Float32Array];
+      backend: IsolationBackend;
+      notices: string[];
+    }
   | { type: "error"; jobId: number; message: string; fatal?: boolean };

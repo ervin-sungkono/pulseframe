@@ -6,6 +6,7 @@ import type { SubtitleGenerationController } from "@/hooks/use-subtitle-generati
 import { serializeGeneratedSubtitles } from "@/lib/lyrics/cues";
 import type { GeneratedSubtitleFormat } from "@/lib/lyrics/cues";
 import type { LyricsStage } from "@/lib/lyrics/types";
+import { GEMINI_LANGUAGE_OPTIONS, type GeminiLanguageCode } from "@/lib/lyrics/gemini-languages";
 
 const stageLabels: Record<LyricsStage, string> = {
   prepare: "Prepare audio",
@@ -159,8 +160,9 @@ export function SubtitleGenerationPanel({
       ) : (
         <div className="subtitle-cloud-settings">
           <p className="subtitle-cloud-warning">
-            Audio is sent to Google. API usage may incur charges. Only this track&apos;s audio is
-            sent.
+            Audio is uploaded to Google for transcription. Pulseframe requests deletion after each
+            chunk; Google may retain an uploaded file for up to 48 hours if deletion fails. API
+            usage may incur charges.
           </p>
           <label className="subtitle-api-key">
             <span>
@@ -199,6 +201,23 @@ export function SubtitleGenerationPanel({
                 ? "A server key is available."
                 : "No server key is available."}
           </small>
+          <label className="subtitle-api-key">
+            <span>Song language</span>
+            <select
+              value={generation.languageCode}
+              onChange={(event) =>
+                generation.setLanguageCode(event.target.value as GeminiLanguageCode)
+              }
+              disabled={!canEditOptions}
+              aria-label="Song language"
+            >
+              {GEMINI_LANGUAGE_OPTIONS.map(([code, label]) => (
+                <option key={code || "auto"} value={code}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="subtitle-cloud-consent">
             <input
               type="checkbox"
@@ -234,7 +253,7 @@ export function SubtitleGenerationPanel({
               ? "Fast transcribes the original mix without vocal isolation."
               : "Auto chooses a local processing path based on this device."
           : generation.preset === "quality"
-            ? "Quality may recheck uncertain lines with up to three extra requests, which can add API cost."
+            ? "Quality isolates vocals on your device before Gemini transcription. It can take longer and use more memory."
             : generation.preset === "fast"
               ? "Fast uses one transcription pass for each audio chunk."
               : "Auto prepares bounded audio chunks and uses one pass per chunk."}

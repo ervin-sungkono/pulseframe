@@ -49,6 +49,7 @@ export type LyricsAudio = {
 };
 export type LyricsRunOptions = {
   preset: LyricsPreset;
+  languageCode?: string;
   sourceId: string;
   signal: AbortSignal;
   onProgress: (progress: LyricsProgress) => void;

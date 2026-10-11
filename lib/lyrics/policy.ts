@@ -229,11 +229,16 @@ export function assessLyricsInput(input: LyricsInputAdmissionInput): LyricsInput
   const whisperPreparationStageBytes = input.isolation ? vocalOutputBytes + whisperInputBytes : 0;
   const whisperInferenceStageBytes =
     (input.isolation ? vocalOutputBytes : 0) + whisperInputBytes + whisperWorkspaceBytes;
-  const cloudChunkFloatBytes = 60 * 24_000 * Float32Array.BYTES_PER_ELEMENT;
-  const cloudWavBytes = 44 + 60 * 24_000 * 2;
+  const cloudChunkFloatBytes = 100 * 16_000 * Float32Array.BYTES_PER_ELEMENT;
+  const cloudWavBytes = 44 + 100 * 16_000 * 2;
   const cloudBase64Bytes = Math.ceil((cloudWavBytes * 4) / 3);
   const estimatedPeakBytes = isGemini
-    ? retainedBytes + cloudChunkFloatBytes + cloudWavBytes + cloudBase64Bytes
+    ? retainedBytes +
+      Math.max(
+        vocalOutputBytes + cloudChunkFloatBytes + cloudWavBytes + cloudBase64Bytes,
+        input.isolation ? preparationStageBytes : 0,
+        mdxInferenceStageBytes,
+      )
     : retainedBytes +
       Math.max(
         preparationStageBytes,
