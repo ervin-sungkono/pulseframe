@@ -332,6 +332,10 @@ const appMockRequire = (id) => {
       }),
     };
   if (id === "@/components/subtitle-dialog") return { SubtitleDialog: stubComponent };
+  if (id === "@/components/subtitle-generation-panel")
+    return { SubtitleGenerationStatus: stubComponent };
+  if (id === "@/hooks/use-subtitle-generation")
+    return { useSubtitleGeneration: () => ({ running: false }) };
   if (id === "@/lib/audio-features")
     return {
       PcmFeatures: class {},

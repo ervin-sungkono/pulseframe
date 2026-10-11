@@ -265,7 +265,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
   const [running, setRunning] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
   const [progress, setProgress] = useState<LyricsProgress | null>(null);
-  const [elapsedMs, setElapsedMs] = useState(0);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [resultState, setResultState] = useState<GenerationSnapshot | null>(
@@ -567,7 +567,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
         message: "Preparing the complete active track…",
         elapsedMs: 0,
       });
-      setElapsedMs(0);
+      setStartedAt(job.startedAt);
       setError(null);
       setNotice(null);
 
@@ -617,7 +617,6 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
               ...next,
               elapsedMs: Math.max(0, Date.now() - job.startedAt),
             });
-            setElapsedMs(Math.max(0, Date.now() - job.startedAt));
           },
         });
         if (controller.signal.aborted)
@@ -689,7 +688,6 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
               : "No lyrics were detected in this track.",
             elapsedMs: Math.max(0, Date.now() - job.startedAt),
           });
-          setElapsedMs(Math.max(0, Date.now() - job.startedAt));
           const notices = [...result.notices];
           if (application.error) notices.push(application.error);
           if (autoApply)
@@ -913,15 +911,6 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
   }, [method, options.serverKeyAvailable]);
 
   useEffect(() => {
-    if (!running) return;
-    const timer = window.setInterval(() => {
-      const job = jobRef.current;
-      if (job) setElapsedMs(Math.max(0, Date.now() - job.startedAt));
-    }, 500);
-    return () => window.clearInterval(timer);
-  }, [running]);
-
-  useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
@@ -976,7 +965,8 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
     cancelRequested,
     phase,
     progress,
-    elapsedMs,
+    startedAt,
+    elapsedMs: progress?.elapsedMs ?? 0,
     error,
     notice,
     result: running ? null : currentResultValid ? currentResult : null,

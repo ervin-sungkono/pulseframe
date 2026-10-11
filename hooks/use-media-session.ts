@@ -87,7 +87,11 @@ export function useMediaSession(options: UseMediaSessionOptions = {}): UseMediaS
     session.setVolume(latestOptions.current.initialVolume ?? 0.7);
     session.setLoop(latestOptions.current.initialLoop ?? false);
     return session.subscribe((event: MediaSessionEvent) => {
-      if ("snapshot" in event) setSnapshot(event.snapshot);
+      // Position and seek events only change the transport time. Their fresh
+      // snapshot objects would otherwise rerender the entire editor on every
+      // preview poll, including while playback is paused.
+      if ("snapshot" in event && event.type !== "position" && event.type !== "seek")
+        setSnapshot(event.snapshot);
       switch (event.type) {
         case "loading":
           setLoadingMedia(event.loading);
