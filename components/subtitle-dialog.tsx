@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Captions, Plus, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
+import { Captions, Plus, Trash2, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -55,8 +55,8 @@ function CueTime({
   );
 }
 
-export function SubtitleDialog({
-  open,
+export function SubtitleEditor({
+  inline = false,
   onOpenChange,
   cues,
   onChange,
@@ -67,7 +67,7 @@ export function SubtitleDialog({
   trackFile,
   disabled = false,
 }: {
-  open: boolean;
+  inline?: boolean;
   onOpenChange: (open: boolean) => void;
   cues: SubtitleCue[];
   onChange: (cues: SubtitleCue[]) => void;
@@ -78,6 +78,12 @@ export function SubtitleDialog({
   trackFile?: File | null;
   disabled?: boolean;
 }) {
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (inline) titleRef.current?.focus();
+  }, [inline]);
+  const Title = inline ? "h2" : DialogTitle;
+  const Description = inline ? "p" : DialogDescription;
   const editingDisabled = disabled || !!generation?.running;
   const update = (id: string, change: Partial<SubtitleCue>) =>
     onChange(cues.map((cue) => (cue.id === id ? { ...cue, ...change } : cue)));
@@ -91,106 +97,128 @@ export function SubtitleDialog({
   const overlaps = sorted.some((cue, index) => index > 0 && cue.start < sorted[index - 1].end);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="subtitle-dialog">
-        <DialogHeader>
-          <div className="dialog-icon">
-            <Captions size={19} />
-          </div>
-          <DialogTitle>Subtitles</DialogTitle>
-          <DialogDescription>
-            Add timed caption blocks or generate subtitles from the complete audio track.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="subtitle-dialog-scroll">
-          {generation && (
-            <SubtitleGenerationPanel
-              generation={generation}
-              trackFile={trackFile}
-              disabled={disabled}
-            />
-          )}
-          <div className="subtitle-topline">
-            <span>
-              {cues.length} {cues.length === 1 ? "block" : "blocks"}
-            </span>
-            <button
-              className="button button-soft"
-              onClick={add}
-              disabled={editingDisabled || !duration || cues.length >= MAX_SUBTITLE_CUES}
-            >
-              <Plus size={16} /> Add at {timestamp(position, true)}
-            </button>
-          </div>
-          <div className="subtitle-list">
-            {!cues.length && (
-              <div className="subtitle-empty">
-                Move to a point in your song, then add a subtitle block.
-              </div>
-            )}
-            {sorted.map((cue, index) => (
-              <div key={cue.id} className="subtitle-block">
-                <div className="subtitle-block-heading">
-                  <strong>Block {index + 1}</strong>
-                  <div>
-                    <button
-                      disabled={editingDisabled}
-                      onClick={() => {
-                        onSeek(cue.start);
-                        onOpenChange(false);
-                      }}
-                      title="Preview at start"
-                      aria-label={"Preview block " + (index + 1)}
-                    >
-                      Preview
-                    </button>
-                    <button
-                      disabled={editingDisabled}
-                      onClick={() => onChange(cues.filter((item) => item.id !== cue.id))}
-                      title="Remove block"
-                      aria-label={"Remove block " + (index + 1)}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
-                <textarea
-                  aria-label={"Subtitle text for block " + (index + 1)}
-                  placeholder="Type the subtitle here…"
-                  rows={2}
-                  maxLength={MAX_SUBTITLE_TEXT_LENGTH}
-                  value={cue.text}
-                  disabled={editingDisabled}
-                  onChange={(event) => update(cue.id, { text: event.target.value })}
-                />
-                <div className="cue-range">
-                  <CueTime
-                    label={"Block " + (index + 1) + " start"}
-                    value={cue.start}
-                    max={Math.max(0, cue.end - 0.1)}
-                    disabled={editingDisabled}
-                    onChange={(start) => update(cue.id, { start })}
-                  />
-                  <CueTime
-                    label={"Block " + (index + 1) + " end"}
-                    value={cue.end}
-                    max={duration}
-                    disabled={editingDisabled}
-                    onChange={(end) => update(cue.id, { end: Math.max(cue.start + 0.1, end) })}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-          {overlaps && (
-            <p className="subtitle-warning">
-              Overlapping blocks stack by start time. Earlier blocks appear above later blocks.
-            </p>
-          )}
-        </div>
-        <button className="button done-button subtitle-done" onClick={() => onOpenChange(false)}>
-          Done
+    <>
+      {inline && (
+        <button
+          className="subtitle-panel-close"
+          onClick={() => onOpenChange(false)}
+          aria-label="Close subtitle editor"
+        >
+          <X size={18} />
         </button>
+      )}
+      <DialogHeader>
+        <div className="dialog-icon">
+          <Captions size={19} />
+        </div>
+        <Title ref={titleRef} tabIndex={inline ? -1 : undefined} data-slot="dialog-title">
+          Subtitles
+        </Title>
+        <Description data-slot="dialog-description">
+          Add timed caption blocks or generate subtitles from the complete audio track.
+        </Description>
+      </DialogHeader>
+      <div className="subtitle-dialog-scroll">
+        {generation && (
+          <SubtitleGenerationPanel
+            generation={generation}
+            trackFile={trackFile}
+            disabled={disabled}
+          />
+        )}
+        <div className="subtitle-topline">
+          <span>
+            {cues.length} {cues.length === 1 ? "block" : "blocks"}
+          </span>
+          <button
+            className="button button-soft"
+            onClick={add}
+            disabled={editingDisabled || !duration || cues.length >= MAX_SUBTITLE_CUES}
+          >
+            <Plus size={16} /> Add at {timestamp(position, true)}
+          </button>
+        </div>
+        <div className="subtitle-list">
+          {!cues.length && (
+            <div className="subtitle-empty">
+              Move to a point in your song, then add a subtitle block.
+            </div>
+          )}
+          {sorted.map((cue, index) => (
+            <div key={cue.id} className="subtitle-block">
+              <div className="subtitle-block-heading">
+                <strong>Block {index + 1}</strong>
+                <div>
+                  <button
+                    disabled={editingDisabled}
+                    onClick={() => {
+                      onSeek(cue.start);
+                      if (!inline) onOpenChange(false);
+                    }}
+                    title="Preview at start"
+                    aria-label={"Preview block " + (index + 1)}
+                  >
+                    Preview
+                  </button>
+                  <button
+                    disabled={editingDisabled}
+                    onClick={() => onChange(cues.filter((item) => item.id !== cue.id))}
+                    title="Remove block"
+                    aria-label={"Remove block " + (index + 1)}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+              <textarea
+                aria-label={"Subtitle text for block " + (index + 1)}
+                placeholder="Type the subtitle here…"
+                rows={2}
+                maxLength={MAX_SUBTITLE_TEXT_LENGTH}
+                value={cue.text}
+                disabled={editingDisabled}
+                onChange={(event) => update(cue.id, { text: event.target.value })}
+              />
+              <div className="cue-range">
+                <CueTime
+                  label={"Block " + (index + 1) + " start"}
+                  value={cue.start}
+                  max={Math.max(0, cue.end - 0.1)}
+                  disabled={editingDisabled}
+                  onChange={(start) => update(cue.id, { start })}
+                />
+                <CueTime
+                  label={"Block " + (index + 1) + " end"}
+                  value={cue.end}
+                  max={duration}
+                  disabled={editingDisabled}
+                  onChange={(end) => update(cue.id, { end: Math.max(cue.start + 0.1, end) })}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        {overlaps && (
+          <p className="subtitle-warning">
+            Overlapping blocks stack by start time. Earlier blocks appear above later blocks.
+          </p>
+        )}
+      </div>
+      <button className="button done-button subtitle-done" onClick={() => onOpenChange(false)}>
+        Done
+      </button>
+    </>
+  );
+}
+
+export function SubtitleDialog({
+  open,
+  ...props
+}: ComponentProps<typeof SubtitleEditor> & { open: boolean }) {
+  return (
+    <Dialog open={open} onOpenChange={props.onOpenChange}>
+      <DialogContent className="subtitle-dialog">
+        <SubtitleEditor {...props} />
       </DialogContent>
     </Dialog>
   );

@@ -57,7 +57,7 @@ import { PresetSaveDialog } from "@/components/preset-save-dialog";
 import { usePresets } from "@/hooks/use-presets";
 import { useSettingsHistory } from "@/hooks/use-settings-history";
 import { useExportController } from "@/hooks/use-export-controller";
-import { SubtitleDialog } from "@/components/subtitle-dialog";
+import { SubtitleDialog, SubtitleEditor } from "@/components/subtitle-dialog";
 import { SubtitleGenerationStatus } from "@/components/subtitle-generation-panel";
 import { useSubtitleGeneration } from "@/hooks/use-subtitle-generation";
 import type { ExportFrameRate } from "@/lib/export-timeline";
@@ -110,6 +110,20 @@ export default function Home() {
   const [customizerSnap, setCustomizerSnap] = useState<number | string | null>(0.62);
   const [exportOpen, setExportOpen] = useState(false);
   const [subtitleOpen, setSubtitleOpen] = useState(false);
+  const [desktopLayout, setDesktopLayout] = useState(
+    () => window.matchMedia("(min-width: 861px)").matches,
+  );
+  const subtitleTriggerRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 861px)");
+    const update = () => setDesktopLayout(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  const closeSubtitleEditor = (open: boolean) => {
+    setSubtitleOpen(open);
+    if (!open && desktopLayout) subtitleTriggerRef.current?.focus();
+  };
   const [presetOpen, setPresetOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [openingProject, setOpeningProject] = useState(false);
@@ -487,6 +501,21 @@ export default function Home() {
 
   const canvas = dimensions[format];
   const outputDimensions = exportDimensions(format, resolution);
+  const subtitleEditorProps = {
+    onOpenChange: closeSubtitleEditor,
+    cues: subtitles,
+    onChange: setSubtitles,
+    generation: subtitleGeneration,
+    disabled: videoExporting,
+    trackFile: file,
+    position,
+    duration,
+    onSeek: (time: number) => {
+      session.pause();
+      seek(time);
+    },
+  };
+
   return (
     <main className={`studio-shell ${focusView ? "focus-view" : ""}`}>
       <header className="topbar">
@@ -536,7 +565,7 @@ export default function Home() {
           </button>
         </div>
       </header>
-      <div className="workspace">
+      <div className={`workspace ${subtitleOpen && desktopLayout ? "has-subtitle-panel" : ""}`}>
         <section className="preview-column" aria-label="Visualizer preview">
           <div className="section-heading">
             <div>
@@ -626,6 +655,8 @@ export default function Home() {
             </button>
             <button
               className="icon-text-button"
+              ref={subtitleTriggerRef}
+              aria-expanded={subtitleOpen}
               aria-label={`Edit subtitles${subtitles.length ? `, ${subtitles.length} blocks` : ""}`}
               onClick={() => setSubtitleOpen(true)}
               disabled={!file || videoExporting}
@@ -765,54 +796,69 @@ export default function Home() {
             </span>
           </div>
         </section>
-        <aside className="controls desktop-controls" aria-label="Customization controls">
-          <div className="panel-header">
-            <div>
-              <p className="kicker">CONTROL ROOM / 02</p>
-              <h2>Customize</h2>
-            </div>
-            <SlidersHorizontal size={19} />
-          </div>
-          <CustomizerPanel
-            settings={settings}
-            onChange={update}
-            isVideo={isVideo}
-            quickLooks={quickLooks}
-            disabled={exporting}
-            onPatch={applyLook}
-            onResetSection={resetSection}
-            logoName={logoName}
-            logoUrl={logoUrl}
-            onLogoFile={changeLogo}
-            backgroundName={backgroundName}
-            backgroundUrl={backgroundUrl}
-            onBackgroundFile={changeBackground}
-            onReset={resetAppearance}
-          />
-          <div className="export-panel">
-            <div className="export-title">
+        {subtitleOpen && desktopLayout ? (
+          <aside
+            className="subtitle-dialog subtitle-panel"
+            aria-label="Subtitle editor"
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && !event.defaultPrevented) {
+                event.preventDefault();
+                closeSubtitleEditor(false);
+              }
+            }}
+          >
+            <SubtitleEditor inline {...subtitleEditorProps} />
+          </aside>
+        ) : (
+          <aside className="controls desktop-controls" aria-label="Customization controls">
+            <div className="panel-header">
               <div>
-                <WandSparkles size={18} />
-                <strong>Ready to share?</strong>
+                <p className="kicker">CONTROL ROOM / 02</p>
+                <h2>Customize</h2>
               </div>
-              <span>
-                {canvas.width} × {canvas.height}
-              </span>
+              <SlidersHorizontal size={19} />
             </div>
-            <button
-              className="button export-button"
-              onClick={() => setExportOpen(true)}
-              disabled={!file || !duration || exporting || loadingMedia}
-            >
-              <Download size={18} /> Export video
-            </button>
-            <p>
-              {file
-                ? "Choose a time range and render a video with sound."
-                : "Add media to enable video export."}
-            </p>
-          </div>
-        </aside>
+            <CustomizerPanel
+              settings={settings}
+              onChange={update}
+              isVideo={isVideo}
+              quickLooks={quickLooks}
+              disabled={exporting}
+              onPatch={applyLook}
+              onResetSection={resetSection}
+              logoName={logoName}
+              logoUrl={logoUrl}
+              onLogoFile={changeLogo}
+              backgroundName={backgroundName}
+              backgroundUrl={backgroundUrl}
+              onBackgroundFile={changeBackground}
+              onReset={resetAppearance}
+            />
+            <div className="export-panel">
+              <div className="export-title">
+                <div>
+                  <WandSparkles size={18} />
+                  <strong>Ready to share?</strong>
+                </div>
+                <span>
+                  {canvas.width} × {canvas.height}
+                </span>
+              </div>
+              <button
+                className="button export-button"
+                onClick={() => setExportOpen(true)}
+                disabled={!file || !duration || exporting || loadingMedia}
+              >
+                <Download size={18} /> Export video
+              </button>
+              <p>
+                {file
+                  ? "Choose a time range and render a video with sound."
+                  : "Add media to enable video export."}
+              </p>
+            </div>
+          </aside>
+        )}
       </div>
       <div className="mobile-action-dock">
         <button
@@ -920,21 +966,7 @@ export default function Home() {
         onCancel={cancelExport}
         onPreview={previewRange}
       />
-      <SubtitleDialog
-        open={subtitleOpen}
-        onOpenChange={setSubtitleOpen}
-        cues={subtitles}
-        onChange={setSubtitles}
-        generation={subtitleGeneration}
-        disabled={videoExporting}
-        trackFile={file}
-        position={position}
-        duration={duration}
-        onSeek={(time) => {
-          session.pause();
-          seek(time);
-        }}
-      />
+      {!desktopLayout && <SubtitleDialog open={subtitleOpen} {...subtitleEditorProps} />}
       <SubtitleGenerationStatus
         generation={subtitleGeneration}
         onOpen={() => setSubtitleOpen(true)}

@@ -3061,3 +3061,52 @@ h2 {
     transform: rotate(360deg);
   }
 }
+
+/* Desktop subtitles share the controls column; preview remains interactive. */
+@media (min-width: 861px) {
+  .has-subtitle-panel.workspace {
+    grid-template-columns: minmax(0, 1fr) clamp(330px, 30vw, 420px);
+  }
+  .subtitle-panel {
+    position: sticky;
+    top: 20px;
+    align-self: start;
+    width: 100%;
+    max-width: none;
+    height: calc(100dvh - 160px);
+    max-height: none;
+    padding: 22px;
+    box-shadow: 0 12px 40px #0003;
+  }
+  .subtitle-panel [data-slot="dialog-header"] {
+    padding-right: 22px;
+  }
+  .subtitle-panel [data-slot="dialog-title"] {
+    margin: 0;
+  }
+  .subtitle-panel [data-slot="dialog-description"] {
+    margin: 0 0 12px;
+  }
+  .subtitle-panel-close {
+    position: absolute;
+    top: 16px;
+    right: 12px;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #b7c4d9;
+    cursor: pointer;
+  }
+  .subtitle-panel-close:hover {
+    background: #26334a;
+    color: #fff;
+  }
+  .subtitle-panel-close:focus-visible {
+    outline: 2px solid #b49af7;
+    outline-offset: 2px;
+  }
+}

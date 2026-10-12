@@ -222,3 +222,16 @@ window receives the same `language` hint, including when WebGPU falls back to
 WASM. Auto omits the hint for model detection; `task: "transcribe"` keeps output
 in the original language. Language changes invalidate the previous retry request
 without discarding reusable audio preparation or reloading the same model.
+
+## Editing while previewing
+
+On desktop (861 px and wider), subtitles open in the right-hand controls column
+in place of customization controls. The panel has independent scrolling, no
+modal backdrop or focus trap, and works in focus view. Previewing a block seeks
+without closing the editor; playback and live caption edits remain available.
+Done, Close, or Escape from inside the panel restores customization controls
+and returns keyboard focus to the subtitle button.
+
+Narrower screens retain the existing modal editor and Preview closes it to show
+the video. Both layouts share the same editor content and generation controller;
+resizing between them preserves subtitle blocks and the active generation job.
