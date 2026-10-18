@@ -6,10 +6,10 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { SubtitleGenerationPanel } from "@/components/subtitle-generation-panel";
+} from "@/components/ui/Dialog";
+import { SubtitleGenerationPanel } from "@/components/SubtitleGenerationPanel";
 import type { SubtitleGenerationController } from "@/hooks/use-subtitle-generation";
-import { timestamp } from "./export-dialog";
+import { timestamp } from "./ExportDialog";
 import { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH, type SubtitleCue } from "@/lib/subtitles";
 
 function readTime(value: string): number | null {
