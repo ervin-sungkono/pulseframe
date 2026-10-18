@@ -26,7 +26,7 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-import { Slider } from "@/components/ui/slider";
+import { Slider } from "@/components/ui/Slider";
 import {
   Drawer,
   DrawerContent,
@@ -34,17 +34,17 @@ import {
   DrawerHandle,
   DrawerHeader,
   DrawerTitle,
-} from "@/components/ui/drawer";
+} from "@/components/ui/Drawer";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { CustomizerPanel } from "@/components/customizer-panel";
-import { ExportDialog, timestamp } from "@/components/export-dialog";
-import { PresetDialog } from "@/components/preset-dialog";
+} from "@/components/ui/Dialog";
+import { CustomizerPanel } from "@/components/CustomizerPanel";
+import { ExportDialog, timestamp } from "@/components/ExportDialog";
+import { PresetDialog } from "@/components/PresetDialog";
 import { applyPreset, presetStyle, type SavedPreset } from "@/lib/presets";
 import {
   BUILTIN_LOOKS,
@@ -52,20 +52,20 @@ import {
   SECTION_KEYS,
   type CustomizerSection,
 } from "@/lib/customizer-config";
-import { QuickLookStrip, type ActiveLook } from "@/components/quick-look-strip";
-import { PresetSaveDialog } from "@/components/preset-save-dialog";
+import { QuickLookStrip, type ActiveLook } from "@/components/QuickLookStrip";
+import { PresetSaveDialog } from "@/components/PresetSaveDialog";
 import { usePresets } from "@/hooks/use-presets";
 import { useSettingsHistory } from "@/hooks/use-settings-history";
 import { useExportController } from "@/hooks/use-export-controller";
-import { SubtitleDialog, SubtitleEditor } from "@/components/subtitle-dialog";
-import { SubtitleGenerationStatus } from "@/components/subtitle-generation-panel";
+import { SubtitleDialog, SubtitleEditor } from "@/components/SubtitleDialog";
+import { SubtitleGenerationStatus } from "@/components/SubtitleGenerationPanel";
 import { useSubtitleGeneration } from "@/hooks/use-subtitle-generation";
 import type { ExportFrameRate } from "@/lib/export-timeline";
 import { makeProjectFile, readProjectFile } from "@/lib/project-file";
 import type { SubtitleCue } from "@/lib/subtitles";
 import { useMediaSession } from "@/hooks/use-media-session";
 import { useVisualizerPreview } from "@/hooks/use-visualizer-preview";
-import { TrackWaveform } from "@/components/track-waveform";
+import { TrackWaveform } from "@/components/TrackWaveform";
 import type { VisualSettings } from "@/lib/visual-settings-model";
 
 const dimensions = {

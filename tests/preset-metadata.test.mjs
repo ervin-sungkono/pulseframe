@@ -203,16 +203,16 @@ const uiAlertDialog = {
 const presetComponentMocks = (id) => {
   if (id === "react") return reactMock;
   if (id === "lucide-react") return icons;
-  if (id === "@/components/ui/dialog") return uiDialog;
-  if (id === "@/components/ui/alert-dialog") return uiAlertDialog;
-  if (id === "@/components/preset-save-dialog") return { PresetSaveDialog: presetSaveDialogStub };
+  if (id === "@/components/ui/Dialog") return uiDialog;
+  if (id === "@/components/ui/AlertDialog") return uiAlertDialog;
+  if (id === "@/components/PresetSaveDialog") return { PresetSaveDialog: presetSaveDialogStub };
   if (id === "@/lib/preset-store")
     return { PresetStoreError: class PresetStoreError extends Error {} };
   if (id === "@/lib/presets") return { visualModeName: () => "Pulse Ring" };
   throw new Error(`Unexpected PresetDialog import: ${id}`);
 };
 actualPresetDialog = compileTsx(
-  "../components/preset-dialog.tsx",
+  "../components/PresetDialog.tsx",
   presetComponentMocks,
 ).PresetDialog;
 
@@ -238,8 +238,8 @@ const appMockRequire = (id) => {
   if (id === "lucide-react") return icons;
   if (id === "@/lib/export-settings")
     return { exportDimensions: () => ({ width: 1280, height: 720 }), timestamp: () => "0:00" };
-  if (id === "@/components/ui/slider") return { Slider: stubComponent };
-  if (id === "@/components/ui/drawer")
+  if (id === "@/components/ui/Slider") return { Slider: stubComponent };
+  if (id === "@/components/ui/Drawer")
     return {
       Drawer: stubComponent,
       DrawerContent: stubComponent,
@@ -248,11 +248,11 @@ const appMockRequire = (id) => {
       DrawerHeader: stubComponent,
       DrawerTitle: stubComponent,
     };
-  if (id === "@/components/ui/dialog") return uiDialog;
-  if (id === "@/components/customizer-panel") return { CustomizerPanel: customizerPanelStub };
-  if (id === "@/components/export-dialog")
+  if (id === "@/components/ui/Dialog") return uiDialog;
+  if (id === "@/components/CustomizerPanel") return { CustomizerPanel: customizerPanelStub };
+  if (id === "@/components/ExportDialog")
     return { ExportDialog: stubComponent, timestamp: () => "0:00" };
-  if (id === "@/components/preset-dialog") return { PresetDialog: actualPresetDialog };
+  if (id === "@/components/PresetDialog") return { PresetDialog: actualPresetDialog };
   if (id === "@/lib/presets")
     return {
       applyPreset: (current, next) => ({
@@ -273,8 +273,8 @@ const appMockRequire = (id) => {
       SECTION_KEYS: { colors: ["primary", "secondary", "background"] },
       DEFAULT_SETTINGS,
     };
-  if (id === "@/components/quick-look-strip") return { QuickLookStrip: stubComponent };
-  if (id === "@/components/preset-save-dialog") return { PresetSaveDialog: presetSaveDialogStub };
+  if (id === "@/components/QuickLookStrip") return { QuickLookStrip: stubComponent };
+  if (id === "@/components/PresetSaveDialog") return { PresetSaveDialog: presetSaveDialogStub };
   if (id === "@/hooks/use-presets") return { usePresets: () => library };
   if (id === "@/hooks/use-settings-history")
     return {
@@ -331,8 +331,9 @@ const appMockRequire = (id) => {
         cancelExport() {},
       }),
     };
-  if (id === "@/components/subtitle-dialog") return { SubtitleDialog: stubComponent };
-  if (id === "@/components/subtitle-generation-panel")
+  if (id === "@/components/SubtitleDialog")
+    return { SubtitleDialog: stubComponent, SubtitleEditor: stubComponent };
+  if (id === "@/components/SubtitleGenerationPanel")
     return { SubtitleGenerationStatus: stubComponent };
   if (id === "@/hooks/use-subtitle-generation")
     return { useSubtitleGeneration: () => ({ running: false }) };
@@ -346,7 +347,7 @@ const appMockRequire = (id) => {
   if (id === "@/lib/audio-analysis-config") return { ANALYSIS_FPS: 30 };
   if (id === "@/lib/local-image") return { readLocalImage: async () => null };
   if (id === "@/lib/live-sound") return { LiveSound: class {} };
-  if (id === "@/components/track-waveform") return { TrackWaveform: stubComponent };
+  if (id === "@/components/TrackWaveform") return { TrackWaveform: stubComponent };
   if (id === "@/lib/visualizer")
     return {
       createAudioReactiveState: () => ({}),
@@ -360,7 +361,7 @@ const appMockRequire = (id) => {
   throw new Error(`Unexpected page import: ${id}`);
 };
 
-const Home = compileTsx("../app/page.tsx", appMockRequire).default;
+const Home = compileTsx("../app/Home.tsx", appMockRequire).default;
 const renderHome = () => {
   activeHarness = appHooks;
   return appHooks.render(() => Home());
@@ -397,7 +398,16 @@ async function settle() {
   await Promise.resolve();
 }
 
-test("preset metadata refresh keeps the applied snapshot and routes explicit saves and applies correctly", async () => {
+test("preset metadata refresh keeps the applied snapshot and routes explicit saves and applies correctly", async (t) => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { matchMedia: () => ({ matches: true }) },
+  });
+  t.after(() => {
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+    else delete globalThis.window;
+  });
   renderHome();
   const settingsSlot = appHooks.stateSlots[0];
   const activeLookSlot = appHooks.stateSlots[1];

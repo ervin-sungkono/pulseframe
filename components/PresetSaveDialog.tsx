@@ -5,7 +5,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/Dialog";
 import { presetStyle, visualModeName, type SavedPreset } from "@/lib/presets";
 import type { VisualSettings } from "@/lib/visual-settings-model";
 import type { PresetLibrary } from "@/hooks/use-presets";

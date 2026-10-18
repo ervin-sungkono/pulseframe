@@ -22,7 +22,7 @@ of truth when older documentation disagrees with them.
 - Preserve the existing MVC arrangement: React components are views, hooks
   orchestrate controllers, and settings, validation, serialization and DSP
   calculations belong in UI-independent models.
-- `app/page.tsx` composes the editor; `components/` presents controls and dialogs.
+- `app/Home.tsx` composes the editor; `components/` presents controls and dialogs.
   Keep audio analysis, persistence rules and export algorithms out of views.
 - `hooks/` owns application orchestration, state transitions and cleanup.
   Delegate drawing to the canvas renderer rather than duplicating drawing code

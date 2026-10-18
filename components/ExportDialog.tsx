@@ -6,8 +6,8 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Slider } from "@/components/ui/slider";
+} from "@/components/ui/Dialog";
+import { Slider } from "@/components/ui/Slider";
 import { EXPORT_FRAME_RATES, type ExportFrameRate } from "@/lib/export-timeline";
 import { EXPORT_RESOLUTIONS, type ExportResolution } from "@/lib/export-settings";
 import type { ExportProgress } from "@/lib/export-video";

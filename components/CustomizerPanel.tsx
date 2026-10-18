@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, type ComponentProps, type ReactNode } from "react";
 import { Check, ChevronDown, ImagePlus, RotateCcw, X } from "lucide-react";
-import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/Slider";
+import { Switch } from "@/components/ui/Switch";
 import { palettes, type CustomizerSection } from "@/lib/customizer-config";
 import {
   DEFAULT_LOGO_AUTO_FIT,

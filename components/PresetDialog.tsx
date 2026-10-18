@@ -16,7 +16,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/Dialog";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -25,8 +25,8 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogCancel,
-} from "@/components/ui/alert-dialog";
-import { PresetSaveDialog } from "@/components/preset-save-dialog";
+} from "@/components/ui/AlertDialog";
+import { PresetSaveDialog } from "@/components/PresetSaveDialog";
 import type { PresetLibrary } from "@/hooks/use-presets";
 import { PresetStoreError } from "@/lib/preset-store";
 import { visualModeName, type SavedPreset } from "@/lib/presets";
