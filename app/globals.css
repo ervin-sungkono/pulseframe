@@ -2686,7 +2686,7 @@ h2 {
   display: grid;
   gap: 10px;
   flex: 0 0 auto;
-  margin: 0 0 13px;
+  margin: 14px 0 13px;
   padding: 13px;
   border: 1px solid #4e5c77;
   border-radius: 11px;
