@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
+import { SubtitleImportPanel } from "@/components/SubtitleImportPanel";
 import { SubtitleGenerationPanel } from "@/components/SubtitleGenerationPanel";
 import type { SubtitleGenerationController } from "@/hooks/use-subtitle-generation";
 import { timestamp } from "./ExportDialog";
@@ -119,6 +120,13 @@ export function SubtitleEditor({
         </Description>
       </DialogHeader>
       <div className="subtitle-dialog-scroll">
+        <SubtitleImportPanel
+          trackFile={trackFile}
+          duration={duration}
+          cues={cues}
+          onChange={onChange}
+          disabled={editingDisabled}
+        />
         {generation && (
           <SubtitleGenerationPanel
             generation={generation}
