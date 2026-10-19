@@ -3158,3 +3158,87 @@ h2 {
 .subtitle-import-panel .subtitle-warning {
   color: #f0bb85;
 }
+
+.subtitle-editor-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.subtitle-editor-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  margin-top: 16px;
+  border: 1px solid #3b4a65;
+  border-radius: 10px;
+  background: #0e1727;
+}
+.subtitle-editor-tabs button {
+  min-width: 0;
+  min-height: 40px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #afbdd3;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.subtitle-editor-tabs button[aria-selected="true"] {
+  color: #fff;
+  background: #514274;
+}
+.subtitle-editor-tabs button:focus-visible {
+  outline: 2px solid #b49af7;
+  outline-offset: 1px;
+}
+.subtitle-tab-busy {
+  color: #b5f2e3;
+}
+.subtitle-editor-transport {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.subtitle-editor-transport .button {
+  min-height: 40px;
+}
+.subtitle-editor-transport > span {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+  font-size: 11px;
+  color: #aebbd0;
+}
+.subtitle-editor-transport time {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: #f1eaff;
+}
+.subtitle-topline[hidden],
+.subtitle-dialog-scroll [role="tabpanel"][hidden] {
+  display: none;
+}
+.subtitle-block[data-active="true"] {
+  border-color: #a286e6;
+  box-shadow: inset 3px 0 #a286e6;
+}
+.subtitle-block-heading strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.subtitle-current-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: #bfe6dc;
+}
+.subtitle-block-heading button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}

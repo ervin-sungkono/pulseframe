@@ -106,10 +106,12 @@ export function SubtitleGenerationPanel({
   generation,
   trackFile,
   disabled = false,
+  onApplied,
 }: {
   generation: SubtitleGenerationController;
   trackFile?: File | null;
   disabled?: boolean;
+  onApplied?: () => void;
 }) {
   const elapsedMs = useVisibleElapsedTime(generation);
   const languageHintId = useId();
@@ -422,7 +424,9 @@ export function SubtitleGenerationPanel({
                 <button
                   type="button"
                   className="button button-soft"
-                  onClick={generation.applyGenerated}
+                  onClick={() => {
+                    if (generation.applyGenerated()) onApplied?.();
+                  }}
                   disabled={busy || disabled}
                 >
                   Replace existing subtitles

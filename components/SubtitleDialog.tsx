@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ComponentProps } from "react";
-import { Captions, Plus, Trash2, X } from "lucide-react";
+import { useEffect, useId, useRef, useState, type ComponentProps } from "react";
+import { Captions, Pause, Play, Plus, Trash2, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -22,12 +22,14 @@ function readTime(value: string): number | null {
 
 function CueTime({
   label,
+  ariaLabel,
   value,
   max,
   onChange,
   disabled,
 }: {
   label: string;
+  ariaLabel: string;
   value: number;
   max: number;
   onChange: (time: number) => void;
@@ -39,7 +41,7 @@ function CueTime({
       <span>{label}</span>
       <input
         inputMode="decimal"
-        aria-label={label + " timestamp"}
+        aria-label={ariaLabel}
         value={draft ?? timestamp(value, true)}
         disabled={disabled}
         onChange={(event) => setDraft(event.target.value)}
@@ -63,7 +65,9 @@ export function SubtitleEditor({
   onChange,
   position,
   duration,
-  onSeek,
+  onPreview,
+  playing,
+  onTogglePlay,
   generation,
   trackFile,
   disabled = false,
@@ -74,11 +78,39 @@ export function SubtitleEditor({
   onChange: (cues: SubtitleCue[]) => void;
   position: number;
   duration: number;
-  onSeek: (time: number) => void;
+  onPreview: (time: number) => void;
+  playing: boolean;
+  onTogglePlay: () => void;
   generation?: SubtitleGenerationController;
   trackFile?: File | null;
   disabled?: boolean;
 }) {
+  const editorId = useId();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [tab, setTab] = useState<"edit" | "import" | "generate">(() =>
+    generation?.running ? "generate" : "edit",
+  );
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [tab]);
+  const editTabRef = useRef<HTMLButtonElement>(null);
+  const focusCue = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusCue.current) return;
+    const field = document.getElementById(`${editorId}-${focusCue.current}`);
+    if (field) {
+      focusCue.current = null;
+      field.focus({ preventScroll: true });
+      field.scrollIntoView({ block: "nearest" });
+    }
+  }, [cues, editorId]);
+  const showEditor = () => {
+    setTab("edit");
+    editTabRef.current?.focus();
+  };
+  const tabs = (["edit", "import", "generate"] as const).filter(
+    (item) => item !== "generate" || generation,
+  );
   const titleRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (inline) titleRef.current?.focus();
@@ -92,6 +124,7 @@ export function SubtitleEditor({
     const start = Math.max(0, Math.min(position, Math.max(0, duration - 0.2)));
     const end = Math.min(duration, start + 2.5);
     const id = crypto.randomUUID();
+    focusCue.current = id;
     onChange([...cues, { id, start, end, text: "" }]);
   };
   const sorted = [...cues].sort((a, b) => a.start - b.start);
@@ -109,107 +142,200 @@ export function SubtitleEditor({
         </button>
       )}
       <DialogHeader>
-        <div className="dialog-icon">
-          <Captions size={19} />
-        </div>
-        <Title ref={titleRef} tabIndex={inline ? -1 : undefined} data-slot="dialog-title">
-          Subtitles
+        <Title
+          ref={titleRef}
+          tabIndex={inline ? -1 : undefined}
+          data-slot="dialog-title"
+          className="subtitle-editor-title"
+        >
+          <Captions size={19} aria-hidden="true" /> Subtitles
         </Title>
         <Description data-slot="dialog-description">
-          Add timed caption blocks or generate subtitles from the complete audio track.
+          Edit captions while listening. Changes appear in the preview immediately.
         </Description>
       </DialogHeader>
-      <div className="subtitle-dialog-scroll">
-        <SubtitleImportPanel
-          trackFile={trackFile}
-          duration={duration}
-          cues={cues}
-          onChange={onChange}
-          disabled={editingDisabled}
-        />
-        {generation && (
-          <SubtitleGenerationPanel
-            generation={generation}
-            trackFile={trackFile}
-            disabled={disabled}
-          />
-        )}
-        <div className="subtitle-topline">
-          <span>
-            {cues.length} {cues.length === 1 ? "block" : "blocks"}
-          </span>
+      <div className="subtitle-editor-tabs" role="tablist" aria-label="Subtitle tools">
+        {tabs.map((item) => (
           <button
-            className="button button-soft"
-            onClick={add}
-            disabled={editingDisabled || !duration || cues.length >= MAX_SUBTITLE_CUES}
+            key={item}
+            ref={item === "edit" ? editTabRef : undefined}
+            type="button"
+            role="tab"
+            id={`${editorId}-tab-${item}`}
+            aria-controls={`${editorId}-panel-${item}`}
+            aria-selected={tab === item}
+            tabIndex={tab === item ? 0 : -1}
+            onClick={() => setTab(item)}
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              const index = tabs.indexOf(item);
+              const next =
+                event.key === "Home"
+                  ? tabs[0]
+                  : event.key === "End"
+                    ? tabs[tabs.length - 1]
+                    : tabs[
+                        (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length
+                      ];
+              setTab(next);
+              document.getElementById(`${editorId}-tab-${next}`)?.focus();
+            }}
           >
-            <Plus size={16} /> Add at {timestamp(position, true)}
+            {item === "edit" ? "Edit" : item === "import" ? "Import" : "Generate"}
+            {item === "generate" && generation?.running && (
+              <span className="subtitle-tab-busy" aria-hidden="true">
+                {" "}
+                •
+              </span>
+            )}
           </button>
-        </div>
-        <div className="subtitle-list">
-          {!cues.length && (
-            <div className="subtitle-empty">
-              Move to a point in your song, then add a subtitle block.
-            </div>
-          )}
-          {sorted.map((cue, index) => (
-            <div key={cue.id} className="subtitle-block">
-              <div className="subtitle-block-heading">
-                <strong>Block {index + 1}</strong>
-                <div>
-                  <button
+        ))}
+      </div>
+      <div className="subtitle-editor-transport">
+        <button
+          className="button button-soft"
+          onClick={onTogglePlay}
+          disabled={editingDisabled || !duration}
+          aria-label={playing ? "Pause subtitle preview" : "Play subtitle preview"}
+        >
+          {playing ? <Pause size={15} /> : <Play size={15} />}
+          {playing ? "Pause" : "Play"}
+        </button>
+        <span>
+          Playhead <time>{timestamp(position, true)}</time>
+        </span>
+      </div>
+      <div className="subtitle-topline" hidden={tab !== "edit"}>
+        <span>
+          {cues.length} {cues.length === 1 ? "block" : "blocks"}
+        </span>
+        <button
+          className="button button-soft"
+          onClick={add}
+          title={`Add a block at ${timestamp(position, true)}`}
+          disabled={editingDisabled || !duration || cues.length >= MAX_SUBTITLE_CUES}
+        >
+          <Plus size={16} /> Add block
+        </button>
+      </div>
+      <div className="subtitle-dialog-scroll" ref={scrollRef}>
+        <div
+          role="tabpanel"
+          id={`${editorId}-panel-edit`}
+          aria-labelledby={`${editorId}-tab-edit`}
+          hidden={tab !== "edit"}
+        >
+          <div className="subtitle-list">
+            {!cues.length && (
+              <div className="subtitle-empty">
+                Seek to a lyric, choose Add block, then type your caption. Use Import for an
+                existing subtitle file or Generate for automatic captions.
+              </div>
+            )}
+            {sorted.map((cue, index) => (
+              <div
+                key={cue.id}
+                className="subtitle-block"
+                data-active={cue.start <= position && position < cue.end}
+              >
+                <div className="subtitle-block-heading">
+                  <strong>
+                    Block {index + 1}
+                    {cue.start <= position && position < cue.end && (
+                      <span className="subtitle-current-label">Current</span>
+                    )}
+                  </strong>
+                  <div>
+                    <button
+                      disabled={editingDisabled}
+                      onClick={() => {
+                        onPreview(cue.start);
+                        if (!inline) onOpenChange(false);
+                      }}
+                      title="Play from this block"
+                      aria-label={"Preview block " + (index + 1)}
+                    >
+                      <Play size={13} aria-hidden="true" /> Play from here
+                    </button>
+                    <button
+                      disabled={editingDisabled}
+                      onClick={() => onChange(cues.filter((item) => item.id !== cue.id))}
+                      title="Remove block"
+                      aria-label={"Remove block " + (index + 1)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  id={`${editorId}-${cue.id}`}
+                  aria-label={"Subtitle text for block " + (index + 1)}
+                  placeholder="Type the subtitle here…"
+                  rows={2}
+                  maxLength={MAX_SUBTITLE_TEXT_LENGTH}
+                  value={cue.text}
+                  disabled={editingDisabled}
+                  onChange={(event) => update(cue.id, { text: event.target.value })}
+                />
+                <div className="cue-range">
+                  <CueTime
+                    label="Start"
+                    ariaLabel={"Block " + (index + 1) + " start timestamp"}
+                    value={cue.start}
+                    max={Math.max(0, cue.end - 0.1)}
                     disabled={editingDisabled}
-                    onClick={() => {
-                      onSeek(cue.start);
-                      if (!inline) onOpenChange(false);
-                    }}
-                    title="Preview at start"
-                    aria-label={"Preview block " + (index + 1)}
-                  >
-                    Preview
-                  </button>
-                  <button
+                    onChange={(start) => update(cue.id, { start })}
+                  />
+                  <CueTime
+                    label="End"
+                    ariaLabel={"Block " + (index + 1) + " end timestamp"}
+                    value={cue.end}
+                    max={duration}
                     disabled={editingDisabled}
-                    onClick={() => onChange(cues.filter((item) => item.id !== cue.id))}
-                    title="Remove block"
-                    aria-label={"Remove block " + (index + 1)}
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                    onChange={(end) => update(cue.id, { end: Math.max(cue.start + 0.1, end) })}
+                  />
                 </div>
               </div>
-              <textarea
-                aria-label={"Subtitle text for block " + (index + 1)}
-                placeholder="Type the subtitle here…"
-                rows={2}
-                maxLength={MAX_SUBTITLE_TEXT_LENGTH}
-                value={cue.text}
-                disabled={editingDisabled}
-                onChange={(event) => update(cue.id, { text: event.target.value })}
-              />
-              <div className="cue-range">
-                <CueTime
-                  label={"Block " + (index + 1) + " start"}
-                  value={cue.start}
-                  max={Math.max(0, cue.end - 0.1)}
-                  disabled={editingDisabled}
-                  onChange={(start) => update(cue.id, { start })}
-                />
-                <CueTime
-                  label={"Block " + (index + 1) + " end"}
-                  value={cue.end}
-                  max={duration}
-                  disabled={editingDisabled}
-                  onChange={(end) => update(cue.id, { end: Math.max(cue.start + 0.1, end) })}
-                />
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          {overlaps && (
+            <p className="subtitle-warning">
+              Overlapping blocks stack by start time. Earlier blocks appear above later blocks.
+            </p>
+          )}
         </div>
-        {overlaps && (
-          <p className="subtitle-warning">
-            Overlapping blocks stack by start time. Earlier blocks appear above later blocks.
-          </p>
+        <div
+          role="tabpanel"
+          id={`${editorId}-panel-import`}
+          aria-labelledby={`${editorId}-tab-import`}
+          hidden={tab !== "import"}
+        >
+          <SubtitleImportPanel
+            trackFile={trackFile}
+            duration={duration}
+            cues={cues}
+            onChange={(next) => {
+              onChange(next);
+              showEditor();
+            }}
+            disabled={editingDisabled}
+          />
+        </div>
+        {generation && (
+          <div
+            role="tabpanel"
+            id={`${editorId}-panel-generate`}
+            aria-labelledby={`${editorId}-tab-generate`}
+            hidden={tab !== "generate"}
+          >
+            <SubtitleGenerationPanel
+              generation={generation}
+              trackFile={trackFile}
+              disabled={disabled}
+              onApplied={showEditor}
+            />
+          </div>
         )}
       </div>
       <button className="button done-button subtitle-done" onClick={() => onOpenChange(false)}>
