@@ -235,3 +235,31 @@ and returns keyboard focus to the subtitle button.
 Narrower screens retain the existing modal editor and Preview closes it to show
 the video. Both layouts share the same editor content and generation controller;
 resizing between them preserves subtitle blocks and the active generation job.
+
+## Importing existing subtitles
+
+The editor has a separate **Import** section for SRT (`.srt`), WebVTT (`.vtt`),
+LRC (`.lrc`) and subtitle JSON (`.json`). Import runs locally and never invokes
+a transcription provider. Load the track first, choose a file, inspect the
+block count, sample text and timing notices, then explicitly apply it. If blocks
+already exist, the apply button states that it replaces all of them. Cancel,
+invalid files, stale file reads and changed track/cue revisions leave the
+current blocks untouched. Import is unavailable during generation or export.
+
+SRT and VTT retain multiline text and overlapping cues, with supported caption
+markup converted to plain text. VTT cue identifiers/settings and NOTE, STYLE
+and REGION blocks do not become caption text. LRC supports repeated timestamps,
+metadata, enhanced word tags and signed offsets: positive offsets move lyrics
+earlier. LRC ends follow the next distinct timestamp (including blank clearing
+markers), with the last line ending at the track boundary.
+
+JSON accepts Pulseframe's downloaded `{ cues: [{ startMs, endMs, text }] }`
+format or second-based `{ start, end, text }` cue arrays (also wrapped in
+`{ cues: [...] }`). Imported IDs are replaced with fresh editor IDs. Timing
+units cannot be mixed within a cue.
+
+UTF-8 and BOM-marked UTF-16 files are supported, up to 2 MiB; existing editor
+limits of 500 blocks and 600 characters per block apply. Track boundaries clip
+partially overlapping cues and exclude wholly out-of-track cues, with notices.
+Malformed active intervals and oversized results fail rather than silently
+truncating content. Untimed text and ASS/SSA styling are not supported.

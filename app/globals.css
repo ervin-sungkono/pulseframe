@@ -3110,3 +3110,51 @@ h2 {
     outline-offset: 2px;
   }
 }
+
+.subtitle-import-panel {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid #3b4a65;
+  border-radius: 12px;
+  background: #19263a;
+  overflow-wrap: anywhere;
+}
+.subtitle-import-panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.subtitle-import-panel p {
+  color: #aebbd0;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 8px 0;
+}
+.subtitle-import-panel .button {
+  min-height: 44px;
+}
+.subtitle-import-preview {
+  margin-top: 14px;
+  font-size: 12px;
+}
+.subtitle-import-preview ol {
+  padding-left: 20px;
+}
+.subtitle-import-preview li span {
+  color: #bda9ee;
+  font-variant-numeric: tabular-nums;
+}
+.subtitle-import-preview li p {
+  white-space: pre-wrap;
+}
+.subtitle-import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.subtitle-import-panel .subtitle-warning {
+  color: #f0bb85;
+}
