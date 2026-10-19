@@ -510,9 +510,13 @@ export default function Home() {
     trackFile: file,
     position,
     duration,
-    onSeek: (time: number) => {
-      session.pause();
+    playing,
+    onTogglePlay: () => {
+      void togglePlay();
+    },
+    onPreview: (time: number) => {
       seek(time);
+      void session.play();
     },
   };
 

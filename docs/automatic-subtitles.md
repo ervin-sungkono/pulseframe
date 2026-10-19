@@ -227,18 +227,20 @@ without discarding reusable audio preparation or reloading the same model.
 
 On desktop (861 px and wider), subtitles open in the right-hand controls column
 in place of customization controls. The panel has independent scrolling, no
-modal backdrop or focus trap, and works in focus view. Previewing a block seeks
+modal backdrop or focus trap, and works in focus view. The block action
+**Play from here** seeks to its start and starts playback
 without closing the editor; playback and live caption edits remain available.
 Done, Close, or Escape from inside the panel restores customization controls
 and returns keyboard focus to the subtitle button.
 
-Narrower screens retain the existing modal editor and Preview closes it to show
-the video. Both layouts share the same editor content and generation controller;
+Narrower screens retain the modal editor; Play from here starts playback and
+closes it to show the video. Both layouts share the same editor content and
+generation controller;
 resizing between them preserves subtitle blocks and the active generation job.
 
 ## Importing existing subtitles
 
-The editor has a separate **Import** section for SRT (`.srt`), WebVTT (`.vtt`),
+The editor has a separate **Import** tab for SRT (`.srt`), WebVTT (`.vtt`),
 LRC (`.lrc`) and subtitle JSON (`.json`). Import runs locally and never invokes
 a transcription provider. Load the track first, choose a file, inspect the
 block count, sample text and timing notices, then explicitly apply it. If blocks
@@ -263,3 +265,15 @@ limits of 500 blocks and 600 characters per block apply. Track boundaries clip
 partially overlapping cues and exclude wholly out-of-track cues, with notices.
 Malformed active intervals and oversized results fail rather than silently
 truncating content. Untimed text and ASS/SSA styling are not supported.
+
+The editor opens on **Edit**, with the caption list directly accessible. **Import**
+and **Generate** have separate tabs; switching tabs retains an import preview
+and generation settings/results. Opening the editor during generation selects
+Generate so progress and cancellation remain easy to find. Applying an import
+or generated result returns to Edit and focuses its tab.
+
+Play/Pause and the playhead time remain above the scrolling content. Add block
+is always reachable in Edit and focuses the new caption field. Current blocks
+are highlighted, Start/End labels remain compact, and tabs support arrow keys
+and Home/End. Playback uses the existing media owner: seek followed by play,
+rather than a toggle that would pause an already playing track.

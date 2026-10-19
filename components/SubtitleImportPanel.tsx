@@ -18,6 +18,7 @@ export function SubtitleImportPanel({
   onChange: (cues: SubtitleCue[]) => void;
   disabled: boolean;
 }) {
+  const existingBlocks = `${cues.length} existing ${cues.length === 1 ? "block" : "blocks"}`;
   const input = useRef<HTMLInputElement>(null);
   const titleId = useId();
   const importer = useSubtitleImport({ trackFile, duration, cues, onChange, disabled });
@@ -54,7 +55,8 @@ export function SubtitleImportPanel({
       {importer.pending && (
         <div className="subtitle-import-preview" aria-live="polite">
           <strong>
-            {importer.pending.filename} · {importer.pending.cues.length} blocks
+            {importer.pending.filename} · {importer.pending.cues.length}{" "}
+            {importer.pending.cues.length === 1 ? "block" : "blocks"}
           </strong>
           {importer.pending.notices.map((notice) => (
             <p key={notice}>{notice}</p>
@@ -69,14 +71,12 @@ export function SubtitleImportPanel({
               </li>
             ))}
           </ol>
-          {cues.length > 0 && (
-            <p>Applying this import replaces all {cues.length} existing blocks.</p>
-          )}
+          {cues.length > 0 && <p>Applying this import replaces {existingBlocks}.</p>}
           <div className="subtitle-import-actions">
             <button className="button button-soft" disabled={disabled} onClick={importer.apply}>
               {cues.length
-                ? `Replace ${cues.length} existing blocks`
-                : `Import ${importer.pending.cues.length} blocks`}
+                ? `Replace ${existingBlocks}`
+                : `Import ${importer.pending.cues.length} ${importer.pending.cues.length === 1 ? "block" : "blocks"}`}
             </button>
             <button className="button button-soft" onClick={importer.cancel}>
               Cancel import
