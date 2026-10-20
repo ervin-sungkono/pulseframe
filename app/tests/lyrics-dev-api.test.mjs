@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { Readable } from "node:stream";
+import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 
 function makeWav(sampleRate, durationMs, byteLength) {
@@ -64,13 +65,14 @@ async function invoke(middleware, body) {
 
 test("lyrics dev API accepts 100-second requests and matches canonical error responses", async () => {
   const vite = await createServer({
+    root: fileURLToPath(new URL("..", import.meta.url)),
     configFile: false,
     logLevel: "silent",
     server: { middlewareMode: true },
   });
 
   try {
-    const { lyricsDevApi } = await vite.ssrLoadModule("/scripts/lyrics-dev-api.ts");
+    const { lyricsDevApi } = await vite.ssrLoadModule("/lyrics-dev-api.ts");
     const {
       GEMINI_MAX_REQUEST_BYTES,
       GEMINI_MAX_WAV_BYTES,

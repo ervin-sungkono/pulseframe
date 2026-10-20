@@ -2,10 +2,10 @@
 // This does not change Pulseframe effects or claim accuracy on real music.
 import { readFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
-import { initSync, TemporalDsp } from "../public/dsp/pulseframe_dsp.js";
+import { initSync, TemporalDsp } from "../app/public/dsp/pulseframe_dsp.js";
 
 const { memory } = initSync({
-  module: readFileSync(new URL("../public/dsp/pulseframe_dsp_bg.wasm", import.meta.url)),
+  module: readFileSync(new URL("../app/public/dsp/pulseframe_dsp_bg.wasm", import.meta.url)),
 });
 const reports = [];
 for (const rate of [44100, 48000]) {

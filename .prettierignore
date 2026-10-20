@@ -1,12 +1,15 @@
 build/
 coverage/
 crates/pulseframe-dsp/target/
-dist/
-node_modules/
+app/dist/
+**/node_modules/
 pnpm-lock.yaml
-public/dsp/
+app/public/dsp/
 vendor/
 *.tsbuildinfo
 
-public/mdx-ort/
-public/whisper-ort/
+app/public/mdx-ort/
+app/public/whisper-ort/
+
+app/outputs/
+app/work/

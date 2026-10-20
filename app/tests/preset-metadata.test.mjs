@@ -365,7 +365,7 @@ const appMockRequire = (id) => {
   throw new Error(`Unexpected page import: ${id}`);
 };
 
-const Home = compileTsx("../app/Home.tsx", appMockRequire).default;
+const Home = compileTsx("../Home.tsx", appMockRequire).default;
 const renderHome = () => {
   activeHarness = appHooks;
   return appHooks.render(() => Home());

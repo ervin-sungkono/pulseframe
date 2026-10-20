@@ -1,20 +1,20 @@
 # Dependencies and local tool state
-/node_modules/
+**/node_modules/
 .pnpm-store/
-/.vercel/
+**/.vercel/
 /.agents/
 /.codex/
 .env*
 
 # Build, test and generated local output
-/dist/
+/app/dist/
 /build/
 /coverage/
 *.tsbuildinfo
 /crates/pulseframe-dsp/target/
-/public/.dsp-build/
-/outputs/
-/work/
+/app/public/.dsp-build/
+/app/outputs/
+/app/work/
 
 # Editor / operating-system files and logs
 .DS_Store
@@ -25,5 +25,5 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # Generated browser inference runtimes
-/public/mdx-ort/
-/public/whisper-ort/
+/app/public/mdx-ort/
+/app/public/whisper-ort/

@@ -6,18 +6,20 @@ import eslintConfigPrettier from "eslint-config-prettier";
 
 export default defineConfig([
   globalIgnores([
-    "dist/**",
+    "app/dist/**",
     "build/**",
-    "public/dsp/**",
-    "public/mdx-ort/**",
-    "public/whisper-ort/**",
+    "app/outputs/**",
+    "app/work/**",
+    "app/public/dsp/**",
+    "app/public/mdx-ort/**",
+    "app/public/whisper-ort/**",
     "crates/pulseframe-dsp/target/**",
   ]),
   { ...js.configs.recommended, files: ["**/*.{ts,tsx}"] },
   tseslint.configs.recommended,
   { ...reactHooks.configs.flat.recommended, files: ["**/*.{ts,tsx}"] },
   {
-    files: ["components/ui/**/*.{ts,tsx}"],
+    files: ["app/components/ui/**/*.{ts,tsx}"],
     rules: {
       "@typescript-eslint/no-unused-vars": "off",
       "react-hooks/purity": "off",
