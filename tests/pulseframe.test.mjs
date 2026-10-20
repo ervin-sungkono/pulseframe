@@ -19,6 +19,7 @@ const {
   edgeBarResponse,
   edgeBarLayout,
   spectrumLayout,
+  sampleBarBand,
   makeParticles,
   coverCrop,
 } = modules.visualizer;
@@ -1087,6 +1088,92 @@ test("bottom details and subtitles do not collapse a landscape Spectrum", () => 
   }
 });
 
+test("bar sampling preserves flat spectra and interpolates fractional frequency positions", () => {
+  const flat = new Float32Array(96).fill(0.6);
+  for (const width of [0, 1 / 71, 2 / 71, 1 / 31, 1])
+    for (const position of [0, 0.013, 0.5, 0.987, 1])
+      close(sampleBarBand(flat, position, width), 0.6, 1e-7);
+  assert.equal(sampleBarBand(undefined, 0.5, 0.1), 0);
+  assert.equal(sampleBarBand(new Float32Array(), 0.5, 0.1), 0);
+  assert.equal(sampleBarBand(new Float32Array([0.5]), 0.5, 0.1), 0.5);
+  const ramp = Float32Array.from({ length: 96 }, (_, i) => i / 95);
+  for (const position of [0.123, 0.456, 0.789])
+    for (const width of [0, 1 / 31, 2 / 71])
+      close(sampleBarBand(ramp, position, width), position, 1e-7);
+});
+
+test("an isolated frequency peak tapers across bars instead of repeating a three-bar plateau", () => {
+  const bands = new Float32Array(96);
+  bands[50] = 1;
+  const heights = Array.from({ length: 48 }, (_, i) => sampleBarBand(bands, i / 47, 1 / 47));
+  assert.ok(heights[24] > 0 && heights[25] > heights[24]);
+  assert.ok(heights[26] < heights[24]);
+  assert.ok(heights[22] === 0 && heights[27] === 0);
+  for (const width of [1 / 31, 1 / 47, 1 / 71])
+    for (let index = 45; index <= 55; index++) {
+      const position = index / 95;
+      close(
+        sampleBarBand(bands, position - 1e-8, width),
+        sampleBarBand(bands, position + 1e-8, width),
+        1e-5,
+      );
+    }
+});
+
+test("bar smoothing tapers repeated bass-bin plateaus while retaining their peak", () => {
+  const bands = new Float32Array(96);
+  bands.fill(1, 20, 24);
+  const heights = Array.from({ length: 72 }, (_, i) => sampleBarBand(bands, i / 71, 1 / 71));
+  const peak = Math.max(...heights);
+  assert.ok(peak > 0.9);
+  assert.equal(heights.filter((height) => Math.abs(height - peak) < 1e-6).length, 1);
+  for (let i = 1; i < heights.length - 1; i++)
+    assert.ok(
+      !(heights[i] > 0.5 && heights[i - 1] === heights[i] && heights[i] === heights[i + 1]),
+    );
+});
+
+test("Spectrum samples one frequency footprint per bar in each mirrored half", () => {
+  const bands = new Float32Array(96);
+  bands[50] = 0.8;
+  const state = createAudioReactiveState();
+  const config = {
+    ...settings,
+    mode: "spectrum",
+    bassBoost: 0,
+    particles: false,
+    trails: false,
+    beatRays: false,
+  };
+  const { ctx, operations } = fakeCanvas(1280, 720);
+  drawVisualization(
+    ctx,
+    config,
+    new Uint8Array(2048),
+    new Uint8Array(4096).fill(128),
+    [],
+    1,
+    2000,
+    null,
+    null,
+    state,
+    48000,
+    2,
+    [],
+    { sound: { rms: 0.4, rmsDb: -8, bassDb: -160, middleDb: -160, highDb: -160, bands: [bands] } },
+  );
+  const { count, maxHalf } = spectrumLayout(1280, 720, config.visualScale, config.glow);
+  const bars = operations.filter((op) => op.name === "roundRect").slice(0, count);
+  const idle = Math.min(maxHalf, Math.max(2, 720 * 0.004));
+  for (let i = 0; i < count; i++) {
+    const position = Math.abs(i - (count - 1) / 2) / ((count - 1) / 2);
+    const value = sampleBarBand(state.ringBands[0][0], position, 2 / (count - 1));
+    const expected = idle + (1 - Math.exp(-value * config.sensitivity * 3.8)) * (maxHalf - idle);
+    close(bars[i].args[3] / 2, expected, 1e-6);
+    close(bars[i].args[3], bars[count - 1 - i].args[3], 1e-8);
+  }
+});
+
 test("Edge Bars follow opposing linear frequency directions and keep a clear center", () => {
   for (const [w, h] of [
     [1280, 720],
@@ -1105,8 +1192,8 @@ test("Edge Bars follow opposing linear frequency directions and keep a clear cen
       const bottom = Array.from({ length: layout.count }, (_, i) =>
         edgeBarResponse(bands, i, layout.count, "bottom", 1.3),
       );
-      assert.ok(top[0] > 0.8 && top.at(-1) === 0);
-      assert.ok(bottom[0] === 0 && bottom.at(-1) > 0.8);
+      assert.ok(top[0] > 0 && top.at(-1) === 0);
+      assert.ok(bottom[0] === 0 && bottom.at(-1) > 0);
       top.forEach((v, i) => close(v, bottom.at(-1 - i), 1e-8));
       const sound = {
         rms: 0.7,
