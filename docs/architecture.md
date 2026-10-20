@@ -7,38 +7,64 @@ explicit. There is no new global store, service container, or plugin framework.
 
 ```mermaid
 flowchart LR
+  Entry[main.tsx] --> UI
   UI[Home and controls: View] --> Media[useMediaSession: Controller]
   UI --> Preview[useVisualizerPreview: Controller]
   UI --> Export[useExportController: Controller]
   UI --> History[useSettingsHistory and usePresets]
+  UI --> Subtitles[useSubtitleGeneration / useSubtitleImport]
   Media --> Session[MediaSessionOwner: browser resources]
   Session --> Analysis[PCM and live audio analysis]
+  Analysis --> Scan[DSP scan client / worker]
+  Analysis --> DSP[Rust WASM / JavaScript fallback]
+  Scan --> DSP
   Preview --> Session
+  Preview --> Replay[preview-state: causal seek replay]
   Preview --> Renderer[drawVisualization: canvas View]
   Export --> Job[Export job lifecycle]
   Job --> Encoder[Existing video export adapter]
   Encoder --> Renderer
-  Contracts[Settings, presets, project and subtitle contracts: Model] --> UI
-  Contracts --> Renderer
-  Contracts --> Encoder
+  Encoder --> Analysis
+  History --> Persistence[PresetStore: validated localStorage]
+  Subtitles --> Local[Local lyrics client / processing worker]
+  Subtitles --> Cloud[Gemini client: explicit consent]
+  Cloud --> API[Same-origin transcription API]
+  API --> Google[Google transcription]
+  UI --> Contracts[Settings, presets, project, subtitle and export contracts]
+  Renderer --> Contracts
+  Encoder --> Contracts
+  Persistence --> Contracts
 ```
+
+Arrows follow imports or calls from consumer to dependency. Runtime workers are
+entry points too: Vite resolves the DSP scan worker and local lyrics worker;
+the DSP loader fetches the checked-in versioned assets in `public/dsp/`.
+`scripts/prepare-lyrics-runtime.mjs` copies the two pinned ONNX runtime variants
+into separate public directories before development and production builds.
 
 ## Responsibilities
 
-| Boundary                   | Files                                                                                                                                                | Responsibility                                                                                                          |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| View and composition       | `app/Home.tsx`, `components/*`                                                                                                                       | Layout, dialogs, editor actions and presentation                                                                        |
-| Domain contracts           | `lib/visual-settings-model.ts`, `lib/customizer-config.ts`, `lib/presets.ts`, `lib/project-file.ts`, `lib/subtitles.ts`                              | Settings, defaults, validation and serialization                                                                        |
-| Analysis                   | `lib/audio-analysis-config.ts`, `lib/audio-features.ts`, `lib/audio-dsp.mjs`, `lib/art-reactivity.mjs`, `lib/drop-detector.mjs`, `lib/live-sound.ts` | Shared cadence, PCM/live features and drop detection                                                                    |
-| Browser resource ownership | `lib/media-session.ts`, `hooks/use-media-session.ts`                                                                                                 | Media elements, audio graph, decoded sound, image assets and transport                                                  |
-| Preview orchestration      | `hooks/use-visualizer-preview.ts`, `lib/preview-state.ts`                                                                                            | Frame loop, sizing, reduced motion, seek response replay and PNG capture                                                |
-| Canvas rendering           | `lib/visualizer.ts`, `lib/track-overlay.ts`, `lib/beat-lighting.ts`, `lib/glitch.ts`                                                                 | Existing visual composition and response equations                                                                      |
-| Export orchestration       | `hooks/use-export-controller.ts`, `lib/export-job.ts`, `lib/export-time-estimate.ts`                                                                 | Input snapshot, shared lock, measured progress and estimates, successful-run history, cancellation and download cleanup |
-| Persistence                | `hooks/use-presets.ts`, `lib/preset-store.ts`                                                                                                        | Validated browser-local preset persistence and cross-tab refresh                                                        |
+| Boundary                   | Files                                                                                                                                                | Responsibility                                                                                                                |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| View and composition       | `app/Home.tsx`, `components/*`                                                                                                                       | Layout, dialogs, editor actions and presentation                                                                              |
+| Domain contracts           | `lib/visual-settings-model.ts`, `lib/customizer-config.ts`, `lib/presets.ts`, `lib/project-file.ts`, `lib/subtitles.ts`                              | Settings, defaults, validation and serialization                                                                              |
+| Analysis                   | `lib/audio-analysis-config.ts`, `lib/audio-features.ts`, `lib/audio-dsp.mjs`, `lib/art-reactivity.mjs`, `lib/drop-detector.mjs`, `lib/live-sound.ts` | Shared cadence, PCM/live features and drop detection                                                                          |
+| Browser resource ownership | `lib/media-session.ts`, `hooks/use-media-session.ts`                                                                                                 | Media elements, audio graph, decoded sound, image assets and transport                                                        |
+| Preview orchestration      | `hooks/use-visualizer-preview.ts`, `lib/preview-state.ts`                                                                                            | Frame loop, sizing, reduced motion, seek response replay and PNG capture                                                      |
+| Canvas rendering           | `lib/visualizer.ts`, `lib/track-overlay.ts`, `lib/beat-lighting.ts`, `lib/glitch.ts`                                                                 | Existing visual composition and response equations                                                                            |
+| Export orchestration       | `hooks/use-export-controller.ts`, `lib/export-job.ts`, `lib/export-time-estimate.ts`                                                                 | Input snapshot, shared lock, measured progress and estimates, successful-run history, cancellation and download cleanup       |
+| Persistence                | `hooks/use-presets.ts`, `lib/preset-store.ts`                                                                                                        | Validated browser-local preset persistence and cross-tab refresh                                                              |
+| Subtitle orchestration     | `hooks/use-subtitle-generation.ts`, `hooks/use-subtitle-import.ts`                                                                                   | Full-track admission, consent, revision checks, shared lock, cancellation and cue application                                 |
+| Local subtitle processing  | `lib/lyrics/local-client.ts`, `lib/lyrics/processing.worker.ts`, audio/isolation/Whisper modules                                                     | Bounded PCM transfers and on-device inference; model cache reads honor timeout and cancellation                               |
+| Cloud subtitle adapter     | `lib/lyrics/gemini-client.ts`, `api/lyrics/transcribe.ts`, `lib/lyrics/gemini-server.ts`, `scripts/lyrics-dev-api.ts`                                | Consented audio chunks, shared request limits, provider errors and cleanup; the development bridge uses the same API contract |
 
 The browser session snapshot exposes resource handles for preview and export.
 It is an infrastructure API, not a persisted project or a UI-independent model.
 Settings, presets and serializers must not import controller hooks or components.
+`lib/export-settings.ts` owns supported resolutions and frame rates; both project
+validation and the timeline/encoder consume those contracts. `lib/time.ts` owns
+the shared editor timestamp format/parser, so subtitle views do not import an
+export dialog for formatting.
 
 ## Lifecycle rules
 
