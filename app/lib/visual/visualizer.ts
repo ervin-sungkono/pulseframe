@@ -5,6 +5,7 @@ import type { SoundEnvelope } from "../audio/audio-features";
 import { drawGlitch } from "./glitch";
 import { drawTrackOverlay, trackOverlayLayout } from "./track-overlay";
 import { drawBeatLighting } from "./beat-lighting";
+import { cameraMotion, ringMotion, type MotionTransform } from "./motion";
 
 export type Particle = {
   x: number;
@@ -1051,6 +1052,19 @@ function drawSubtitle(
   ctx.restore();
 }
 
+function applyMotion(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  transform: MotionTransform,
+) {
+  if (!transform.x && !transform.y && !transform.rotation && transform.scale === 1) return;
+  ctx.translate(w / 2 + transform.x, h / 2 + transform.y);
+  if (transform.rotation) ctx.rotate(transform.rotation);
+  if (transform.scale !== 1) ctx.scale(transform.scale, transform.scale);
+  ctx.translate(-w / 2, -h / 2);
+}
+
 export function drawVisualization(
   ctx: CanvasRenderingContext2D,
   settings: VisualSettings,
@@ -1086,6 +1100,18 @@ export function drawVisualization(
       );
   const { activity, bassPulse, energy } = response;
   const ringPulse = extras.sound ? state.ringPulse : bassPulse;
+  const audibleActivity =
+    extras.sound && extras.sound.rms <= settings.quietThreshold ? 0 : activity;
+  const camera = cameraMotion(
+    time,
+    w,
+    h,
+    settings,
+    ringPulse,
+    audibleActivity,
+    extras.reducedMotion,
+  );
+  const object = ringMotion(time, w, h, settings, ringPulse, extras.reducedMotion);
   // Keep the composition on screen in silent passages. Only the audio-driven
   // part of each shape is gated, so low-level analyser noise cannot animate it.
   const captionHeight = subtitleLane(ctx, w, h, subtitles);
@@ -1093,6 +1119,10 @@ export function drawVisualization(
     ? (state.ringBands[0] ?? [])
     : fallbackBands(frequency, sampleRate, activity);
   ctx.clearRect(0, 0, w, h);
+  // Camera overscan covers the complete artwork pass, including the backdrop.
+  // Restore before screen-space effects, titles and subtitles.
+  ctx.save();
+  applyMotion(ctx, w, h, camera);
   const drop = settings.dropEffects && !extras.reducedMotion ? (extras.drop ?? 0) : 0;
   drawBackdrop(ctx, w, h, settings, motionTime, video, extras.background, drop);
   if (drop > 0) {
@@ -1120,6 +1150,7 @@ export function drawVisualization(
   }
   ctx.save();
   ctx.globalAlpha = 0.7 + activity * 0.3;
+  applyMotion(ctx, w, h, object);
   if (settings.mode === "ring") {
     ctx.translate(w / 2, h / 2);
     ctx.scale(settings.visualScale, settings.visualScale);
@@ -1170,6 +1201,7 @@ export function drawVisualization(
     ctx.restore();
   }
   ctx.restore();
+  ctx.restore();
   const vignette = ctx.createRadialGradient(
     w / 2,
     h / 2,
@@ -1182,10 +1214,15 @@ export function drawVisualization(
   vignette.addColorStop(1, "rgba(0,0,0,.42)");
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, w, h);
-  const glitchActivity = extras.sound && extras.sound.rms <= settings.quietThreshold ? 0 : activity;
   if (settings.glitch && !extras.reducedMotion)
-    drawGlitch(ctx, time, energy, bassPulse, glitchActivity, settings.glitchStrength);
-  if (logo) drawLogo(ctx, w, h, settings, logo, settings.mode === "ring" ? ringPulse : bassPulse);
+    drawGlitch(ctx, time, energy, bassPulse, audibleActivity, settings.glitchStrength);
+  if (logo) {
+    ctx.save();
+    applyMotion(ctx, w, h, camera);
+    applyMotion(ctx, w, h, object);
+    drawLogo(ctx, w, h, settings, logo, settings.mode === "ring" ? ringPulse : bassPulse);
+    ctx.restore();
+  }
   drawTrackOverlay(ctx, w, h, settings, time, duration, captionHeight);
   drawSubtitle(ctx, w, h, subtitles, time);
 }
