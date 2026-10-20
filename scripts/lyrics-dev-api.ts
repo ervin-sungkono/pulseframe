@@ -1,4 +1,5 @@
 import type { Plugin } from "vite";
+import { GEMINI_MAX_REQUEST_BYTES } from "../lib/lyrics/gemini-contract";
 
 /** Run the same Web handler locally; production uses the Vercel Function. */
 export function lyricsDevApi(): Plugin {
@@ -17,9 +18,22 @@ export function lyricsDevApi(): Plugin {
           for await (const chunk of incoming) {
             const bytes = Buffer.from(chunk);
             size += bytes.length;
-            if (size > 4_100_000) {
-              outgoing.writeHead(413, { "Content-Type": "application/json" });
-              outgoing.end(JSON.stringify({ error: "Audio request is too large." }));
+            if (size > GEMINI_MAX_REQUEST_BYTES) {
+              outgoing.writeHead(413, {
+                "Content-Type": "application/json; charset=utf-8",
+                "Cache-Control": "no-store, max-age=0",
+                Pragma: "no-cache",
+              });
+              outgoing.end(
+                JSON.stringify({
+                  error: {
+                    code: "invalid_request",
+                    message: "This audio request is too large.",
+                    retryable: false,
+                  },
+                  providerAttempts: 0,
+                }),
+              );
               return;
             }
             chunks.push(bytes);
@@ -45,10 +59,18 @@ export function lyricsDevApi(): Plugin {
           outgoing.end(Buffer.from(await response.arrayBuffer()));
         } catch {
           if (!outgoing.headersSent)
-            outgoing.writeHead(500, { "Content-Type": "application/json" });
+            outgoing.writeHead(500, {
+              "Content-Type": "application/json; charset=utf-8",
+              "Cache-Control": "no-store, max-age=0",
+              Pragma: "no-cache",
+            });
           outgoing.end(
             JSON.stringify({
-              error: "The local transcription endpoint is unavailable.",
+              error: {
+                code: "server_error",
+                message: "The Gemini request could not be processed.",
+              },
+              providerAttempts: 0,
             }),
           );
         }
