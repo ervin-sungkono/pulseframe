@@ -12,10 +12,6 @@ export const KIM_VOCAL_2_MODEL: ModelArtifact = {
   sha256: "ce74ef3b6a6024ce44211a07be9cf8bc6d87728cc852a68ab34eb8e58cde9c8b",
 };
 
-/** The handoff did not include a license file or a redistribution grant. */
-export const KIM_VOCAL_2_LICENSE_NOTICE =
-  "The model artifact's license was not supplied with the implementation plan; its redistribution terms remain unverified.";
-
 const CACHE_NAME = "pulseframe-lyrics-models-v1";
 const CACHE_PREFIX = "/__pulseframe_lyrics_model_cache__/";
 export const MODEL_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
@@ -180,27 +176,41 @@ async function readResponseBytes(
 
   const bytes = new Uint8Array(expectedBytes);
   let offset = 0;
+  let cancelRequested = false;
+  const cancelReader = (reason?: unknown) => {
+    if (cancelRequested) return;
+    cancelRequested = true;
+    try {
+      // Cancellation is best effort. Some Cache API streams do not settle
+      // cancel() promptly, so never make it part of this reader's completion.
+      void reader.cancel(reason).catch(() => undefined);
+    } catch {
+      // Preserve the original read, size, or abort error.
+    }
+  };
+  const onAbort = () => cancelReader(abortReason(signal));
+  signal.addEventListener("abort", onAbort, { once: true });
   try {
     while (true) {
       throwIfAborted(signal);
-      const { done, value } = await reader.read();
+      const { done, value } = await awaitWithSignal(reader.read(), signal);
       if (done) break;
       if (offset + value.byteLength > expectedBytes) {
-        await reader.cancel();
         throw new Error("Isolation model response exceeded its pinned byte count");
       }
       bytes.set(value, offset);
       offset += value.byteLength;
     }
   } catch (error) {
-    try {
-      await reader.cancel(error);
-    } catch {
-      // Preserve the original read/abort error.
-    }
+    cancelReader(error);
     throw error;
   } finally {
-    reader.releaseLock();
+    signal.removeEventListener("abort", onAbort);
+    try {
+      reader.releaseLock();
+    } catch {
+      // A non-cooperative pending read may keep the lock until it settles.
+    }
   }
   if (offset !== expectedBytes) {
     throw new Error("Isolation model response ended before its pinned byte count");
