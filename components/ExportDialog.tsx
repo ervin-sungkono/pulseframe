@@ -8,26 +8,15 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { Slider } from "@/components/ui/Slider";
-import { EXPORT_FRAME_RATES, type ExportFrameRate } from "@/lib/export-timeline";
-import { EXPORT_RESOLUTIONS, type ExportResolution } from "@/lib/export-settings";
+import {
+  EXPORT_FRAME_RATES,
+  type ExportFrameRate,
+  EXPORT_RESOLUTIONS,
+  type ExportResolution,
+} from "@/lib/export-settings";
 import type { ExportProgress } from "@/lib/export-video";
 import type { TimeRange } from "@/lib/export-time-estimate";
-
-export function timestamp(value: number, precise = false) {
-  const seconds = Math.max(0, Number.isFinite(value) ? value : 0);
-  const minutes = Math.floor(seconds / 60);
-  const rest = precise
-    ? (seconds % 60).toFixed(1).padStart(4, "0")
-    : String(Math.floor(seconds % 60)).padStart(2, "0");
-  return `${minutes}:${rest}`;
-}
-function parseTimestamp(raw: string) {
-  const parts = raw.trim().split(":");
-  if (parts.length > 2 || parts.some((part) => part === "" || !/^\d+(\.\d+)?$/.test(part)))
-    return null;
-  const seconds = parts.length === 2 ? Number(parts[0]) * 60 + Number(parts[1]) : Number(parts[0]);
-  return Number.isFinite(seconds) ? seconds : null;
-}
+import { formatTimestamp, parseTimestamp } from "@/lib/time";
 function estimateLabel(range: TimeRange) {
   const low = Math.max(1, Math.floor(range.minSeconds));
   const high = Math.max(low, Math.ceil(range.maxSeconds));
@@ -56,14 +45,14 @@ function TimeField({
       <input
         aria-label={`${label} timestamp`}
         inputMode="decimal"
-        value={draft ?? timestamp(value, true)}
+        value={draft ?? formatTimestamp(value, true)}
         disabled={disabled}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter") event.currentTarget.blur();
         }}
         onBlur={() => {
-          const parsed = parseTimestamp(draft ?? timestamp(value, true));
+          const parsed = parseTimestamp(draft ?? formatTimestamp(value, true));
           setDraft(null);
           if (parsed !== null) onCommit(parsed);
         }}
@@ -143,9 +132,9 @@ export function ExportDialog({
             </button>
           </div>
           <div className="range-readout">
-            <span>{timestamp(range[0], true)}</span>
-            <span className="range-duration">{timestamp(selected, true)} selected</span>
-            <span>{timestamp(range[1], true)}</span>
+            <span>{formatTimestamp(range[0], true)}</span>
+            <span className="range-duration">{formatTimestamp(selected, true)} selected</span>
+            <span>{formatTimestamp(range[1], true)}</span>
           </div>
           <Slider
             aria-label="Selected export time range"
@@ -281,7 +270,7 @@ export function ExportDialog({
             </div>
             <progress aria-label="Export progress" value={progress?.percent ?? 0} max={100} />
             <p>
-              Elapsed {timestamp((progress?.elapsedMs ?? 0) / 1000)}
+              Elapsed {formatTimestamp((progress?.elapsedMs ?? 0) / 1000)}
               <span> · </span>
               {remaining
                 ? `${estimateLabel(remaining)}${progress?.remainingEstimate?.scope === "rendering" ? " of frame rendering" : " remaining"}`

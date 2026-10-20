@@ -20,8 +20,12 @@ import { dropEnvelope, prepareSound, type PreparedSound } from "./audio-features
 import { initializeDsp } from "./dsp/loader";
 import { PcmFeatures } from "./pcm-features";
 import { decodeMediaAudio, audioSections } from "./media-audio";
-import { COMPRESSED_VIDEO_QUALITY } from "./export-settings";
-import { exportFrames, exportSoundAt, type ExportFrameRate } from "./export-timeline";
+import {
+  COMPRESSED_VIDEO_QUALITY,
+  DEFAULT_EXPORT_FRAME_RATE,
+  type ExportFrameRate,
+} from "./export-settings";
+import { exportFrames, exportSoundAt } from "./export-timeline";
 import {
   ExportRunClock,
   makeExportTimingProfileBase,
@@ -76,7 +80,7 @@ export async function exportVisualVideo({
   subtitles,
   duration,
   videoCompression = false,
-  frameRate = 30,
+  frameRate = DEFAULT_EXPORT_FRAME_RATE,
   logo,
   background,
   prepared,

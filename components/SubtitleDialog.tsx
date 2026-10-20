@@ -10,15 +10,8 @@ import {
 import { SubtitleImportPanel } from "@/components/SubtitleImportPanel";
 import { SubtitleGenerationPanel } from "@/components/SubtitleGenerationPanel";
 import type { SubtitleGenerationController } from "@/hooks/use-subtitle-generation";
-import { timestamp } from "./ExportDialog";
+import { formatTimestamp, parseTimestamp } from "@/lib/time";
 import { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH, type SubtitleCue } from "@/lib/subtitles";
-
-function readTime(value: string): number | null {
-  const parts = value.trim().split(":");
-  if (parts.length > 2 || parts.some((part) => !/^\d+(\.\d+)?$/.test(part))) return null;
-  const seconds = parts.length === 2 ? Number(parts[0]) * 60 + Number(parts[1]) : Number(parts[0]);
-  return Number.isFinite(seconds) ? seconds : null;
-}
 
 function CueTime({
   label,
@@ -42,14 +35,14 @@ function CueTime({
       <input
         inputMode="decimal"
         aria-label={ariaLabel}
-        value={draft ?? timestamp(value, true)}
+        value={draft ?? formatTimestamp(value, true)}
         disabled={disabled}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter") event.currentTarget.blur();
         }}
         onBlur={() => {
-          const parsed = readTime(draft ?? timestamp(value, true));
+          const parsed = parseTimestamp(draft ?? formatTimestamp(value, true));
           setDraft(null);
           if (parsed !== null) onChange(Math.min(max, Math.max(0, parsed)));
         }}
@@ -203,7 +196,7 @@ export function SubtitleEditor({
           {playing ? "Pause" : "Play"}
         </button>
         <span>
-          Playhead <time>{timestamp(position, true)}</time>
+          Playhead <time>{formatTimestamp(position, true)}</time>
         </span>
       </div>
       <div className="subtitle-topline" hidden={tab !== "edit"}>
@@ -213,7 +206,7 @@ export function SubtitleEditor({
         <button
           className="button button-soft"
           onClick={add}
-          title={`Add a block at ${timestamp(position, true)}`}
+          title={`Add a block at ${formatTimestamp(position, true)}`}
           disabled={editingDisabled || !duration || cues.length >= MAX_SUBTITLE_CUES}
         >
           <Plus size={16} /> Add block

@@ -194,6 +194,7 @@ test("successful download URLs revoke after 60 seconds or immediately on teardow
 test("hook snapshots mutable export inputs before lazy import and retains prepared assets by reference", async () => {
   const settingsPath = join(testDirectory, "export-settings.mjs");
   const estimatePath = join(testDirectory, "export-time-estimate.mjs");
+  const timePath = join(testDirectory, "time.mjs");
   const reactPath = join(testDirectory, "react-mock.mjs");
   const adapterPath = join(testDirectory, "export-video-mock.mjs");
   const hookPath = join(testDirectory, "use-export-controller.mjs");
@@ -215,6 +216,13 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
   writeFileSync(
     estimatePath,
     ts.transpileModule(estimateSource, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+    }).outputText,
+  );
+  const timeSource = readFileSync(new URL("../lib/time.ts", import.meta.url), "utf8");
+  writeFileSync(
+    timePath,
+    ts.transpileModule(timeSource, {
       compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
     }).outputText,
   );
@@ -249,6 +257,7 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
     .replaceAll('"@/lib/export-settings"', JSON.stringify(pathToFileURL(settingsPath).href))
     .replaceAll('"@/lib/export-job"', JSON.stringify(pathToFileURL(modulePath).href))
     .replaceAll('"@/lib/export-time-estimate"', JSON.stringify(pathToFileURL(estimatePath).href))
+    .replaceAll('"@/lib/time"', JSON.stringify(pathToFileURL(timePath).href))
     .replaceAll('"@/lib/export-video"', JSON.stringify(pathToFileURL(adapterPath).href));
   writeFileSync(
     hookPath,

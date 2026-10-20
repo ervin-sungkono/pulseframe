@@ -450,6 +450,7 @@ test("background opacity and drop blur are composited only on image layer", () =
   assert.deepEqual(coverCrop(1600, 900, 900, 900), { x: 350, y: 0, width: 900, height: 900 });
 });
 test("new projects retain background and old v1 projects remain readable", async () => {
+  const { EXPORT_FRAME_RATES } = modules["export-settings"];
   const { makeProjectFile, readProjectFile } = modules["project-file"];
   const media = new File(["original-media"], "song.wav", { type: "audio/wav" }),
     background = new File(["background-bytes"], "scene.png", { type: "image/png" });
@@ -484,7 +485,7 @@ test("new projects retain background and old v1 projects remain readable", async
   };
   const blob = makeProjectFile(content),
     opened = await readProjectFile(new File([blob], "new.pulseframe"));
-  for (const frameRate of [24, 30, 60]) {
+  for (const frameRate of EXPORT_FRAME_RATES) {
     const restored = await readProjectFile(
       new File([makeProjectFile({ ...content, frameRate })], "fps.pulseframe"),
     );
@@ -1374,6 +1375,8 @@ test("resolution presets retain aspect ratio, short edge and even encoder dimens
   assert.throws(() => exportDimensions("landscape", 540), /Unsupported/);
 });
 test("new export defaults and legacy ZIP settings do not opt users into lossy encoding", async () => {
+  const { DEFAULT_EXPORT_FRAME_RATE, DEFAULT_EXPORT_RESOLUTION, EXPORT_RESOLUTIONS } =
+    modules["export-settings"];
   const { makeProjectFile, readProjectFile } = modules["project-file"];
   const media = new File(["media"], "song.wav", { type: "audio/wav" });
   const blob = makeProjectFile({
@@ -1387,7 +1390,8 @@ test("new export defaults and legacy ZIP settings do not opt users into lossy en
   });
   const opened = await readProjectFile(new File([blob], "project.pulseframe"));
   assert.equal(opened.videoCompression, false);
-  assert.equal(opened.resolution, 720);
+  assert.equal(opened.resolution, DEFAULT_EXPORT_RESOLUTION);
+  assert.equal(opened.frameRate, DEFAULT_EXPORT_FRAME_RATE);
   const bytes = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
   const length = new DataView(bytes.buffer).getUint32(4, true);
   const manifest = JSON.parse(await blob.slice(8, 8 + length).text());
@@ -1400,7 +1404,7 @@ test("new export defaults and legacy ZIP settings do not opt users into lossy en
   const legacy = await readProjectFile(new File([bytes, data, media], "old.pulseframe"));
   assert.equal(legacy.videoCompression, false);
   assert.equal(legacy.resolution, 480);
-  for (const resolution of [480, 720, 1080, 1440]) {
+  for (const resolution of EXPORT_RESOLUTIONS) {
     const restored = await readProjectFile(
       new File(
         [makeProjectFile({ ...opened, resolution, videoCompression: true })],
@@ -1410,4 +1414,38 @@ test("new export defaults and legacy ZIP settings do not opt users into lossy en
     assert.equal(restored.resolution, resolution);
     assert.equal(restored.videoCompression, true);
   }
+});
+
+test("project subtitle validation follows the shared cue and text limits", async () => {
+  const { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH } = modules.subtitles;
+  const { makeProjectFile, readProjectFile } = modules["project-file"];
+  const media = new File(["media"], "song.wav", { type: "audio/wav" });
+  const content = {
+    settings,
+    media,
+    logo: null,
+    background: null,
+    format: "landscape",
+    range: [0, 1],
+  };
+  const acceptedCues = Array.from({ length: MAX_SUBTITLE_CUES }, (_, index) => ({
+    id: `cue-${index}`,
+    start: 0,
+    end: 1,
+    text: "x".repeat(index === 0 ? MAX_SUBTITLE_TEXT_LENGTH : 1),
+  }));
+  const accepted = makeProjectFile({ ...content, subtitles: acceptedCues });
+  await assert.doesNotReject(() => readProjectFile(new File([accepted], "valid.pulseframe")));
+
+  const tooMany = makeProjectFile({
+    ...content,
+    subtitles: [...acceptedCues, { id: "extra", start: 0, end: 1, text: "x" }],
+  });
+  await assert.rejects(readProjectFile(new File([tooMany], "too-many.pulseframe")));
+
+  const tooLong = makeProjectFile({
+    ...content,
+    subtitles: [{ id: "long", start: 0, end: 1, text: "x".repeat(MAX_SUBTITLE_TEXT_LENGTH + 1) }],
+  });
+  await assert.rejects(readProjectFile(new File([tooLong], "too-long.pulseframe")));
 });

@@ -1,6 +1,13 @@
+export const EXPORT_ASPECTS = ["landscape", "portrait", "square"] as const;
+export type ExportAspect = (typeof EXPORT_ASPECTS)[number];
+
 export const EXPORT_RESOLUTIONS = [480, 720, 1080, 1440] as const;
 export type ExportResolution = (typeof EXPORT_RESOLUTIONS)[number];
-export type ExportAspect = "landscape" | "portrait" | "square";
+export const DEFAULT_EXPORT_RESOLUTION = 720 satisfies ExportResolution;
+
+export const EXPORT_FRAME_RATES = [24, 30, 60] as const;
+export type ExportFrameRate = (typeof EXPORT_FRAME_RATES)[number];
+export const DEFAULT_EXPORT_FRAME_RATE = 30 satisfies ExportFrameRate;
 
 /** The selected resolution is the short edge, or either edge for square video. */
 export function exportDimensions(format: ExportAspect, resolution: ExportResolution) {

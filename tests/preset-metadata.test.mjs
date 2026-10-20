@@ -237,7 +237,11 @@ const appMockRequire = (id) => {
   if (id === "react") return reactMock;
   if (id === "lucide-react") return icons;
   if (id === "@/lib/export-settings")
-    return { exportDimensions: () => ({ width: 1280, height: 720 }), timestamp: () => "0:00" };
+    return {
+      DEFAULT_EXPORT_FRAME_RATE: 30,
+      DEFAULT_EXPORT_RESOLUTION: 720,
+      exportDimensions: () => ({ width: 1280, height: 720 }),
+    };
   if (id === "@/components/ui/Slider") return { Slider: stubComponent };
   if (id === "@/components/ui/Drawer")
     return {
@@ -250,8 +254,7 @@ const appMockRequire = (id) => {
     };
   if (id === "@/components/ui/Dialog") return uiDialog;
   if (id === "@/components/CustomizerPanel") return { CustomizerPanel: customizerPanelStub };
-  if (id === "@/components/ExportDialog")
-    return { ExportDialog: stubComponent, timestamp: () => "0:00" };
+  if (id === "@/components/ExportDialog") return { ExportDialog: stubComponent };
   if (id === "@/components/PresetDialog") return { PresetDialog: actualPresetDialog };
   if (id === "@/lib/presets")
     return {
@@ -357,6 +360,7 @@ const appMockRequire = (id) => {
       makeParticles: () => [],
     };
   if (id === "@/lib/project-file") return { makeProjectFile() {}, readProjectFile() {} };
+  if (id === "@/lib/time") return { formatTimestamp: () => "0:00" };
   if (id === "@/lib/subtitles") return {};
   throw new Error(`Unexpected page import: ${id}`);
 };

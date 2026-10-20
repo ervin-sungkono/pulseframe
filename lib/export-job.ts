@@ -1,7 +1,6 @@
 import type { PreparedSound } from "./audio-features";
-import type { ExportAspect, ExportResolution } from "./export-settings";
+import type { ExportAspect, ExportFrameRate, ExportResolution } from "./export-settings";
 import type { ExportProgress } from "./export-video";
-import type { ExportFrameRate } from "./export-timeline";
 import type { SubtitleCue } from "./subtitles";
 import type { VisualSettings } from "./visual-settings-model";
 import type { LogoLayer } from "./visualizer";
