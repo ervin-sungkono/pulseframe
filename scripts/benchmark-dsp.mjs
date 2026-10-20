@@ -2,7 +2,7 @@
 // band ownership and JS response payload creation. No decoder/encoder is involved.
 import { performance } from "node:perf_hooks";
 import { readFileSync } from "node:fs";
-import { loadSources } from "../tests/load-source.mjs";
+import { loadSources } from "../app/tests/load-source.mjs";
 
 const sources = await loadSources({ dspAssets: true });
 const { PcmFeatures } = sources["audio-features"];
@@ -10,7 +10,7 @@ const loader = sources["dsp/loader"];
 const originalFetch = globalThis.fetch;
 globalThis.window = {};
 globalThis.document = {};
-globalThis.location = { href: new URL("../", import.meta.url).href };
+globalThis.location = { href: new URL("../app/", import.meta.url).href };
 globalThis.fetch = async (url) =>
   new Response(readFileSync(new URL(String(url))), {
     headers: { "Content-Type": "application/wasm" },

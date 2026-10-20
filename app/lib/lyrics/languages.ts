@@ -1,7 +1,7 @@
 import type { LyricsMethod } from "./types";
 
 // Shared display names. Codes come from the pinned Tiny/Base generation_config.json
-// (99 languages); see docs/automatic-subtitles.md for upstream sources.
+// (99 languages); see docs/architecture.md for upstream sources.
 const LANGUAGE_NAMES = {
   af: "Afrikaans",
   am: "Amharic",
