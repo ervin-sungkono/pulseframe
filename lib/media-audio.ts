@@ -18,12 +18,7 @@ export async function decodeMediaAudio(
     const duration = Math.max(0, Math.min(end ?? Infinity, await track.computeDuration()) - start),
       sink = new AudioBufferSink(track);
     let audio: AudioBuffer | null = null;
-    const first = start > 0 ? await sink.getBuffer(start) : null;
-    const chunks = async function* () {
-      if (first) yield first;
-      yield* sink.buffers(start, end);
-    };
-    for await (const item of chunks()) {
+    for await (const item of sink.buffers(start, end)) {
       if (signal?.aborted) throw new DOMException("Canceled", "AbortError");
       if (!audio) {
         if (item.buffer.numberOfChannels > 2)
