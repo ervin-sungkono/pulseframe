@@ -2,11 +2,9 @@ import {
   GEMINI_AUDIO_CHUNK_MS,
   GEMINI_AUDIO_STRIDE_MS,
   GEMINI_MAX_BASE64_CHARS,
-  GEMINI_MAX_CHUNK_COUNT,
   GEMINI_MAX_REQUEST_BYTES,
   GEMINI_MAX_SEGMENTS_PER_CHUNK,
   GEMINI_MAX_SEGMENT_TEXT_LENGTH,
-  GEMINI_MAX_SOURCE_DURATION_MS,
   GEMINI_MAX_WAV_BYTES,
   GEMINI_SAMPLE_RATE,
   geminiProviderContentSchema,
@@ -811,13 +809,3 @@ export async function handleGeminiLyricsRequest(request: Request, config: Server
     }),
   );
 }
-
-export const geminiServerLimits = {
-  maxRequestBytes: GEMINI_MAX_REQUEST_BYTES,
-  maxBase64Chars: GEMINI_MAX_BASE64_CHARS,
-  maxWavBytes: GEMINI_MAX_WAV_BYTES,
-  maxSourceDurationMs: GEMINI_MAX_SOURCE_DURATION_MS,
-  maxChunkDurationMs: GEMINI_AUDIO_CHUNK_MS,
-  maxChunkCount: GEMINI_MAX_CHUNK_COUNT,
-  maxSegmentsPerChunk: GEMINI_MAX_SEGMENTS_PER_CHUNK,
-};

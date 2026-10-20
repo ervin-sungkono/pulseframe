@@ -25,8 +25,3 @@ export function activeSubtitles(cues: SubtitleCue[], time: number) {
     .sort((left, right) => left.cue.start - right.cue.start || left.index - right.index)
     .map(({ cue }) => cue);
 }
-
-/** Kept for callers that need one cue; renderers should use activeSubtitles to stack overlaps. */
-export function activeSubtitle(cues: SubtitleCue[], time: number) {
-  return activeSubtitles(cues, time)[0];
-}

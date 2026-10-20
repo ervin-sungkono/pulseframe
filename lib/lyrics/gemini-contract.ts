@@ -67,5 +67,4 @@ export const geminiSuccessResponseSchema = geminiProviderContentSchema
   .strict();
 
 export type GeminiTranscriptionRequest = z.infer<typeof geminiTranscriptionRequestSchema>;
-export type GeminiProviderContent = z.infer<typeof geminiProviderContentSchema>;
 export type GeminiSuccessResponse = z.infer<typeof geminiSuccessResponseSchema>;

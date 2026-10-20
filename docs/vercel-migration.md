@@ -1,7 +1,9 @@
-# Vercel migration and YAGNI review
+# Vercel migration record
 
 The migration is based on the WASM/export-estimate branch (PR #9). It preserves
-the browser editor and uses a plain Vite/React static build on Vercel.
+the browser editor and uses a plain Vite/React static build on Vercel. This is a
+historical record; current deployment settings are in `vercel.json` and the
+Deployment section of the README.
 
 ## Removed responsibilities
 
@@ -36,14 +38,17 @@ There are no backend credentials, auth providers or database services to provisi
 Local preset storage is an approved behavior change: no cross-device sync, and
 no automatic D1 transfer. See `personal-quick-looks.md` for the transfer path.
 
-## Release and validation
+## Historical release plan and validation scope
 
-Merge PR #9 first, then retarget this stacked PR to `main`. Vercel Git integration
-can deploy the migration branch as a preview before either merge. Do not merge
-or delete the old site as part of preview verification.
+At the time of the migration, the plan was to merge PR #9 before retargeting the
+stacked migration branch to `main`. A Vercel preview was planned before merge;
+preview verification was not to merge or delete the old site. This branch
+sequence is retained as historical context, not as an active release checklist.
 
-Required checks: locked installation, application tests, lint, type checking,
-Vite build, DSP asset reproducibility, browser-local save/reload/search/pin/order/
-rename/delete, actual WASM worker activation, JavaScript fallback, successful and
-canceled short video exports, and decoding the exported artifact. Preview and
-production origins intentionally have separate local libraries.
+The migration review plan called for locked installation, application tests,
+lint, type checking, Vite build, DSP asset reproducibility, browser-local
+save/reload/search/pin/order/rename/delete, actual WASM worker activation,
+JavaScript fallback, successful and canceled short video exports, and decoding
+the exported artifact. These are historical requirements, not a report of
+results for the current checkout. Preview and production origins have separate
+local libraries.

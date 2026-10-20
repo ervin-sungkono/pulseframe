@@ -17,4 +17,6 @@ Reviewed the Sonoscope source at `cd2ee721c3dbbb8eeb07add7abca7475ec21f057` and 
 
 Drop detection is a conservative bass-return heuristic, not a trained musical-section classifier. Cached analysis budgets PCM and retained features together at 300 MiB. Live-only fallback has no full-track waveform; unsupported codecs may still prevent offline export. No device/browser export or mobile touch session was available during this pass, and representative user tracks were not supplied. Those remain useful follow-up validation alongside the synthetic tests and original demo.
 
-Automatic subtitles remain a future API-backed feature in `roadmap.md`. No audio upload or API key integration was added.
+At the time this handoff was written, automatic subtitles remained future work.
+They have since shipped for on-device Whisper and optional Gemini; see
+[Automatic song subtitles](automatic-subtitles.md) for current behavior.

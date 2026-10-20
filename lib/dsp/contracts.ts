@@ -11,8 +11,6 @@ export const DSP_MAX_SAMPLE_RATE = 192_000;
 export const DSP_SCAN_PROTOCOL_VERSION = 1;
 export const DSP_SCAN_BATCH_FRAMES = 15;
 export const DSP_SCAN_HISTORY_SAMPLES = DSP_FRAME_SIZE;
-export const DSP_SCAN_METRIC_COUNT = DSP_FEATURE_COUNT;
-export const DSP_SCAN_BAND_COUNT = DSP_BAND_COUNT;
 
 export const enum DspFeatureIndex {
   Rms = 0,

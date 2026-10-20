@@ -18,10 +18,6 @@ const MODEL_INITIALIZATION_TIMEOUT_MS = 5 * 60 * 1000;
 
 export type WhisperModelId = keyof typeof WHISPER_MODEL_REVISIONS;
 export type WhisperBackend = "webgpu" | "wasm";
-export type WhisperAudioSegment = {
-  text: string;
-  timestamp: [number | null, number | null];
-};
 type SessionMetadata = {
   config?: { device?: string };
   handler?: { config?: { device?: string } };

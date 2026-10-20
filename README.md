@@ -2,7 +2,9 @@
 
 A browser-based music visualizer built with React, TypeScript and Vite, deployed
 as a static site on Vercel. Audio/video decoding, Rust/WASM analysis, canvas
-rendering and video export run on your device. Media is never uploaded.
+rendering and video export run on your device. Media stays on device unless you
+explicitly choose Gemini subtitle generation, which sends audio to Google. See
+[Automatic song subtitles](docs/automatic-subtitles.md).
 
 ## Development
 
@@ -23,17 +25,17 @@ pnpm preview
 
 The build type-checks the project and writes the static site to `dist/`.
 `pnpm preview` serves that production build locally. Both development and
-preview accept Vite's `--host` and `--port` arguments. No database, authentication
-provider, execution profile or runtime environment variables are required.
+preview accept Vite's `--host` and `--port` arguments. No database, sign-in or
+runtime setup is needed for editing, on-device subtitle generation or exports.
+Optional Gemini generation can use a session key or a server `GEMINI_API_KEY`;
+see [Automatic song subtitles](docs/automatic-subtitles.md).
 
 ## Deployment to Vercel
 
 Import `ervin-sungkono/audio-visualizer` in Vercel and select the Vite framework.
 `vercel.json` configures a frozen pnpm install, `pnpm build` and `dist/` output.
 Use the repository root as the project root. Git integration builds PR branches
-as previews and deploys `main` to production after merge. This migration PR is
-stacked on the WASM PR; merge that prerequisite before retargeting the migration
-PR to `main`.
+as previews and deploys `main` to production after merge.
 
 Vercel serves generated files in `public/dsp/` at `/dsp/`. A deployment needs
 only Node/pnpm, not Rust. Rust is needed only to regenerate the checked-in engine
@@ -61,7 +63,7 @@ compression off by default, and device-specific duration estimates. See
 
 ## Architecture and checks
 
-See [architecture](docs/architecture.md), [migration review](docs/vercel-migration.md)
+See [architecture](docs/architecture.md), [migration record](docs/vercel-migration.md)
 and [AGENTS.md](AGENTS.md). React views present the editor, controller hooks own
 its lifecycle, and shared models define settings, file contracts and DSP.
 

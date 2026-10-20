@@ -169,7 +169,3 @@ export class MdxSTFT {
     }
   }
 }
-
-export function createMdxSTFT(): MdxSTFT {
-  return new MdxSTFT();
-}

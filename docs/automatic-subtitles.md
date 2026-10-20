@@ -166,13 +166,12 @@ only in bounded session memory for retry. Changing the source, method, key or
 processing policy invalidates incompatible work. Retries after an unknown cloud
 outcome may incur another charge and must disclose that uncertainty.
 
-## Validation status
+## Historical validation note
 
-The feature was originally exercised while stacked on a separate editor branch.
-This standalone port is based on main and removes that branch's playlist,
-composition and release code. Re-run the relevant automated checks and browser
-flows against the main-based preview before merging; prior stacked-branch results
-do not verify this port.
+Earlier validation was performed while this feature was stacked on a separate
+editor branch. That work did not verify the later standalone port. This note
+records the limits of that earlier validation and does not report test or browser
+results for the current checkout.
 
 ## Model provenance
 
