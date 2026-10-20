@@ -5,47 +5,80 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
+
+const modules = {
+  "audio-analysis-config": "audio/audio-analysis-config",
+  "visual-settings-model": "visual/visual-settings-model",
+  "export-settings": "export/export-settings",
+  "export-timeline": "export/export-timeline",
+  "audio-features": "audio/audio-features",
+  "pcm-features": "audio/pcm-features",
+  "dsp/contracts": "dsp/contracts",
+  "dsp/loader": "dsp/loader",
+  "dsp/wasm-backend": "dsp/wasm-backend",
+  "dsp/scan-client": "dsp/scan-client",
+  visualizer: "visual/visualizer",
+  subtitles: "subtitles/model",
+  "project-file": "persistence/project-file",
+  "demo-file": "media/demo-file",
+  "media-audio": "media/media-audio",
+  "live-sound": "audio/live-sound",
+  glitch: "visual/glitch",
+  "beat-lighting": "visual/beat-lighting",
+  "track-overlay": "visual/track-overlay",
+  "visual-settings": "visual/visual-settings",
+  presets: "visual/presets",
+  "customizer-config": "visual/customizer-config",
+  "preset-store": "persistence/preset-store",
+  "local-image": "media/local-image",
+  "media-session": "media/media-session",
+};
+
+const jsModules = {
+  "audio/audio-dsp": "audio/audio-dsp.mjs",
+  "audio/art-reactivity": "audio/art-reactivity.mjs",
+  "audio/drop-detector": "audio/drop-detector.mjs",
+};
+
+function rewriteModuleSpecifiers(source) {
+  return source
+    .replace(
+      /from ["']\.\/analysis-worker\.ts\?worker&url["']/g,
+      "from './analysis-worker-url.mjs'",
+    )
+    .replace(
+      /(\bfrom\s*|\bimport\s*\(\s*)(["'])(\.{1,2}\/[^"']+)\2/g,
+      (_match, prefix, quote, specifier) => {
+        const queryIndex = specifier.search(/[?#]/);
+        const modulePath = queryIndex < 0 ? specifier : specifier.slice(0, queryIndex);
+        const suffix = queryIndex < 0 ? "" : specifier.slice(queryIndex);
+        const outputPath = modulePath.endsWith(".mjs")
+          ? modulePath
+          : /\.(?:ts|tsx|js)$/.test(modulePath)
+            ? modulePath.replace(/\.(?:ts|tsx|js)$/, ".mjs")
+            : `${modulePath}.mjs`;
+        return `${prefix}${quote}${outputPath}${suffix}${quote}`;
+      },
+    );
+}
+
 export async function loadSources({ dspAssets = false } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "pulseframe-tests-"));
   process.on("exit", () => rmSync(directory, { recursive: true, force: true }));
-  mkdirSync(join(directory, "dsp"), { recursive: true });
-  writeFileSync(
-    join(directory, "dsp", "analysis-worker-url.mjs"),
-    `export default 'analysis-worker.test.js';`,
-  );
-  const names = [
-    "audio-analysis-config",
-    "visual-settings-model",
-    "export-settings",
-    "export-timeline",
-    "audio-features",
-    "pcm-features",
-    "dsp/contracts",
-    "dsp/loader",
-    "dsp/wasm-backend",
-    "dsp/scan-client",
-    "visualizer",
-    "subtitles",
-    "project-file",
-    "demo-file",
-    "media-audio",
-    "live-sound",
-    "glitch",
-    "beat-lighting",
-    "track-overlay",
-    "visual-settings",
-    "presets",
-    "customizer-config",
-    "preset-store",
-  ];
-  for (const name of ["audio-dsp", "art-reactivity", "drop-detector"])
-    writeFileSync(
-      join(directory, name + ".mjs"),
-      readFileSync(new URL("../lib/" + name + ".mjs", import.meta.url)),
-    );
-  for (const name of names) {
-    const file = "../lib/" + name + ".ts";
-    let source = readFileSync(new URL(file, import.meta.url), "utf8");
+  const libDirectory = join(directory, "lib");
+  const workerUrl = join(libDirectory, "dsp", "analysis-worker-url.mjs");
+  mkdirSync(dirname(workerUrl), { recursive: true });
+  writeFileSync(workerUrl, `export default 'analysis-worker.test.js';`);
+
+  for (const [targetPath, sourcePath] of Object.entries(jsModules)) {
+    const target = join(libDirectory, `${targetPath}.mjs`);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, readFileSync(new URL(`../lib/${sourcePath}`, import.meta.url)));
+  }
+
+  for (const [name, modulePath] of Object.entries(modules)) {
+    const sourceFile = `../lib/${modulePath}.ts`;
+    let source = readFileSync(new URL(sourceFile, import.meta.url), "utf8");
     if (dspAssets && name === "dsp/loader") {
       for (const asset of ["pulseframe_dsp.js", "pulseframe_dsp_bg.wasm"]) {
         source = source.replace(
@@ -54,37 +87,22 @@ export async function loadSources({ dspAssets = false } = {}) {
         );
       }
     }
-    const js = ts
-      .transpileModule(source, {
-        compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-      })
-      .outputText.replace(
-        /from ["']\.\/analysis-worker\.ts\?worker&url["']/g,
-        "from './analysis-worker-url.mjs'",
-      )
-      .replace(/from ["']@\/lib\/([^"']+)["']/g, (_, name) => `from './${name}.mjs'`)
-      .replace(
-        /from ["'](\.\.?\/[^"']+)["']/g,
-        (_, path) => `from '${path.endsWith(".mjs") ? path : path + ".mjs"}'`,
-      )
-      .replace(
-        /import\(["'](\.\.?\/[^"']+)["']\)/g,
-        (_, path) => `import('${path.endsWith(".mjs") ? path : path + ".mjs"}')`,
-      )
-      .replace(/from ["']zod["']/g, `from '${pathToFileURL(require.resolve("zod")).href}'`);
-    const resolved = js.replace(
-      /from ["']mediabunny["']/g,
-      `from '${import.meta.resolve("mediabunny")}'`,
-    );
-    const target = join(directory, name + ".mjs");
+    let js = ts.transpileModule(source, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+    }).outputText;
+    const target = join(libDirectory, `${modulePath}.mjs`);
     mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, resolved);
+    js = rewriteModuleSpecifiers(js)
+      .replace(/from ["']zod["']/g, `from '${pathToFileURL(require.resolve("zod")).href}'`)
+      .replace(/from ["']mediabunny["']/g, `from '${import.meta.resolve("mediabunny")}'`);
+    writeFileSync(target, js);
   }
+
   return Object.fromEntries(
     await Promise.all(
-      names.map(async (name) => [
+      Object.entries(modules).map(async ([name, modulePath]) => [
         name,
-        await import(pathToFileURL(resolve(directory, name + ".mjs")).href),
+        await import(pathToFileURL(resolve(libDirectory, `${modulePath}.mjs`)).href),
       ]),
     ),
   );

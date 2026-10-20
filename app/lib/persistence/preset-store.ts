@@ -7,7 +7,7 @@ import {
   quickLookOrderSchema,
   type PresetStyle,
   type SavedPreset,
-} from "./presets";
+} from "../visual/presets";
 
 export const PRESET_STORAGE_KEY = "pulseframe.presets.v1";
 

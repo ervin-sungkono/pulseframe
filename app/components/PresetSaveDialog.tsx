@@ -6,10 +6,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
-import { presetStyle, visualModeName, type SavedPreset } from "@/lib/presets";
-import type { VisualSettings } from "@/lib/visual-settings-model";
+import { presetStyle, visualModeName, type SavedPreset } from "@/lib/visual/presets";
+import type { VisualSettings } from "@/lib/visual/visual-settings-model";
 import type { PresetLibrary } from "@/hooks/use-presets";
-import { PresetStoreError } from "@/lib/preset-store";
+import { PresetStoreError } from "@/lib/persistence/preset-store";
 
 type SaveDraft = {
   id: string;

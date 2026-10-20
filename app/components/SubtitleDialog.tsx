@@ -11,7 +11,11 @@ import { SubtitleImportPanel } from "@/components/SubtitleImportPanel";
 import { SubtitleGenerationPanel } from "@/components/SubtitleGenerationPanel";
 import type { SubtitleGenerationController } from "@/hooks/use-subtitle-generation";
 import { formatTimestamp, parseTimestamp } from "@/lib/time";
-import { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH, type SubtitleCue } from "@/lib/subtitles";
+import {
+  MAX_SUBTITLE_CUES,
+  MAX_SUBTITLE_TEXT_LENGTH,
+  type SubtitleCue,
+} from "@/lib/subtitles/model";
 
 function CueTime({
   label,

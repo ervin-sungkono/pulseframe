@@ -1,4 +1,4 @@
-import { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH, type SubtitleCue } from "../subtitles";
+import { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH, type SubtitleCue } from "../subtitles/model";
 import type { GeneratedApplication, GeneratedCue } from "./types";
 
 export type GeneratedCueInput = {

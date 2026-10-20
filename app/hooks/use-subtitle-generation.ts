@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { SubtitleCue } from "@/lib/subtitles";
+import type { SubtitleCue } from "@/lib/subtitles/model";
 import {
   assessLyricsInput,
   MAX_LYRICS_DURATION_MS,
@@ -416,7 +416,7 @@ export function useSubtitleGeneration(options: UseSubtitleGenerationOptions) {
 
       let audio = source.retainedAudio ?? null;
       if (!audio) {
-        const { decodeMediaAudio } = await import("@/lib/media-audio");
+        const { decodeMediaAudio } = await import("@/lib/media/media-audio");
         audio = await decodeMediaAudio(source.file, signal);
       }
       if (signal.aborted) throw new DOMException("Audio preparation canceled.", "AbortError");

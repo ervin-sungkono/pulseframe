@@ -1,8 +1,8 @@
 import { getDspBackendPreference } from "./loader";
 import analysisWorkerUrl from "./analysis-worker.ts?worker&url";
-import { ANALYSIS_FPS } from "../audio-analysis-config";
-import { BassReturnDetector } from "../drop-detector.mjs";
-import { PcmFeatures, type SoundEnvelope } from "../pcm-features";
+import { ANALYSIS_FPS } from "../audio/audio-analysis-config";
+import { BassReturnDetector } from "../audio/drop-detector.mjs";
+import { PcmFeatures, type SoundEnvelope } from "../audio/pcm-features";
 import {
   DSP_BAND_COUNT,
   DSP_FEATURE_COUNT,

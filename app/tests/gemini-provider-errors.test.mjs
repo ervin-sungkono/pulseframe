@@ -10,7 +10,7 @@ import ts from "typescript";
 const directory = mkdtempSync(join(tmpdir(), "pulseframe-gemini-"));
 const require = createRequire(import.meta.url);
 for (const name of [
-  "subtitles",
+  "subtitles/model",
   "lyrics/mdx-config",
   "lyrics/policy",
   "lyrics/languages",

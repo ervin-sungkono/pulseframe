@@ -2,7 +2,7 @@ import { createContext, useContext, useState, type ComponentProps, type ReactNod
 import { Check, ChevronDown, ImagePlus, RotateCcw, X } from "lucide-react";
 import { Slider } from "@/components/ui/Slider";
 import { Switch } from "@/components/ui/Switch";
-import { palettes, type CustomizerSection } from "@/lib/customizer-config";
+import { palettes, type CustomizerSection } from "@/lib/visual/customizer-config";
 import {
   DEFAULT_LOGO_AUTO_FIT,
   DEFAULT_LOGO_FIT_SCALE,
@@ -14,7 +14,7 @@ import {
   type LogoPlacement,
   type ParticleFlow,
   type ResponseStyle,
-} from "@/lib/visual-settings-model";
+} from "@/lib/visual/visual-settings-model";
 
 const modes: { id: VisualMode; name: string; description: string }[] = [
   { id: "ring", name: "Pulse Ring", description: "Layered solid waves" },

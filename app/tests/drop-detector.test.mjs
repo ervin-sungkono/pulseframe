@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { BassReturnDetector } from "../lib/drop-detector.mjs";
-import { FFTAnalyzer } from "../lib/audio-dsp.mjs";
+import { BassReturnDetector } from "../lib/audio/drop-detector.mjs";
+import { FFTAnalyzer } from "../lib/audio/audio-dsp.mjs";
 
 const run = (detector, from, until, levels, extra = {}) => {
   const events = [];

@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { FrameDsp, initSync } from "../public/dsp/pulseframe_dsp.js";
-import { FFTAnalyzer } from "../lib/audio-dsp.mjs";
-import { bandPower, recentRms } from "../lib/art-reactivity.mjs";
+import { FFTAnalyzer } from "../lib/audio/audio-dsp.mjs";
+import { bandPower, recentRms } from "../lib/audio/art-reactivity.mjs";
 
 const wasm = initSync({
   module: readFileSync(new URL("../public/dsp/pulseframe_dsp_bg.wasm", import.meta.url)),

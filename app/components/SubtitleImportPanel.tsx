@@ -1,8 +1,8 @@
 import { useId, useRef } from "react";
 import { Upload } from "lucide-react";
 import { useSubtitleImport } from "@/hooks/use-subtitle-import";
-import { SUBTITLE_IMPORT_ACCEPT } from "@/lib/subtitle-import";
-import type { SubtitleCue } from "@/lib/subtitles";
+import { SUBTITLE_IMPORT_ACCEPT } from "@/lib/subtitles/import";
+import type { SubtitleCue } from "@/lib/subtitles/model";
 import { formatTimestamp } from "@/lib/time";
 
 export function SubtitleImportPanel({

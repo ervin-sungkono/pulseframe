@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
-import type { PreparedSound } from "@/lib/audio-features";
+import type { PreparedSound } from "@/lib/audio/audio-features";
 export function TrackWaveform({
   overview,
   position,

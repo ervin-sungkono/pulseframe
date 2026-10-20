@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MAX_SUBTITLE_TEXT_LENGTH } from "../subtitles.js";
+import { MAX_SUBTITLE_TEXT_LENGTH } from "../subtitles/model.js";
 import { MAX_LYRICS_DURATION_MS } from "./policy.js";
 import { GEMINI_LANGUAGE_CODES } from "./languages.js";
 

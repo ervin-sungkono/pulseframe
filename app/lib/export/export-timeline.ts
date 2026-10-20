@@ -1,5 +1,5 @@
-import { ANALYSIS_FPS } from "./audio-analysis-config";
-import type { SoundEnvelope } from "./audio-features";
+import { ANALYSIS_FPS } from "../audio/audio-analysis-config";
+import type { SoundEnvelope } from "../audio/audio-features";
 import { EXPORT_FRAME_RATES, type ExportFrameRate } from "./export-settings";
 
 /** Exact timestamps keep audio, subtitles and video on the selected timeline. */

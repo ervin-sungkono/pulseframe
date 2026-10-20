@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { SavedPreset } from "@/lib/presets";
+import type { SavedPreset } from "@/lib/visual/presets";
 import {
   PRESET_STORAGE_KEY,
   PresetStore,
   type CreatePresetInput,
   type UpdatePresetInput,
-} from "@/lib/preset-store";
+} from "@/lib/persistence/preset-store";
 
 const store = new PresetStore();
 const PAGE_SIZE = 50;

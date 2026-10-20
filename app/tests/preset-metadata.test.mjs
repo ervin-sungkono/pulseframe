@@ -206,9 +206,9 @@ const presetComponentMocks = (id) => {
   if (id === "@/components/ui/Dialog") return uiDialog;
   if (id === "@/components/ui/AlertDialog") return uiAlertDialog;
   if (id === "@/components/PresetSaveDialog") return { PresetSaveDialog: presetSaveDialogStub };
-  if (id === "@/lib/preset-store")
+  if (id === "@/lib/persistence/preset-store")
     return { PresetStoreError: class PresetStoreError extends Error {} };
-  if (id === "@/lib/presets") return { visualModeName: () => "Pulse Ring" };
+  if (id === "@/lib/visual/presets") return { visualModeName: () => "Pulse Ring" };
   throw new Error(`Unexpected PresetDialog import: ${id}`);
 };
 actualPresetDialog = compileTsx(
@@ -236,7 +236,7 @@ const mediaSessionOwner = { snapshot: mediaSnapshot, requestGeneration: 0, pause
 const appMockRequire = (id) => {
   if (id === "react") return reactMock;
   if (id === "lucide-react") return icons;
-  if (id === "@/lib/export-settings")
+  if (id === "@/lib/export/export-settings")
     return {
       DEFAULT_EXPORT_FRAME_RATE: 30,
       DEFAULT_EXPORT_RESOLUTION: 720,
@@ -256,7 +256,7 @@ const appMockRequire = (id) => {
   if (id === "@/components/CustomizerPanel") return { CustomizerPanel: customizerPanelStub };
   if (id === "@/components/ExportDialog") return { ExportDialog: stubComponent };
   if (id === "@/components/PresetDialog") return { PresetDialog: actualPresetDialog };
-  if (id === "@/lib/presets")
+  if (id === "@/lib/visual/presets")
     return {
       applyPreset: (current, next) => ({
         ...clone(next),
@@ -270,7 +270,7 @@ const appMockRequire = (id) => {
         return rest;
       },
     };
-  if (id === "@/lib/customizer-config")
+  if (id === "@/lib/visual/customizer-config")
     return {
       BUILTIN_LOOKS: [],
       SECTION_KEYS: { colors: ["primary", "secondary", "background"] },
@@ -340,18 +340,18 @@ const appMockRequire = (id) => {
     return { SubtitleGenerationStatus: stubComponent };
   if (id === "@/hooks/use-subtitle-generation")
     return { useSubtitleGeneration: () => ({ running: false }) };
-  if (id === "@/lib/audio-features")
+  if (id === "@/lib/audio/audio-features")
     return {
       PcmFeatures: class {},
       audibleMediaTime: () => 0,
       dropEnvelope: () => 0,
       prepareSound: () => null,
     };
-  if (id === "@/lib/audio-analysis-config") return { ANALYSIS_FPS: 30 };
-  if (id === "@/lib/local-image") return { readLocalImage: async () => null };
-  if (id === "@/lib/live-sound") return { LiveSound: class {} };
+  if (id === "@/lib/audio/audio-analysis-config") return { ANALYSIS_FPS: 30 };
+  if (id === "@/lib/media/local-image") return { readLocalImage: async () => null };
+  if (id === "@/lib/audio/live-sound") return { LiveSound: class {} };
   if (id === "@/components/TrackWaveform") return { TrackWaveform: stubComponent };
-  if (id === "@/lib/visualizer")
+  if (id === "@/lib/visual/visualizer")
     return {
       createAudioReactiveState: () => ({}),
       drawVisualization() {},
@@ -359,9 +359,10 @@ const appMockRequire = (id) => {
       warmSoundResponse() {},
       makeParticles: () => [],
     };
-  if (id === "@/lib/project-file") return { makeProjectFile() {}, readProjectFile() {} };
+  if (id === "@/lib/persistence/project-file")
+    return { makeProjectFile() {}, readProjectFile() {} };
   if (id === "@/lib/time") return { formatTimestamp: () => "0:00" };
-  if (id === "@/lib/subtitles") return {};
+  if (id === "@/lib/subtitles/model") return {};
   throw new Error(`Unexpected page import: ${id}`);
 };
 

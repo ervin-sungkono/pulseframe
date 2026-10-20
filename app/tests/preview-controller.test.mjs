@@ -28,10 +28,10 @@ const compiled = ts
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
   })
   .outputText.replace(
-    /from ["']\.\/audio-analysis-config["']/g,
+    /from ["']\.\/audio\/audio-analysis-config["']/g,
     "from './audio-analysis-config.mjs'",
   )
-  .replace(/from ["']\.\/visualizer["']/g, "from './visualizer.mjs'");
+  .replace(/from ["']\.\/visual\/visualizer["']/g, "from './visualizer.mjs'");
 const helperFile = join(temp, "preview-state.mjs");
 writeFileSync(helperFile, compiled);
 const { advancePreviewResponse, createPreviewResponseWarmer } = await import(

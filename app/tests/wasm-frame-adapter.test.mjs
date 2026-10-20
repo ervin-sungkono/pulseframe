@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { loadSources } from "./load-source.mjs";
-import { generateDemo } from "../lib/audio-dsp.mjs";
-import { BassReturnDetector } from "../lib/drop-detector.mjs";
+import { generateDemo } from "../lib/audio/audio-dsp.mjs";
+import { BassReturnDetector } from "../lib/audio/drop-detector.mjs";
 
 const modules = await loadSources({ dspAssets: true });
 const { PcmFeatures } = modules["audio-features"];

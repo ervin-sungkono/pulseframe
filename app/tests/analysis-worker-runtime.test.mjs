@@ -11,11 +11,11 @@ const stage = mkdtempSync(join(tmpdir(), "pulseframe-analysis-worker-"));
 process.on("exit", () => rmSync(stage, { recursive: true, force: true }));
 
 const modules = [
-  ["lib/audio-analysis-config.ts", "audio-analysis-config.mjs"],
-  ["lib/audio-dsp.mjs", "audio-dsp.mjs"],
-  ["lib/art-reactivity.mjs", "art-reactivity.mjs"],
-  ["lib/drop-detector.mjs", "drop-detector.mjs"],
-  ["lib/pcm-features.ts", "pcm-features.mjs"],
+  ["lib/audio/audio-analysis-config.ts", "audio/audio-analysis-config.mjs"],
+  ["lib/audio/audio-dsp.mjs", "audio/audio-dsp.mjs"],
+  ["lib/audio/art-reactivity.mjs", "audio/art-reactivity.mjs"],
+  ["lib/audio/drop-detector.mjs", "audio/drop-detector.mjs"],
+  ["lib/audio/pcm-features.ts", "audio/pcm-features.mjs"],
   ["lib/dsp/contracts.ts", "dsp/contracts.mjs"],
   ["lib/dsp/loader.ts", "dsp/loader.mjs"],
   ["lib/dsp/wasm-backend.ts", "dsp/wasm-backend.mjs"],

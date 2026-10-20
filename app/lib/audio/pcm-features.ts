@@ -9,9 +9,9 @@ import {
   DSP_MAX_SAMPLE_RATE,
   DspFeatureIndex,
   type FrameSpectrum,
-} from "./dsp/contracts";
-import { createWasmFrameBackend, WasmFrameBackend } from "./dsp/wasm-backend";
-import { getDspBackendPreference } from "./dsp/loader";
+} from "../dsp/contracts";
+import { createWasmFrameBackend, WasmFrameBackend } from "../dsp/wasm-backend";
+import { getDspBackendPreference } from "../dsp/loader";
 
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
 const db = (n: number) => (n > 0 ? 20 * Math.log10(n) : -160);

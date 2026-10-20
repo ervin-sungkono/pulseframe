@@ -1,9 +1,9 @@
-import { prepareSound, type PreparedSound } from "./audio-features";
-import { initializeDsp } from "./dsp/loader";
-import { PcmFeatures } from "./pcm-features";
-import { LiveSound } from "./live-sound";
+import { prepareSound, type PreparedSound } from "../audio/audio-features";
+import { initializeDsp } from "../dsp/loader";
+import { PcmFeatures } from "../audio/pcm-features";
+import { LiveSound } from "../audio/live-sound";
 import { readLocalImage, type LocalImage } from "./local-image";
-import type { ProjectContent } from "./project-file";
+import type { ProjectContent } from "../persistence/project-file";
 
 export type MediaAssetKind = "logo" | "background";
 export type MediaSessionOperation = "load" | "play" | "preview" | "logo" | "background";
