@@ -99,6 +99,38 @@ logo fitting/placement, track text and the timer. Reduced-motion preferences
 suppress decorative motion effects. The waveform, playback and range controls
 operate on the active source.
 
+### Motion and camera effects
+
+In **Motion & effects**, Pulse Ring offers Orbit, Bounce, Drift, Rotate, Zoom
+and Beat jump. Motion intensity controls travel, rotation or zoom; the existing
+Motion speed controls repeating movement. The ring, orbit accents and uploaded
+logo move together. Switching visual styles retains the ring settings.
+**Camera shake** works with all three styles and moves the background and
+artwork in response to the existing bass-hit envelope. Beat jump uses that same
+measured response. Titles, timer and subtitles remain steady for readability.
+Both effects start off, including when loading older projects or Quick Looks,
+and respect reduced motion in preview, PNG capture and video export.
+
+`app/lib/visual/motion.ts` computes pure transforms from absolute media time,
+dimensions, settings and the existing audio response. The shared canvas renderer
+applies camera and object transforms, then restores screen coordinates before
+drawing text. The logo receives matching transforms while retaining its layer
+order. Pause holds the pose, seeking evaluates the destination time, and exports
+evaluate the absolute source time. Camera noise is deterministic; transforms
+do not accumulate frame state or require another animation loop or DSP path.
+Settings participate in project and Quick Look persistence, undo/redo, Motion
+section reset and export snapshots.
+
+The [reference demonstration](https://chatgpt.com/s/t_6ad77fcef05c8191bceb28b7d6af9d63)
+informs the movement choices; Pulseframe uses measured audio and its media clock.
+Displacement and zoom are bounded relative to the short canvas edge. Camera
+overscan covers the whole backdrop and slightly crops the artwork during a shake.
+High ring scale or logos near an edge can still crop during object motion; use
+the preview to compose them. These effects reuse the existing audio envelope
+rather than inferring another beat grid.
+
+### Projects and Quick Looks
+
 A project file is portable: it contains a validated manifest, the source media,
 and optional logo/background image bytes, plus appearance settings, subtitles
 and export settings. Saving writes the current format; reading supports older

@@ -8,6 +8,7 @@ import {
   DEFAULT_LOGO_FIT_SCALE,
   DEFAULT_LOGO_PLACEMENTS,
   type VisualMode,
+  type MotionPreset,
   type ParticleMode,
   type VisualSettings,
   type BackdropMode,
@@ -22,6 +23,15 @@ const modes: { id: VisualMode; name: string; description: string }[] = [
   { id: "edges", name: "Edge Bars", description: "Opposite frequency directions" },
 ];
 const particleModes: ParticleMode[] = ["stardust", "sparks", "constellation", "comets"];
+const motionPresets: { id: MotionPreset; label: string }[] = [
+  { id: "none", label: "None" },
+  { id: "orbit", label: "Orbit" },
+  { id: "bounce", label: "Bounce" },
+  { id: "drift", label: "Drift" },
+  { id: "rotate", label: "Rotate" },
+  { id: "zoom", label: "Zoom" },
+  { id: "beat", label: "Beat jump" },
+];
 const backdrops: { id: BackdropMode; label: string }[] = [
   { id: "nebula", label: "Nebula" },
   { id: "grid", label: "Grid" },
@@ -586,6 +596,46 @@ export function CustomizerPanel({
             section="motion"
             onResetSection={onResetSection}
           >
+            <div className="setting-choice">
+              <span>Pulse Ring motion</span>
+              {settings.mode === "ring" ? (
+                <>
+                  <div
+                    className="pill-group motion-preset-group"
+                    role="group"
+                    aria-label="Pulse Ring motion"
+                  >
+                    {motionPresets.map(({ id, label }) => (
+                      <button
+                        type="button"
+                        key={id}
+                        className={settings.motionPreset === id ? "active" : ""}
+                        aria-pressed={settings.motionPreset === id}
+                        onClick={() => change("motionPreset", id)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="setting-hint">
+                    Moves the ring, its orbit accents, and logo. Titles and subtitles stay still.
+                  </p>
+                  <SettingSlider
+                    label="Motion intensity"
+                    value={settings.motionAmount}
+                    display={`${settings.motionAmount}%`}
+                    min={0}
+                    max={100}
+                    disabled={settings.motionPreset === "none"}
+                    onChange={(value) => change("motionAmount", value)}
+                  />
+                </>
+              ) : (
+                <p className="setting-hint">
+                  Select Pulse Ring to adjust ring motion. Your saved motion settings are kept.
+                </p>
+              )}
+            </div>
             <SettingSlider
               label="Motion speed"
               value={settings.motionSpeed}
@@ -596,6 +646,32 @@ export function CustomizerPanel({
               inputScale={100}
               onChange={(value) => change("motionSpeed", value)}
             />
+            <div className="toggle-line border-top">
+              <div>
+                <strong>Camera shake</strong>
+                <span>
+                  Moves artwork, background, and logo with the beat. Titles and subtitles stay
+                  still.
+                </span>
+              </div>
+              <PanelSwitch
+                checked={settings.cameraShake}
+                onCheckedChange={(value) => change("cameraShake", value)}
+                aria-label="Camera shake"
+              />
+            </div>
+            <SettingSlider
+              label="Camera shake amount"
+              value={settings.cameraShakeAmount}
+              display={`${settings.cameraShakeAmount}%`}
+              min={0}
+              max={100}
+              disabled={!settings.cameraShake}
+              onChange={(value) => change("cameraShakeAmount", value)}
+            />
+            <p className="setting-hint">
+              Pulse Ring motion and camera shake respect your reduced motion preference.
+            </p>
             <div className="toggle-line border-top">
               <div>
                 <strong>Enable particles</strong>

@@ -4,6 +4,7 @@ export type BackdropMode = "nebula" | "grid" | "clean";
 export type ParticleFlow = "drift" | "rise" | "orbit";
 export type ResponseStyle = "punchy" | "balanced" | "smooth";
 export type BeatLighting = "rays" | "aura" | "beams" | "edges";
+export type MotionPreset = "none" | "orbit" | "bounce" | "drift" | "rotate" | "zoom" | "beat";
 export type LogoPlacement = { x: number; y: number; size: number };
 
 export type VisualSettings = {
@@ -29,6 +30,10 @@ export type VisualSettings = {
   glow: number;
   visualScale: number;
   motionSpeed: number;
+  motionPreset: MotionPreset;
+  motionAmount: number;
+  cameraShake: boolean;
+  cameraShakeAmount: number;
   particleSize: number;
   beatRays: boolean;
   beatLighting: BeatLighting;
