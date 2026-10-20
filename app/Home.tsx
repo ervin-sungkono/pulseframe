@@ -1,6 +1,12 @@
-import { exportDimensions, type ExportResolution } from "@/lib/export-settings";
+import {
+  DEFAULT_EXPORT_FRAME_RATE,
+  DEFAULT_EXPORT_RESOLUTION,
+  exportDimensions,
+  type ExportFrameRate,
+  type ExportResolution,
+} from "@/lib/export-settings";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AudioLines,
   Captions,
@@ -43,7 +49,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { CustomizerPanel } from "@/components/CustomizerPanel";
-import { ExportDialog, timestamp } from "@/components/ExportDialog";
+import { ExportDialog } from "@/components/ExportDialog";
 import { PresetDialog } from "@/components/PresetDialog";
 import { applyPreset, presetStyle, type SavedPreset } from "@/lib/presets";
 import {
@@ -56,11 +62,11 @@ import { QuickLookStrip, type ActiveLook } from "@/components/QuickLookStrip";
 import { PresetSaveDialog } from "@/components/PresetSaveDialog";
 import { usePresets } from "@/hooks/use-presets";
 import { useSettingsHistory } from "@/hooks/use-settings-history";
+import { formatTimestamp } from "@/lib/time";
 import { useExportController } from "@/hooks/use-export-controller";
 import { SubtitleDialog, SubtitleEditor } from "@/components/SubtitleDialog";
 import { SubtitleGenerationStatus } from "@/components/SubtitleGenerationPanel";
 import { useSubtitleGeneration } from "@/hooks/use-subtitle-generation";
-import type { ExportFrameRate } from "@/lib/export-timeline";
 import { makeProjectFile, readProjectFile } from "@/lib/project-file";
 import type { SubtitleCue } from "@/lib/subtitles";
 import { useMediaSession } from "@/hooks/use-media-session";
@@ -98,9 +104,9 @@ export default function Home() {
   const [lookSaveTarget, setLookSaveTarget] = useState<SavedPreset | null>(null);
   const [subtitles, setSubtitles] = useState<SubtitleCue[]>([]);
   const [format, setFormat] = useState<Format>("landscape");
-  const [frameRate, setFrameRate] = useState<ExportFrameRate>(30);
+  const [frameRate, setFrameRate] = useState<ExportFrameRate>(DEFAULT_EXPORT_FRAME_RATE);
   const [videoCompression, setVideoCompression] = useState(false);
-  const [resolution, setResolution] = useState<ExportResolution>(720);
+  const [resolution, setResolution] = useState<ExportResolution>(DEFAULT_EXPORT_RESOLUTION);
   const [range, setRange] = useState<[number, number]>([0, 0]);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
@@ -144,8 +150,8 @@ export default function Home() {
       setRange(committedRange);
       if (project) {
         setFormat(project.format);
-        setResolution(project.resolution ?? 720);
-        setFrameRate(project.frameRate ?? 30);
+        setResolution(project.resolution ?? DEFAULT_EXPORT_RESOLUTION);
+        setFrameRate(project.frameRate ?? DEFAULT_EXPORT_FRAME_RATE);
         setVideoCompression(project.videoCompression ?? false);
         resetSettings(project.settings);
         setSubtitles(project.subtitles);
@@ -179,7 +185,7 @@ export default function Home() {
   const setMediaVolume = mediaSession.setVolume,
     setMediaLoop = mediaSession.setLoop;
   const snapshot = mediaSession.snapshot;
-  const cueRevision = JSON.stringify(subtitles);
+  const cueRevision = useMemo(() => JSON.stringify(subtitles), [subtitles]);
   const subtitleGeneration = useSubtitleGeneration({
     getSource: () => {
       const current = session.snapshot;
@@ -352,6 +358,22 @@ export default function Home() {
   const togglePlay = mediaSession.togglePlay;
   const changeLogo = mediaSession.changeLogo;
   const changeBackground = mediaSession.changeBackground;
+  const customizerPanelProps = {
+    settings,
+    onChange: update,
+    isVideo,
+    quickLooks,
+    disabled: exporting,
+    onPatch: applyLook,
+    onResetSection: resetSection,
+    logoName,
+    logoUrl,
+    onLogoFile: changeLogo,
+    backgroundName,
+    backgroundUrl,
+    onBackgroundFile: changeBackground,
+    onReset: resetAppearance,
+  };
   const previewRange = async () => {
     if (await mediaSession.previewRange(range)) setExportOpen(false);
   };
@@ -619,7 +641,9 @@ export default function Home() {
                 {settings.mode.toUpperCase()} <span className="stage-separator">/</span>{" "}
                 {settings.particleMode.toUpperCase()}
               </div>
-              <div className="stage-corner bottom-right">{file ? timestamp(position) : "0:00"}</div>
+              <div className="stage-corner bottom-right">
+                {file ? formatTimestamp(position) : "0:00"}
+              </div>
               {loadingMedia && (
                 <div className="media-loading" role="status">
                   Preparing your media…
@@ -734,7 +758,7 @@ export default function Home() {
                   <Play size={19} fill="currentColor" />
                 )}
               </button>
-              <span className="time-code">{timestamp(position)}</span>
+              <span className="time-code">{formatTimestamp(position)}</span>
               <Slider
                 className="studio-slider seek-slider"
                 aria-label="Playback position"
@@ -745,7 +769,7 @@ export default function Home() {
                 disabled={!file || exporting || loadingMedia}
                 onValueChange={(values) => seek(values[0])}
               />
-              <span className="time-code">{timestamp(duration)}</span>
+              <span className="time-code">{formatTimestamp(duration)}</span>
             </div>
             <div className="player-options">
               <button
@@ -822,22 +846,7 @@ export default function Home() {
               </div>
               <SlidersHorizontal size={19} />
             </div>
-            <CustomizerPanel
-              settings={settings}
-              onChange={update}
-              isVideo={isVideo}
-              quickLooks={quickLooks}
-              disabled={exporting}
-              onPatch={applyLook}
-              onResetSection={resetSection}
-              logoName={logoName}
-              logoUrl={logoUrl}
-              onLogoFile={changeLogo}
-              backgroundName={backgroundName}
-              backgroundUrl={backgroundUrl}
-              onBackgroundFile={changeBackground}
-              onReset={resetAppearance}
-            />
+            <CustomizerPanel {...customizerPanelProps} />
             <div className="export-panel">
               <div className="export-title">
                 <div>
@@ -928,22 +937,7 @@ export default function Home() {
                 Adjust the look while the preview stays visible above.
               </DrawerDescription>
             </DrawerHeader>
-            <CustomizerPanel
-              settings={settings}
-              onChange={update}
-              isVideo={isVideo}
-              quickLooks={quickLooks}
-              disabled={exporting}
-              onPatch={applyLook}
-              onResetSection={resetSection}
-              logoName={logoName}
-              logoUrl={logoUrl}
-              onLogoFile={changeLogo}
-              backgroundName={backgroundName}
-              backgroundUrl={backgroundUrl}
-              onBackgroundFile={changeBackground}
-              onReset={resetAppearance}
-            />
+            <CustomizerPanel {...customizerPanelProps} />
             <button className="button done-button" onClick={() => setCustomizerOpen(false)}>
               Done
             </button>

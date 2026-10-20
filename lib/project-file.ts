@@ -1,36 +1,49 @@
 import { z } from "zod";
 import type { VisualSettings } from "./visual-settings-model";
 import { settingsSchema, migrateSettings } from "./visual-settings";
-import type { ExportResolution } from "./export-settings";
-import type { ExportFrameRate } from "./export-timeline";
-import type { SubtitleCue } from "./subtitles";
+import {
+  DEFAULT_EXPORT_FRAME_RATE,
+  DEFAULT_EXPORT_RESOLUTION,
+  EXPORT_ASPECTS,
+  EXPORT_FRAME_RATES,
+  EXPORT_RESOLUTIONS,
+  type ExportAspect,
+  type ExportFrameRate,
+  type ExportResolution,
+} from "./export-settings";
+import { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH, type SubtitleCue } from "./subtitles";
 
 const cueSchema = z.object({
   id: z.string().max(80),
   start: z.number().finite().min(0),
   end: z.number().finite().min(0),
-  text: z.string().max(600),
+  text: z.string().max(MAX_SUBTITLE_TEXT_LENGTH),
 });
 const assetSchema = z.object({
   name: z.string().min(1).max(255),
   type: z.string().max(100),
   size: z.number().int().min(0),
 });
+const exportResolutionSchema = z
+  .number()
+  .refine((value): value is ExportResolution =>
+    EXPORT_RESOLUTIONS.some((resolution) => resolution === value),
+  );
+const exportFrameRateSchema = z
+  .number()
+  .refine((value): value is ExportFrameRate =>
+    EXPORT_FRAME_RATES.some((frameRate) => frameRate === value),
+  );
 const manifestSchema = z.object({
   version: z.union([z.literal(1), z.literal(2)]),
-  format: z.enum(["landscape", "portrait", "square"]),
+  format: z.enum(EXPORT_ASPECTS),
   profile: z.enum(["standard", "smaller"]).optional(),
-  resolution: z
-    .union([z.literal(480), z.literal(720), z.literal(1080), z.literal(1440)])
-    .optional(),
+  resolution: exportResolutionSchema.optional(),
   videoCompression: z.boolean().optional().default(false),
-  frameRate: z
-    .union([z.literal(24), z.literal(30), z.literal(60)])
-    .optional()
-    .default(30),
+  frameRate: exportFrameRateSchema.optional().default(DEFAULT_EXPORT_FRAME_RATE),
   range: z.tuple([z.number().finite().min(0), z.number().finite().min(0)]),
   settings: settingsSchema,
-  subtitles: z.array(cueSchema).max(500),
+  subtitles: z.array(cueSchema).max(MAX_SUBTITLE_CUES),
   media: assetSchema,
   logo: assetSchema.nullable(),
   background: assetSchema.nullable().optional().default(null),
@@ -39,7 +52,7 @@ const MAGIC = "PF01";
 const MAX_MANIFEST = 256 * 1024;
 
 export type ProjectContent = {
-  format: "landscape" | "portrait" | "square";
+  format: ExportAspect;
   profile?: "standard" | "smaller";
   resolution?: ExportResolution;
   frameRate?: ExportFrameRate;
@@ -59,9 +72,10 @@ export function makeProjectFile(content: ProjectContent): Blob {
   const manifest = {
     version: 2,
     videoCompression: content.videoCompression ?? false,
-    resolution: content.resolution ?? (content.profile === "smaller" ? 480 : 720),
+    resolution:
+      content.resolution ?? (content.profile === "smaller" ? 480 : DEFAULT_EXPORT_RESOLUTION),
     format: content.format,
-    frameRate: content.frameRate ?? 30,
+    frameRate: content.frameRate ?? DEFAULT_EXPORT_FRAME_RATE,
     range: content.range,
     settings: content.settings,
     subtitles: content.subtitles,
@@ -143,7 +157,7 @@ export async function readProjectFile(file: File): Promise<ProjectContent> {
   }
   return {
     videoCompression: data.videoCompression,
-    resolution: data.resolution ?? (data.profile === "smaller" ? 480 : 720),
+    resolution: data.resolution ?? (data.profile === "smaller" ? 480 : DEFAULT_EXPORT_RESOLUTION),
     format: data.format,
     frameRate: data.frameRate,
     range: data.range,

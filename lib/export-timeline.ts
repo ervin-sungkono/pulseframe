@@ -1,8 +1,6 @@
 import { ANALYSIS_FPS } from "./audio-analysis-config";
 import type { SoundEnvelope } from "./audio-features";
-
-export const EXPORT_FRAME_RATES = [24, 30, 60] as const;
-export type ExportFrameRate = (typeof EXPORT_FRAME_RATES)[number];
+import { EXPORT_FRAME_RATES, type ExportFrameRate } from "./export-settings";
 
 /** Exact timestamps keep audio, subtitles and video on the selected timeline. */
 export function* exportFrames(length: number, frameRate: ExportFrameRate) {

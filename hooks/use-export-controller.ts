@@ -18,6 +18,7 @@ import {
   type RemainingEstimate,
   type TimeRange,
 } from "@/lib/export-time-estimate";
+import { formatTimestamp } from "@/lib/time";
 
 export type UseExportControllerOptions = {
   /** Shared with the media/editor owner; this controller sets and releases it. */
@@ -92,13 +93,6 @@ function snapshotSource(source: ExportSource): ExportSource {
     })),
     // Prepared PCM and image objects are retained by reference for this job.
   };
-}
-
-function timestamp(value: number) {
-  const seconds = Math.max(0, Number.isFinite(value) ? value : 0);
-  const minutes = Math.floor(seconds / 60);
-  const rest = String(Math.floor(seconds % 60)).padStart(2, "0");
-  return `${minutes}:${rest}`;
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -253,7 +247,7 @@ export function useExportController(
         if (result.timing && recordSuccessfulExport(result.timing))
           setHistoryRevision((revision) => revision + 1);
         const length = source.range[1] - source.range[0];
-        const note = `Export complete: ${result.extension.toUpperCase()} video at ${source.resolution}p with ${timestamp(length)} of media.${source.videoCompression ? " Video compression enabled." : ""}`;
+        const note = `Export complete: ${result.extension.toUpperCase()} video at ${source.resolution}p with ${formatTimestamp(length)} of media.${source.videoCompression ? " Video compression enabled." : ""}`;
         optionsRef.current.onNotice?.(note);
         optionsRef.current.onComplete?.();
       },

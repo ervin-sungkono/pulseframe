@@ -3,7 +3,7 @@ import { Upload } from "lucide-react";
 import { useSubtitleImport } from "@/hooks/use-subtitle-import";
 import { SUBTITLE_IMPORT_ACCEPT } from "@/lib/subtitle-import";
 import type { SubtitleCue } from "@/lib/subtitles";
-import { timestamp } from "./ExportDialog";
+import { formatTimestamp } from "@/lib/time";
 
 export function SubtitleImportPanel({
   trackFile,
@@ -65,7 +65,7 @@ export function SubtitleImportPanel({
             {importer.pending.cues.slice(0, 3).map((cue, index) => (
               <li key={index}>
                 <span>
-                  {timestamp(cue.start, true)} – {timestamp(cue.end, true)}
+                  {formatTimestamp(cue.start, true)} – {formatTimestamp(cue.end, true)}
                 </span>
                 <p>{cue.text}</p>
               </li>
