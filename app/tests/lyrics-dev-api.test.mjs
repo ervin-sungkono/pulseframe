@@ -72,7 +72,7 @@ test("lyrics dev API accepts 100-second requests and matches canonical error res
   });
 
   try {
-    const { lyricsDevApi } = await vite.ssrLoadModule("/lyrics-dev-api.ts");
+    const { lyricsDevApi } = await vite.ssrLoadModule("/lib/lyrics/dev-api.ts");
     const {
       GEMINI_MAX_REQUEST_BYTES,
       GEMINI_MAX_WAV_BYTES,

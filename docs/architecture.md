@@ -11,8 +11,12 @@ method and confirms the upload.
 - `app/` contains the browser application, Vite entry/configuration, serverless
   subtitle handler, public assets and application tests. `app/Home.tsx` composes
   the editor; `app/components/` renders controls and dialogs; `app/hooks/`
-  coordinates editor and media lifecycles; `app/lib/` holds settings, file
-  contracts, media adapters, analysis, rendering and export code.
+  coordinates editor and media lifecycles. `app/lib/` groups audio analysis in
+  `audio/`, browser resources in `media/`, settings and rendering in `visual/`,
+  video jobs in `export/`, saved data and project files in `persistence/`, and
+  caption logic in `subtitles/` and `lyrics/`. `dsp/` owns the worker and
+  Rust/WASM adapters; shared preview, time and class-name helpers remain at the
+  library root.
 - `scripts/` contains root development helpers, runtime-asset preparation,
   reproducible DSP generation and benchmarks.
 - `vendor/` is reserved for checked-in third-party assets; it is currently empty.

@@ -26,8 +26,10 @@ to the application package; shared build tools live in `scripts/`.
 - `app/hooks/` owns application orchestration, state transitions and cleanup.
   Delegate drawing to the canvas renderer rather than duplicating drawing code
   in controllers.
-- `app/lib/` contains several roles, not just models. Settings and file contracts
-  must not depend on components or hooks. `app/lib/visualizer.ts` and its drawing
+- `app/lib/` contains several roles, not just models. `audio/`, `media/`,
+  `visual/`, `export/`, `persistence/`, `subtitles/` and `lyrics/` group the
+  related modules; `dsp/` owns Rust/WASM adapters. Settings and file contracts
+  must not depend on components or hooks. `visual/visualizer.ts` and its drawing
   helpers are canvas views. Media, encoding and persistence adapters own their
   concrete platform resources.
 - Follow KISS, DRY, SOLID and YAGNI. Reuse existing defaults, contracts and

@@ -3,8 +3,8 @@ import {
   MAX_SUBTITLE_IMPORT_BYTES,
   parseSubtitleImport,
   type SubtitleImportResult,
-} from "@/lib/subtitle-import";
-import type { SubtitleCue } from "@/lib/subtitles";
+} from "@/lib/subtitles/import";
+import type { SubtitleCue } from "@/lib/subtitles/model";
 
 type Options = {
   trackFile?: File | null;

@@ -1,8 +1,12 @@
-import { ANALYSIS_FPS } from "./audio-analysis-config";
-import type { SoundEnvelope } from "./audio-features";
-import type { MediaSessionSnapshot } from "./media-session";
-import { createAudioReactiveState, soundResponse, type AudioReactiveState } from "./visualizer";
-import type { VisualSettings } from "./visual-settings-model";
+import { ANALYSIS_FPS } from "./audio/audio-analysis-config";
+import type { SoundEnvelope } from "./audio/audio-features";
+import type { MediaSessionSnapshot } from "./media/media-session";
+import {
+  createAudioReactiveState,
+  soundResponse,
+  type AudioReactiveState,
+} from "./visual/visualizer";
+import type { VisualSettings } from "./visual/visual-settings-model";
 
 type Snapshot = Pick<
   MediaSessionSnapshot,

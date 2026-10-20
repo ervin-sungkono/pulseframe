@@ -1,27 +1,29 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
 
 const dir = mkdtempSync(join(tmpdir(), "pulseframe-subtitle-import-"));
-for (const name of ["subtitles", "subtitle-import", "lyrics/cues"]) {
+for (const name of ["subtitles/model", "subtitles/import", "lyrics/cues"]) {
   const source = readFileSync(new URL(`../lib/${name}.ts`, import.meta.url), "utf8");
-  writeFileSync(
-    join(dir, `${name.split("/").at(-1)}.mjs`),
-    ts
-      .transpileModule(source, {
-        compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-      })
-      .outputText.replace('"./subtitles"', '"./subtitles.mjs"')
-      .replace('"../subtitles"', '"./subtitles.mjs"'),
-  );
+  const target = join(dir, `${name}.mjs`);
+  mkdirSync(dirname(target), { recursive: true });
+  const output = ts
+    .transpileModule(source, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+    })
+    .outputText.replace(
+      /(from\s+["'])(\.{1,2}\/[^"']+)(["'])/g,
+      (_, prefix, path, suffix) => `${prefix}${path.replace(/\.js$/, "")}.mjs${suffix}`,
+    );
+  writeFileSync(target, output);
 }
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
 const { parseSubtitleImport: parse, MAX_SUBTITLE_IMPORT_BYTES } = await import(
-  pathToFileURL(join(dir, "subtitle-import.mjs")).href
+  pathToFileURL(join(dir, "subtitles/import.mjs")).href
 );
 
 test("SRT preserves multiline Unicode, overlap, stable ties and decodes caption markup", () => {
@@ -132,7 +134,9 @@ test("Invalid and untimed files fail instead of guessing timestamps or yielding 
 });
 
 test("All existing Pulseframe subtitle downloads can be imported again", async () => {
-  const { serializeGeneratedSubtitles } = await import(pathToFileURL(join(dir, "cues.mjs")).href);
+  const { serializeGeneratedSubtitles } = await import(
+    pathToFileURL(join(dir, "lyrics/cues.mjs")).href
+  );
   const source = [
     { startMs: 1000, endMs: 2000, text: "Hello & world" },
     { startMs: 3000, endMs: 4000, text: "Again" },

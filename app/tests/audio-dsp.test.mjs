@@ -6,7 +6,7 @@ import {
   generateDemo,
   generateTestTone,
   waveformEnvelope,
-} from "../lib/audio-dsp.mjs";
+} from "../lib/audio/audio-dsp.mjs";
 
 const SAMPLE_RATE = 48_000;
 const FFT_SIZE = 8192;

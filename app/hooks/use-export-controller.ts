@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { exportDimensions } from "@/lib/export-settings";
+import { exportDimensions } from "@/lib/export/export-settings";
 import {
   createExportJobController,
   type ExportJobProgress,
   type ExportSource,
-} from "@/lib/export-job";
+} from "@/lib/export/export-job";
 import {
   getHistoricalProfileEstimate,
   getPreExportEstimate,
@@ -17,7 +17,7 @@ import {
   type ExportTimingProfileBase,
   type RemainingEstimate,
   type TimeRange,
-} from "@/lib/export-time-estimate";
+} from "@/lib/export/export-time-estimate";
 import { formatTimestamp } from "@/lib/time";
 
 export type UseExportControllerOptions = {
@@ -161,7 +161,7 @@ export function useExportController(
       lockedRef: optionsRef.current.lockedRef,
       pausePlayback: () => optionsRef.current.pausePlayback(),
       execute: async (source, signal, onProgress, startedAt) => {
-        const { exportVisualVideo } = await import("@/lib/export-video");
+        const { exportVisualVideo } = await import("@/lib/export/export-video");
         if (signal.aborted) throw new Error("Export canceled.");
         const size = exportDimensions(source.format, source.resolution);
         const baseProfile = sourceProfileBase(source);

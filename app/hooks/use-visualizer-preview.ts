@@ -1,21 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useRef, type RefObject } from "react";
-import { audibleMediaTime, dropEnvelope, type SoundFrame } from "@/lib/audio-features";
-import { ANALYSIS_FPS, ANALYSIS_SIZE } from "@/lib/audio-analysis-config";
-import { exportDimensions, type ExportAspect } from "@/lib/export-settings";
+import { audibleMediaTime, dropEnvelope, type SoundFrame } from "@/lib/audio/audio-features";
+import { ANALYSIS_FPS, ANALYSIS_SIZE } from "@/lib/audio/audio-analysis-config";
+import { exportDimensions, type ExportAspect } from "@/lib/export/export-settings";
 import type {
   MediaSessionOwner,
   MediaSessionEvent,
   MediaSessionSnapshot,
-} from "@/lib/media-session";
+} from "@/lib/media/media-session";
 import {
   advancePreviewResponse,
   createPreviewResponseWarmer,
   responseSettingsKey,
   type PreviewWarmResult,
 } from "@/lib/preview-state";
-import type { SubtitleCue } from "@/lib/subtitles";
+import type { SubtitleCue } from "@/lib/subtitles/model";
 import {
   createAudioReactiveState,
   drawVisualization,
@@ -23,8 +23,8 @@ import {
   soundResponse,
   type AudioReactiveState,
   type Particle,
-} from "@/lib/visualizer";
-import type { VisualSettings } from "@/lib/visual-settings-model";
+} from "@/lib/visual/visualizer";
+import type { VisualSettings } from "@/lib/visual/visual-settings-model";
 
 const previewDimensions = (format: ExportAspect) =>
   exportDimensions(format, format === "square" ? 1080 : 720);

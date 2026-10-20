@@ -1,4 +1,4 @@
-import { generateDemo } from "./audio-dsp.mjs";
+import { generateDemo } from "../audio/audio-dsp.mjs";
 export function makeDemoFile(): File {
   const rate = 44100,
     channels = generateDemo(rate, 32),

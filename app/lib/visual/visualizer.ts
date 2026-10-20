@@ -1,7 +1,7 @@
-import { ANALYSIS_FPS } from "./audio-analysis-config";
+import { ANALYSIS_FPS } from "../audio/audio-analysis-config";
 import type { ResponseStyle, VisualSettings } from "./visual-settings-model";
-import { activeSubtitles, type SubtitleCue } from "./subtitles";
-import type { SoundEnvelope } from "./audio-features";
+import { activeSubtitles, type SubtitleCue } from "../subtitles/model";
+import type { SoundEnvelope } from "../audio/audio-features";
 import { drawGlitch } from "./glitch";
 import { drawTrackOverlay, trackOverlayLayout } from "./track-overlay";
 import { drawBeatLighting } from "./beat-lighting";

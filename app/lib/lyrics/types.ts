@@ -1,4 +1,4 @@
-import type { SubtitleCue } from "../subtitles.js";
+import type { SubtitleCue } from "../subtitles/model.js";
 
 export type LyricsMethod = "local" | "gemini";
 export type LyricsPreset = "auto" | "fast" | "quality";

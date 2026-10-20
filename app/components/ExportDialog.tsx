@@ -13,9 +13,9 @@ import {
   type ExportFrameRate,
   EXPORT_RESOLUTIONS,
   type ExportResolution,
-} from "@/lib/export-settings";
-import type { ExportProgress } from "@/lib/export-video";
-import type { TimeRange } from "@/lib/export-time-estimate";
+} from "@/lib/export/export-settings";
+import type { ExportProgress } from "@/lib/export/export-video";
+import type { TimeRange } from "@/lib/export/export-time-estimate";
 import { formatTimestamp, parseTimestamp } from "@/lib/time";
 function estimateLabel(range: TimeRange) {
   const low = Math.max(1, Math.floor(range.minSeconds));

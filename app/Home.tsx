@@ -4,7 +4,7 @@ import {
   exportDimensions,
   type ExportFrameRate,
   type ExportResolution,
-} from "@/lib/export-settings";
+} from "@/lib/export/export-settings";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -51,13 +51,13 @@ import {
 import { CustomizerPanel } from "@/components/CustomizerPanel";
 import { ExportDialog } from "@/components/ExportDialog";
 import { PresetDialog } from "@/components/PresetDialog";
-import { applyPreset, presetStyle, type SavedPreset } from "@/lib/presets";
+import { applyPreset, presetStyle, type SavedPreset } from "@/lib/visual/presets";
 import {
   BUILTIN_LOOKS,
   DEFAULT_SETTINGS,
   SECTION_KEYS,
   type CustomizerSection,
-} from "@/lib/customizer-config";
+} from "@/lib/visual/customizer-config";
 import { QuickLookStrip, type ActiveLook } from "@/components/QuickLookStrip";
 import { PresetSaveDialog } from "@/components/PresetSaveDialog";
 import { usePresets } from "@/hooks/use-presets";
@@ -67,12 +67,12 @@ import { useExportController } from "@/hooks/use-export-controller";
 import { SubtitleDialog, SubtitleEditor } from "@/components/SubtitleDialog";
 import { SubtitleGenerationStatus } from "@/components/SubtitleGenerationPanel";
 import { useSubtitleGeneration } from "@/hooks/use-subtitle-generation";
-import { makeProjectFile, readProjectFile } from "@/lib/project-file";
-import type { SubtitleCue } from "@/lib/subtitles";
+import { makeProjectFile, readProjectFile } from "@/lib/persistence/project-file";
+import type { SubtitleCue } from "@/lib/subtitles/model";
 import { useMediaSession } from "@/hooks/use-media-session";
 import { useVisualizerPreview } from "@/hooks/use-visualizer-preview";
 import { TrackWaveform } from "@/components/TrackWaveform";
-import type { VisualSettings } from "@/lib/visual-settings-model";
+import type { VisualSettings } from "@/lib/visual/visual-settings-model";
 
 const dimensions = {
   landscape: { width: 1280, height: 720, label: "16:9", css: "16 / 9" },
@@ -718,7 +718,7 @@ export default function Home() {
                   className="replace-button"
                   disabled={loadingMedia}
                   onClick={async () => {
-                    const { makeDemoFile } = await import("@/lib/demo-file");
+                    const { makeDemoFile } = await import("@/lib/media/demo-file");
                     await loadFile(makeDemoFile());
                   }}
                 >

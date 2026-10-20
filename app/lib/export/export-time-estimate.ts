@@ -1,4 +1,4 @@
-import type { VisualSettings } from "./visual-settings-model";
+import type { VisualSettings } from "../visual/visual-settings-model";
 import { COMPRESSED_VIDEO_QUALITY } from "./export-settings";
 
 /**

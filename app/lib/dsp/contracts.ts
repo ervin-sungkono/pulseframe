@@ -1,4 +1,4 @@
-import { ANALYSIS_SIZE } from "../audio-analysis-config";
+import { ANALYSIS_SIZE } from "../audio/audio-analysis-config";
 
 export const DSP_CORE_VERSION = "0.1.0";
 export const DSP_FEATURE_SCHEMA_VERSION = 1;

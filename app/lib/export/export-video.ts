@@ -13,13 +13,18 @@ import {
   canEncodeAudio,
   canEncodeVideo,
 } from "mediabunny";
-import { drawVisualization, warmSoundResponse, makeParticles, type LogoLayer } from "./visualizer";
-import type { VisualSettings } from "./visual-settings-model";
-import type { SubtitleCue } from "./subtitles";
-import { dropEnvelope, prepareSound, type PreparedSound } from "./audio-features";
-import { initializeDsp } from "./dsp/loader";
-import { PcmFeatures } from "./pcm-features";
-import { decodeMediaAudio, audioSections } from "./media-audio";
+import {
+  drawVisualization,
+  warmSoundResponse,
+  makeParticles,
+  type LogoLayer,
+} from "../visual/visualizer";
+import type { VisualSettings } from "../visual/visual-settings-model";
+import type { SubtitleCue } from "../subtitles/model";
+import { dropEnvelope, prepareSound, type PreparedSound } from "../audio/audio-features";
+import { initializeDsp } from "../dsp/loader";
+import { PcmFeatures } from "../audio/pcm-features";
+import { decodeMediaAudio, audioSections } from "../media/media-audio";
 import {
   COMPRESSED_VIDEO_QUALITY,
   DEFAULT_EXPORT_FRAME_RATE,

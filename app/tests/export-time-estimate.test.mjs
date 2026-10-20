@@ -9,7 +9,10 @@ import ts from "typescript";
 const testDirectory = mkdtempSync(join(tmpdir(), "pulseframe-export-time-"));
 const settingsPath = join(testDirectory, "export-settings.mjs");
 const modulePath = join(testDirectory, "export-time-estimate.mjs");
-const settingsSource = readFileSync(new URL("../lib/export-settings.ts", import.meta.url), "utf8");
+const settingsSource = readFileSync(
+  new URL("../lib/export/export-settings.ts", import.meta.url),
+  "utf8",
+);
 writeFileSync(
   settingsPath,
   ts.transpileModule(settingsSource, {
@@ -17,7 +20,7 @@ writeFileSync(
   }).outputText,
 );
 const source = readFileSync(
-  new URL("../lib/export-time-estimate.ts", import.meta.url),
+  new URL("../lib/export/export-time-estimate.ts", import.meta.url),
   "utf8",
 ).replaceAll('"./export-settings"', JSON.stringify(pathToFileURL(settingsPath).href));
 writeFileSync(

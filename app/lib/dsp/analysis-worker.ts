@@ -1,6 +1,6 @@
-import { ANALYSIS_FPS } from "../audio-analysis-config";
-import { BassReturnDetector } from "../drop-detector.mjs";
-import { PcmFeatures } from "../pcm-features";
+import { ANALYSIS_FPS } from "../audio/audio-analysis-config";
+import { BassReturnDetector } from "../audio/drop-detector.mjs";
+import { PcmFeatures } from "../audio/pcm-features";
 import { initializeDsp } from "./loader";
 import {
   DSP_BAND_COUNT,

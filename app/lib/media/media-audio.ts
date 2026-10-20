@@ -1,5 +1,5 @@
 import { ALL_FORMATS, AudioBufferSink, BlobSource, Input } from "mediabunny";
-import { ANALYSIS_FPS } from "./audio-analysis-config";
+import { ANALYSIS_FPS } from "../audio/audio-analysis-config";
 const MAX_PCM = 300 * 1024 * 1024;
 export async function decodeMediaAudio(
   file: File,

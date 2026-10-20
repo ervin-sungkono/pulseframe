@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FFTAnalyzer, generateTestTone } from "../lib/audio-dsp.mjs";
-import { bandPower, recentRms, reactiveFeatures, smoothFeatures } from "../lib/art-reactivity.mjs";
+import { FFTAnalyzer, generateTestTone } from "../lib/audio/audio-dsp.mjs";
+import {
+  bandPower,
+  recentRms,
+  reactiveFeatures,
+  smoothFeatures,
+} from "../lib/audio/art-reactivity.mjs";
 
 function signal(frequency, inverted = false) {
   const data = generateTestTone(48000, 2, frequency, 0.25, inverted);

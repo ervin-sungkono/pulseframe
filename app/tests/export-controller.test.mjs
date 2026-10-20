@@ -8,7 +8,7 @@ import ts from "typescript";
 
 const testDirectory = mkdtempSync(join(tmpdir(), "pulseframe-export-job-"));
 const modulePath = join(testDirectory, "export-job.mjs");
-const source = readFileSync(new URL("../lib/export-job.ts", import.meta.url), "utf8");
+const source = readFileSync(new URL("../lib/export/export-job.ts", import.meta.url), "utf8");
 writeFileSync(
   modulePath,
   ts.transpileModule(source, {
@@ -210,7 +210,7 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
   `,
   );
   const estimateSource = readFileSync(
-    new URL("../lib/export-time-estimate.ts", import.meta.url),
+    new URL("../lib/export/export-time-estimate.ts", import.meta.url),
     "utf8",
   ).replaceAll('"./export-settings"', JSON.stringify(pathToFileURL(settingsPath).href));
   writeFileSync(
@@ -254,11 +254,14 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
   );
   hookSource = hookSource
     .replaceAll('"react"', JSON.stringify(pathToFileURL(reactPath).href))
-    .replaceAll('"@/lib/export-settings"', JSON.stringify(pathToFileURL(settingsPath).href))
-    .replaceAll('"@/lib/export-job"', JSON.stringify(pathToFileURL(modulePath).href))
-    .replaceAll('"@/lib/export-time-estimate"', JSON.stringify(pathToFileURL(estimatePath).href))
+    .replaceAll('"@/lib/export/export-settings"', JSON.stringify(pathToFileURL(settingsPath).href))
+    .replaceAll('"@/lib/export/export-job"', JSON.stringify(pathToFileURL(modulePath).href))
+    .replaceAll(
+      '"@/lib/export/export-time-estimate"',
+      JSON.stringify(pathToFileURL(estimatePath).href),
+    )
     .replaceAll('"@/lib/time"', JSON.stringify(pathToFileURL(timePath).href))
-    .replaceAll('"@/lib/export-video"', JSON.stringify(pathToFileURL(adapterPath).href));
+    .replaceAll('"@/lib/export/export-video"', JSON.stringify(pathToFileURL(adapterPath).href));
   writeFileSync(
     hookPath,
     ts.transpileModule(hookSource, {

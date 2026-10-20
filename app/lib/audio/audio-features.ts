@@ -1,5 +1,5 @@
 import { waveformEnvelope } from "./audio-dsp.mjs";
-import { scanPreparedSound } from "./dsp/scan-client";
+import { scanPreparedSound } from "../dsp/scan-client";
 import type { SoundEnvelope } from "./pcm-features";
 
 export { PcmFeatures } from "./pcm-features";

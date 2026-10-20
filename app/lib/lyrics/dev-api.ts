@@ -1,5 +1,5 @@
 import type { Plugin } from "vite";
-import { GEMINI_MAX_REQUEST_BYTES } from "./lib/lyrics/gemini-contract";
+import { GEMINI_MAX_REQUEST_BYTES } from "./gemini-contract";
 
 /** Run the same Web handler locally; production uses the Vercel Function. */
 export function lyricsDevApi(): Plugin {

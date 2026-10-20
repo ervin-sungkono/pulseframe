@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { loadSources } from "./load-source.mjs";
-import { FFTAnalyzer, generateDemo } from "../lib/audio-dsp.mjs";
+import { FFTAnalyzer, generateDemo } from "../lib/audio/audio-dsp.mjs";
 const modules = await loadSources();
 const { PcmFeatures, findDropEvents, dropEnvelope, audibleMediaTime, prepareSound } =
   modules["audio-features"];

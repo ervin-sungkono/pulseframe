@@ -5,8 +5,8 @@ import {
   MediaSessionOwner,
   type MediaSessionEvent,
   type MediaSessionSnapshot,
-} from "@/lib/media-session";
-import type { ProjectContent } from "@/lib/project-file";
+} from "@/lib/media/media-session";
+import type { ProjectContent } from "@/lib/persistence/project-file";
 
 export type MediaCommitted = {
   project?: ProjectContent;

@@ -1,4 +1,4 @@
-import { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH, type SubtitleCue } from "./subtitles";
+import { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH, type SubtitleCue } from "./model";
 
 export const MAX_SUBTITLE_IMPORT_BYTES = 2 * 1024 * 1024;
 export const SUBTITLE_IMPORT_ACCEPT = ".srt,.vtt,.lrc,.json";

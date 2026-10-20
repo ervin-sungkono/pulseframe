@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { VisualSettings } from "./visual-settings-model";
-import { settingsSchema, migrateSettings } from "./visual-settings";
+import type { VisualSettings } from "../visual/visual-settings-model";
+import { settingsSchema, migrateSettings } from "../visual/visual-settings";
 import {
   DEFAULT_EXPORT_FRAME_RATE,
   DEFAULT_EXPORT_RESOLUTION,
@@ -10,8 +10,8 @@ import {
   type ExportAspect,
   type ExportFrameRate,
   type ExportResolution,
-} from "./export-settings";
-import { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH, type SubtitleCue } from "./subtitles";
+} from "../export/export-settings";
+import { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH, type SubtitleCue } from "../subtitles/model";
 
 const cueSchema = z.object({
   id: z.string().max(80),
