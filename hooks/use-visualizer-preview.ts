@@ -29,6 +29,8 @@ import type { VisualSettings } from "@/lib/visual-settings-model";
 const previewDimensions = (format: ExportAspect) =>
   exportDimensions(format, format === "square" ? 1080 : 720);
 
+const PREVIEW_FPS = 60;
+
 function cloneAudioState(state: AudioReactiveState): AudioReactiveState {
   return {
     ...state,
@@ -285,41 +287,74 @@ export function useVisualizerPreview({
     if (!canvas || !context) return;
     let frame = 0;
     let last = 0;
+    let lastPaint = 0;
     let lastUi = 0;
+    let analyzedTime = -1;
+    let analyzedGeneration = -1;
+    let analyzedSource: MediaSessionSnapshot["features"] | MediaSessionSnapshot["live"] = null;
+    let analyzedSound: SoundFrame | null = null;
+    let analyzedDrop = 0;
     const demoFrequency = new Uint8Array(ANALYSIS_SIZE / 2);
     const demoWave = new Uint8Array(ANALYSIS_SIZE);
 
     const render = (now: number) => {
       frame = requestAnimationFrame(render);
-      if (document.hidden || now - last < 1000 / ANALYSIS_FPS - 1) return;
-      const delta = Math.min(100, now - last);
-      last = now;
+      const smoothBars = settingsRef.current.mode !== "ring";
+      const frameRate = smoothBars ? PREVIEW_FPS : ANALYSIS_FPS;
+      const interval = 1000 / frameRate;
+      const elapsed = now - last;
+      if (document.hidden || elapsed < interval - 0.1) return;
+      // Keep the scheduling remainder instead of dropping to half-rate when
+      // display callbacks arrive slightly sooner than the target interval.
+      last += Math.max(1, Math.floor((elapsed + 0.1) / interval)) * interval;
+      const delta = Math.min(100, now - lastPaint);
+      lastPaint = now;
       const snapshot: MediaSessionSnapshot = session.snapshot;
       if (!lockedRef.current) {
         const media = snapshot.media;
         const visualTime = media ? audibleMediaTime(media, snapshot.audioContext, now) : now / 1000;
         const analysisTime = Math.floor(visualTime * ANALYSIS_FPS) / ANALYSIS_FPS;
+        const responseTime = smoothBars ? visualTime : analysisTime;
         const pendingWarm = pendingWarmRef.current;
         const warmingCurrentSeek =
           !!media && pendingWarm?.generation === snapshot.generation && pendingWarm.media === media;
-        if (analysisTime < lastAudioRef.current && !warmingCurrentSeek) {
+        if (
+          analysisTime < Math.floor(lastAudioRef.current * ANALYSIS_FPS) / ANALYSIS_FPS &&
+          !warmingCurrentSeek
+        ) {
           audioStateRef.current = createAudioReactiveState();
           snapshot.live?.reset();
         }
         const audioDelta = media
           ? media.paused || warmingCurrentSeek
             ? 0
-            : Math.max(0, Math.min(0.25, analysisTime - lastAudioRef.current)) * 1000
+            : Math.max(0, Math.min(0.25, responseTime - lastAudioRef.current)) * 1000
           : delta;
-        lastAudioRef.current = analysisTime;
+        lastAudioRef.current = responseTime;
         let frequency: Uint8Array = demoFrequency;
         let wave: Uint8Array = demoWave;
-        const live =
-          snapshot.live && media && !media.paused ? snapshot.live.at(analysisTime) : null;
-        const sound =
-          snapshot.features?.at(analysisTime) ??
-          live?.sound ??
-          (snapshot.live ? soundFrameRef.current : null);
+        const source = snapshot.features ?? (media && !media.paused ? snapshot.live : null);
+        // Reuse the causal 30 Hz measurement between display frames. Response
+        // smoothing uses elapsed media time, independently of FFT scheduling.
+        if (
+          source &&
+          (source !== analyzedSource ||
+            analysisTime !== analyzedTime ||
+            snapshot.generation !== analyzedGeneration)
+        ) {
+          if (snapshot.features) {
+            analyzedSound = snapshot.features.at(analysisTime);
+            analyzedDrop = 0;
+          } else {
+            const live = snapshot.live!.at(analysisTime);
+            analyzedSound = live.sound;
+            analyzedDrop = live.drop;
+          }
+          analyzedSource = source;
+          analyzedTime = analysisTime;
+          analyzedGeneration = snapshot.generation;
+        }
+        const sound = source ? analyzedSound : snapshot.live ? soundFrameRef.current : null;
         if (sound) {
           frequency = sound.frequency;
           wave = sound.wave;
@@ -347,7 +382,9 @@ export function useVisualizerPreview({
         soundFrameRef.current = sound;
         dropRef.current =
           media && !media.paused
-            ? (live?.drop ?? dropEnvelope(snapshot.sound?.events ?? [], visualTime))
+            ? source === snapshot.live
+              ? analyzedDrop
+              : dropEnvelope(snapshot.sound?.events ?? [], visualTime)
             : 0;
         frequencyRef.current.set(frequency);
         waveRef.current.set(wave);
@@ -382,6 +419,11 @@ export function useVisualizerPreview({
 
     const unsubscribe = session.subscribe((event: MediaSessionEvent) => {
       if (event.type === "commit") {
+        analyzedSource = null;
+        analyzedSound = null;
+        analyzedTime = -1;
+        analyzedGeneration = -1;
+        analyzedDrop = 0;
         cancelWarm();
         responseCacheRef.current.clear();
         soundFrameRef.current = null;
@@ -390,6 +432,7 @@ export function useVisualizerPreview({
         lastAudioRef.current = 0;
         frameTimeRef.current = 0;
       } else if (event.type === "seek") {
+        analyzedTime = -1;
         event.snapshot.live?.reset();
         const media = event.snapshot.media;
         const visualTime = media

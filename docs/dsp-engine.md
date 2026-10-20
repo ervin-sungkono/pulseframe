@@ -1,6 +1,8 @@
 # Pulseframe DSP engine
 
-Rust/WASM supplies calibrated FFT, RMS, and frequency bands. JavaScript keeps browser decoding, playback, artistic response, canvas drawing, and video encoding. The existing visuals, 30 Hz prepared history, full seek replay, and exact 24/30/60 fps export probes are preserved.
+Rust/WASM supplies calibrated FFT, RMS, and frequency bands. JavaScript keeps browser decoding, playback, artistic response, canvas drawing, and video encoding. Spectrum and Edge Bars previews draw at up to 60 FPS with media-time attack/release smoothing, reusing each causal 30 Hz measurement between display frames. Prepared history remains at 30 Hz; full seek replay and exact 24/30/60 fps export probes are preserved.
+
+Spectrum and Edge Bars apply a five-band binomial filter, then average a piecewise-linear amplitude spectrum over each bar's frequency footprint. Fractional boundaries contribute proportionally rather than allowing one peak to dominate several neighboring bars. Each mirrored half of Spectrum uses its own frequency spacing. The FFT stays at 4096 samples: nearby bass bands may still correlate because they share finite frequency resolution, and the renderer does not invent independent movement for them.
 
 ```mermaid
 flowchart LR

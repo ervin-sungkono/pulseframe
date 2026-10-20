@@ -532,19 +532,45 @@ export function spectrumLayout(
   };
 }
 
-export function sampleBarBand(channel: Float32Array | undefined, position: number, count: number) {
+/** Smooth neighboring bands, then average one bar's fractional frequency footprint. */
+export function sampleBarBand(
+  channel: Float32Array | undefined,
+  position: number,
+  bandwidth: number,
+) {
   if (!channel?.length) return 0;
-  const index = clamp(position) * (channel.length - 1),
-    halfStep = (channel.length - 1) / Math.max(1, count - 1);
-  const first = Math.max(0, Math.floor(index - halfStep)),
-    last = Math.min(channel.length - 1, Math.ceil(index + halfStep));
-  let peak = 0,
-    power = 0;
-  for (let k = first; k <= last; k++) {
-    peak = Math.max(peak, channel[k]);
-    power += channel[k] ** 2;
+  if (channel.length === 1) return channel[0];
+  const value = (index: number) => channel[Math.max(0, Math.min(channel.length - 1, index))];
+  // A small binomial filter softens repeated bass bins without altering DSP
+  // measurements or the separate Pulse Ring response.
+  const filtered = (index: number) =>
+    (value(index - 2) +
+      4 * value(index - 1) +
+      6 * value(index) +
+      4 * value(index + 1) +
+      value(index + 2)) /
+    16;
+  const center = clamp(position) * (channel.length - 1),
+    halfWidth = (clamp(bandwidth) * (channel.length - 1)) / 2,
+    first = Math.max(0, center - halfWidth),
+    last = Math.min(channel.length - 1, center + halfWidth);
+  if (last <= first) {
+    const index = Math.floor(center),
+      fraction = center - index;
+    return filtered(index) * (1 - fraction) + filtered(index + 1) * fraction;
   }
-  return peak * 0.75 + Math.sqrt(power / (last - first + 1)) * 0.25;
+  let area = 0;
+  for (let left = first; left < last;) {
+    const index = Math.floor(left),
+      right = Math.min(last, index + 1),
+      start = left - index,
+      end = right - index,
+      amplitude = filtered(index),
+      slope = filtered(index + 1) - amplitude;
+    area += amplitude * (right - left) + (slope * (end * end - start * start)) / 2;
+    left = right;
+  }
+  return area / (last - first);
 }
 
 export function edgeBarLayout(
@@ -571,8 +597,9 @@ export function edgeBarResponse(
   sensitivity: number,
 ) {
   const position = edge === "top" ? index / (count - 1) : 1 - index / (count - 1);
-  const left = sampleBarBand(bands[0], position, count),
-    right = sampleBarBand(bands[Math.min(1, bands.length - 1)], position, count);
+  const bandwidth = 1 / Math.max(1, count - 1);
+  const left = sampleBarBand(bands[0], position, bandwidth),
+    right = sampleBarBand(bands[Math.min(1, bands.length - 1)], position, bandwidth);
   return 1 - Math.exp(-Math.sqrt((left * left + right * right) / 2) * sensitivity * 3.8);
 }
 function drawEdgeBars(
@@ -642,8 +669,10 @@ function drawSpectrum(
   const idle = Math.min(maxHalf, Math.max(2, short * 0.004));
   const bars = Array.from({ length: count }, (_, i) => {
     const pos = Math.abs(i - (count - 1) / 2) / ((count - 1) / 2);
-    const left = sampleBarBand(bands[0], pos, count),
-      right = sampleBarBand(bands[Math.min(1, bands.length - 1)], pos, count);
+    // Each mirrored half spans the full frequency range.
+    const bandwidth = 2 / (count - 1);
+    const left = sampleBarBand(bands[0], pos, bandwidth),
+      right = sampleBarBand(bands[Math.min(1, bands.length - 1)], pos, bandwidth);
     const value = Math.sqrt((left * left + right * right) / 2);
     const response = clamp(
       1 - Math.exp(-value * s.sensitivity * 3.8) + impact * 0.12 * (1 - pos) ** 2,
