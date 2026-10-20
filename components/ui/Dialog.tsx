@@ -5,22 +5,13 @@ import { XIcon } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/Button";
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
 }
 
-function DialogTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
-  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />;
-}
-
 function DialogPortal({ ...props }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
-}
-
-function DialogClose({ ...props }: React.ComponentProps<typeof DialogPrimitive.Close>) {
-  return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
 
 function DialogOverlay({
@@ -83,30 +74,6 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-function DialogFooter({
-  className,
-  showCloseButton = false,
-  children,
-  ...props
-}: React.ComponentProps<"div"> & {
-  showCloseButton?: boolean;
-}) {
-  return (
-    <div
-      data-slot="dialog-footer"
-      className={cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)}
-      {...props}
-    >
-      {children}
-      {showCloseButton && (
-        <DialogPrimitive.Close asChild>
-          <Button variant="outline">Close</Button>
-        </DialogPrimitive.Close>
-      )}
-    </div>
-  );
-}
-
 function DialogTitle({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Title>) {
   return (
     <DialogPrimitive.Title
@@ -130,15 +97,4 @@ function DialogDescription({
   );
 }
 
-export {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogOverlay,
-  DialogPortal,
-  DialogTitle,
-  DialogTrigger,
-};
+export { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle };
