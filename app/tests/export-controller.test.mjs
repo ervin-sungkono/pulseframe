@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
+import { loadSources } from "./load-source.mjs";
 
 const testDirectory = mkdtempSync(join(tmpdir(), "pulseframe-export-job-"));
 const modulePath = join(testDirectory, "export-job.mjs");
@@ -195,6 +196,12 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
   const settingsPath = join(testDirectory, "export-settings.mjs");
   const estimatePath = join(testDirectory, "export-time-estimate.mjs");
   const timelinePath = join(testDirectory, "export-timeline.mjs");
+  const responsePath = join(testDirectory, "audio-response-config.mjs");
+  const response = (await loadSources())["audio-response"];
+  writeFileSync(
+    responsePath,
+    `export const STYLE_RESPONSE_LOOKBACK_SECONDS = ${response.STYLE_RESPONSE_LOOKBACK_SECONDS};`,
+  );
   const analysisPath = join(testDirectory, "audio-analysis-config.mjs");
   const timePath = join(testDirectory, "time.mjs");
   const reactPath = join(testDirectory, "react-mock.mjs");
@@ -231,7 +238,11 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
         '"../audio/audio-analysis-config"',
         JSON.stringify(pathToFileURL(analysisPath).href),
       )
-      .replaceAll('"./export-settings"', JSON.stringify(pathToFileURL(settingsPath).href));
+      .replaceAll('"./export-settings"', JSON.stringify(pathToFileURL(settingsPath).href))
+      .replaceAll(
+        '"../visual/styles/audio-response"',
+        JSON.stringify(pathToFileURL(responsePath).href),
+      );
     writeFileSync(
       path,
       ts.transpileModule(source, {

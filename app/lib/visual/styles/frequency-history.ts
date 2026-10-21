@@ -1,10 +1,10 @@
+import { DSP_BAND_COUNT as BAND_COUNT } from "../../dsp/contracts";
 import { ANALYSIS_FPS } from "../../audio/audio-analysis-config";
 import type { SoundEnvelope } from "../../audio/audio-features";
 import { ringBandAmplitude } from "./legacy-common";
 import { clamp } from "./shared";
 import type { FrequencyHistory } from "./types";
 
-const BAND_COUNT = 96;
 const MAX_CACHED_FRAMES = 384;
 const MAX_LIVE_FRAMES = 10 * ANALYSIS_FPS + 4;
 type MeasuredFrame = { bands: Float32Array; rms: number };
@@ -108,11 +108,18 @@ export function preparedFrequencyHistory(envelopes: readonly SoundEnvelope[]) {
 export class RollingFrequencyHistory implements FrequencyHistory {
   private readonly frames = new Map<number, MeasuredFrame>();
   private lastTime = -1;
+  private dataRevision = 0;
+  get revision() {
+    return this.dataRevision;
+  }
   record(time: number, frame: SoundEnvelope) {
     if (!Number.isFinite(time) || time < 0) return;
     if (time < this.lastTime || time - this.lastTime > 0.5) this.clear();
     const index = Math.floor(time * ANALYSIS_FPS + 1e-6);
-    if (!this.frames.has(index)) this.frames.set(index, convert(frame));
+    if (!this.frames.has(index)) {
+      this.frames.set(index, convert(frame));
+      this.dataRevision++;
+    }
     this.lastTime = time;
     while (this.frames.size > MAX_LIVE_FRAMES) this.frames.delete(this.frames.keys().next().value!);
   }
@@ -122,6 +129,7 @@ export class RollingFrequencyHistory implements FrequencyHistory {
   clear() {
     this.frames.clear();
     this.lastTime = -1;
+    this.dataRevision++;
   }
   get cachedFrames() {
     return this.frames.size;

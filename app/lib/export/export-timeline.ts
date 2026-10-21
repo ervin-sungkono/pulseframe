@@ -2,6 +2,7 @@ import { ANALYSIS_FPS } from "../audio/audio-analysis-config";
 import type { VisualSettings } from "../visual/visual-settings-model";
 import type { SoundEnvelope } from "../audio/audio-features";
 import { EXPORT_FRAME_RATES, type ExportFrameRate } from "./export-settings";
+import { STYLE_RESPONSE_LOOKBACK_SECONDS } from "../visual/styles/audio-response";
 
 /** Exact timestamps keep audio, subtitles and video on the selected timeline. */
 export function* exportFrames(length: number, frameRate: ExportFrameRate) {
@@ -32,6 +33,6 @@ export function exportAnalysisStart(start: number, settings: VisualSettings): nu
   if (settings.mode === "ring" || settings.mode === "spectrum" || settings.mode === "edges")
     return Math.max(0, start - 10);
   const history = settings.mode === "terrain" ? settings.terrainOptions.historySeconds : 0;
-  const preroll = Math.max(10, history + 0.25);
+  const preroll = Math.max(10, history + STYLE_RESPONSE_LOOKBACK_SECONDS + 0.25);
   return Math.max(0, Math.floor((start - preroll) * ANALYSIS_FPS) / ANALYSIS_FPS);
 }

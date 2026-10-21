@@ -2,6 +2,8 @@ import type { VisualMode, VisualSettings } from "../visual-settings-model";
 
 /** Calibrated linear-amplitude bands, sampled at absolute source time. */
 export interface FrequencyHistory {
+  /** Mutable histories advance this revision when measured data changes or resets. */
+  readonly revision?: number;
   /** Fills target, returning false when that source time was not measured. */
   read(time: number, target: Float32Array, quietThreshold: number): boolean;
 }
