@@ -295,10 +295,18 @@ test("new style settings reset with the Visual section and built-in looks carry 
     assert.ok(SECTION_KEYS.visual.includes(group), `${group} must reset with Visual settings`);
 
   const expected = [
+    ["contour", "Contour", "ring"],
+    ["after-hours", "After Hours", "spectrum"],
+    ["counterflow", "Counterflow", "edges"],
     ["orbit", "Orbit", "radial"],
     ["fluid-dreams", "Fluid Dreams", "blob"],
     ["neon-horizon", "Neon Horizon", "terrain"],
   ];
+  assert.equal(BUILTIN_LOOKS.length, 6);
+  assert.deepEqual(
+    BUILTIN_LOOKS.map((look) => look.settings.mode).sort(),
+    [...VISUAL_MODES].sort(),
+  );
   for (const [id, name, mode] of expected) {
     const look = BUILTIN_LOOKS.find((item) => item.id === id);
     assert.ok(look, `missing ${name} built-in look`);
