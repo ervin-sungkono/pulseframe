@@ -13,6 +13,7 @@ const { PresetStore, PRESET_STORAGE_KEY } = modules["preset-store"];
 function withoutMotionSettings(settings) {
   const legacy = { ...settings };
   delete legacy.motionPreset;
+  delete legacy.motionBehavior;
   delete legacy.motionAmount;
   delete legacy.cameraShake;
   delete legacy.cameraShakeAmount;
@@ -48,12 +49,14 @@ test("settings, project files, and saved presets from before motion controls def
   const legacySettings = withoutMotionSettings(DEFAULT_SETTINGS);
   const parsedSettings = settingsSchema.parse(legacySettings);
   assert.equal(parsedSettings.motionPreset, "none");
+  assert.equal(parsedSettings.motionBehavior, "continuous");
   assert.equal(parsedSettings.motionAmount, 50);
   assert.equal(parsedSettings.cameraShake, false);
   assert.equal(parsedSettings.cameraShakeAmount, 35);
 
   const legacyProject = await projectFile(legacySettings, "legacy.pf");
   assert.equal(legacyProject.settings.motionPreset, "none");
+  assert.equal(legacyProject.settings.motionBehavior, "continuous");
   assert.equal(legacyProject.settings.motionAmount, 50);
   assert.equal(legacyProject.settings.cameraShake, false);
   assert.equal(legacyProject.settings.cameraShakeAmount, 35);
@@ -80,12 +83,20 @@ test("settings, project files, and saved presets from before motion controls def
   const [legacyPreset] = new PresetStore(() => storage).list();
   assert.equal(legacyPreset.id, id);
   assert.equal(legacyPreset.settings.motionPreset, "none");
+  assert.equal(legacyPreset.settings.motionBehavior, "continuous");
   assert.equal(legacyPreset.settings.motionAmount, 50);
   assert.equal(legacyPreset.settings.cameraShake, false);
   assert.equal(legacyPreset.settings.cameraShakeAmount, 35);
 });
 
 test("motion settings validate the preset enum, finite percentage bounds, and camera shake boolean", () => {
+  for (const motionBehavior of ["continuous", "audio-reactive"])
+    assert.equal(
+      settingsSchema.parse({ ...DEFAULT_SETTINGS, motionBehavior }).motionBehavior,
+      motionBehavior,
+    );
+  for (const motionBehavior of ["random", "", null, true])
+    assert.throws(() => settingsSchema.parse({ ...DEFAULT_SETTINGS, motionBehavior }));
   for (const motionPreset of ["none", "orbit", "bounce", "drift", "rotate", "zoom", "beat"])
     assert.equal(
       settingsSchema.parse({ ...DEFAULT_SETTINGS, motionPreset }).motionPreset,
@@ -124,6 +135,7 @@ test("saved presets and project files retain motion choices and amounts, while a
   const selected = {
     ...DEFAULT_SETTINGS,
     motionPreset: "zoom",
+    motionBehavior: "audio-reactive",
     motionAmount: 73,
     cameraShake: true,
     cameraShakeAmount: 81,
@@ -141,6 +153,7 @@ test("saved presets and project files retain motion choices and amounts, while a
   const [restoredPreset] = new PresetStore(() => storage).list();
   assert.equal(restoredPreset.id, created.id);
   assert.equal(restoredPreset.settings.motionPreset, "zoom");
+  assert.equal(restoredPreset.settings.motionBehavior, "audio-reactive");
   assert.equal(restoredPreset.settings.motionAmount, 73);
   assert.equal(restoredPreset.settings.cameraShake, true);
   assert.equal(restoredPreset.settings.cameraShakeAmount, 81);
@@ -150,6 +163,7 @@ test("saved presets and project files retain motion choices and amounts, while a
     restoredPreset.settings,
   );
   assert.equal(applied.motionPreset, "zoom");
+  assert.equal(applied.motionBehavior, "audio-reactive");
   assert.equal(applied.motionAmount, 73);
   assert.equal(applied.cameraShake, true);
   assert.equal(applied.cameraShakeAmount, 81);
@@ -158,6 +172,7 @@ test("saved presets and project files retain motion choices and amounts, while a
 
   const restoredProject = await projectFile(selected);
   assert.equal(restoredProject.settings.motionPreset, "zoom");
+  assert.equal(restoredProject.settings.motionBehavior, "audio-reactive");
   assert.equal(restoredProject.settings.motionAmount, 73);
   assert.equal(restoredProject.settings.cameraShake, true);
   assert.equal(restoredProject.settings.cameraShakeAmount, 81);
@@ -165,17 +180,28 @@ test("saved presets and project files retain motion choices and amounts, while a
 
 test("motion section reset covers every new motion setting and uses their inactive defaults", () => {
   const motionKeys = SECTION_KEYS.motion;
-  for (const key of ["motionPreset", "motionAmount", "cameraShake", "cameraShakeAmount"])
+  for (const key of [
+    "motionPreset",
+    "motionBehavior",
+    "motionAmount",
+    "cameraShake",
+    "cameraShakeAmount",
+  ])
     assert.ok(motionKeys.includes(key), `${key} should reset with the motion section`);
 
   const baseline = presetStyle(DEFAULT_SETTINGS);
   assert.deepEqual(
     Object.fromEntries(
-      ["motionPreset", "motionAmount", "cameraShake", "cameraShakeAmount"].map((key) => [
-        key,
-        baseline[key],
-      ]),
+      ["motionPreset", "motionBehavior", "motionAmount", "cameraShake", "cameraShakeAmount"].map(
+        (key) => [key, baseline[key]],
+      ),
     ),
-    { motionPreset: "none", motionAmount: 50, cameraShake: false, cameraShakeAmount: 35 },
+    {
+      motionPreset: "none",
+      motionBehavior: "continuous",
+      motionAmount: 50,
+      cameraShake: false,
+      cameraShakeAmount: 35,
+    },
   );
 });

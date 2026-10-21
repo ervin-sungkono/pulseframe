@@ -31,6 +31,7 @@ export const SECTION_KEYS: Record<CustomizerSection, readonly (keyof VisualSetti
   motion: [
     "motionSpeed",
     "motionPreset",
+    "motionBehavior",
     "motionAmount",
     "cameraShake",
     "cameraShakeAmount",
@@ -102,6 +103,7 @@ export const DEFAULT_SETTINGS: VisualSettings = {
   visualScale: 1.1,
   motionSpeed: 1,
   motionPreset: "none",
+  motionBehavior: "continuous",
   motionAmount: 50,
   cameraShake: false,
   cameraShakeAmount: 35,
