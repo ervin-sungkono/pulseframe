@@ -145,7 +145,11 @@ The renderer owns no media elements, worker, encoder or React state.
   the central logo aperture.
 - **Liquid Blob:** 96/128/160 polar samples form broad bass/mid/treble lobes,
   smoothed across angular neighbors and connected by a closed quadratic spline.
-  Radius stays positive and below 43% of the short edge. Size scales a nominal
+  Normalized shared audio features are consumed without a second gain/limiter,
+  so sustained music retains visible response. Angular radii are computed once
+  in a reusable buffer; the complete silhouette fits uniformly into the bounds
+  instead of clipping individual lobes. Radius stays positive and below 43% of
+  the short edge. Size scales a nominal
   24% radius; deformation and bass expansion remain bounded. Fluidity controls
   the speed of deterministic organic harmonics. Reduced motion freezes those
   harmonics and idle motion while retaining audio-driven shape changes. A few

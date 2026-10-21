@@ -106,9 +106,11 @@ composited run retains the normal defaults. The mobile simulation adds 390×844
 mobile/touch metrics and 4× CPU throttling on the same desktop host, still drawing
 720p. Physical mobile hardware has not been benchmarked.
 
-The final benchmark-only repeat ran after concurrent test/build/browser work
+The initial implementation benchmark-only repeat ran after concurrent test/build/browser work
 stopped. The table gives the range of per-case p95 values across seven audio
 cases, in milliseconds; it does not average away the different workloads.
+These initial measurements precede the Liquid Blob responsiveness correction
+documented below.
 
 | Style | Desktop isolated | Desktop composited | 4× simulated isolated | 4× simulated composited |
 | --- | ---: | ---: | ---: | ---: |
@@ -205,6 +207,43 @@ three styles' signatures were derived from pre-extraction captures. Updating
 references requires the explicit `--update-references` flag and visual review;
 the default command fails on missing/changed references or browser errors.
 Unit geometry tests cover finer invariants that coarse image signatures cannot.
+
+## Liquid Blob responsiveness correction
+
+A follow-up check used the supplied 3:57 stereo 44.1 kHz MP3 and the actual
+Fluid Dreams built-in look. WASM analysis completed with 7,125 envelopes and no
+browser errors. The fault was in shape response: a second gain/limiter flattened
+already-normalized bass/mid/treble levels, while the harmonic phases moved too
+slowly to read clearly in the preview. Per-point radius clipping also suppressed
+lobes at maximum size/deformation.
+
+The renderer now consumes normalized features directly, uses stronger bounded
+surface deformation and a visible fluidity range, and fits the complete shape
+uniformly inside the existing 43% radius bound. A reusable 160-float radius buffer
+lets the angular filter reuse each sample instead of evaluating it five times.
+Source-time determinism, reduced motion, silence/idle choices, setting defaults
+and persistence are preserved. Radial motion is deferred until PR #17 is merged;
+this correction adds no object-motion or camera controls.
+
+Across 1,395 audible samples from the full track, using 720p isolated blob
+geometry sampled at 6 Hz, median contour displacement between samples rose from
+0.45 to 2.34 pixels. Median relative radius spread rose from 8.7% to 15.8%.
+These describe visible motion, not rendering speed or display FPS. The audio file
+and generated videos are not committed.
+
+The corrected renderer measured 0.155–0.250 ms p95 in the desktop isolated
+seven-case harness and 0.460–0.645 ms with default compositing; geometry alone was
+0.040–0.060 ms p95. This follow-up did not repeat physical-device or simulated
+mobile timing. All 105 reference frames for the other five styles retained their
+original pixel hashes; only the 21 blob reference cases were refreshed after
+visual review. The actual Fluid Dreams UI passed playback, seeking, pause/hold,
+PNG capture and a 60–65-second range export at 480p/30 FPS from the supplied
+track. The resulting 854×480 WebM contains audio/video and decoded successfully;
+WASM was active and the 390-pixel mobile viewport had no overflow.
+Regression tests now cover sustained broadband music, distinct
+high-level bass response, maximum-control shape preservation, and finite,
+continuous source-time flow. Local full-track analysis and range-export evidence
+live under `/tmp/pulseframe-amnesia/`.
 
 ## Limits and follow-up
 

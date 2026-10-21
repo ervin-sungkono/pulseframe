@@ -301,3 +301,68 @@ test("NaN frame data is contained and same source time matches at 24, 30 and 60 
   const atFiveDirectly = geometry({ ...outOfOrderFrame, time: 5 }).points;
   assert.deepEqual([...atFiveAfterEight], [...atFiveDirectly]);
 });
+
+test("sustained broadband music keeps a visible liquid contour and source-time flow", () => {
+  // Representative already-normalized levels from the shared analysis pipeline.
+  // The previous second gain/limiter made loud music almost static and circular.
+  const frame = makeFrame({ width: 1280, height: 720, time: 60 });
+  frame.audio = {
+    ...frame.audio,
+    activity: 0.92,
+    energy: 0.92,
+    bass: 0.92,
+    mid: 0.8,
+    treble: 0.28,
+    bands: [new Float32Array(96).fill(0.16)],
+  };
+  const first = geometry(frame);
+  const later = geometry({ ...frame, time: 60.5 });
+  const radius = radii(first.points, first.count, frame);
+  const average = radius.reduce((sum, value) => sum + value, 0) / first.count;
+  assert.ok((Math.max(...radius) - Math.min(...radius)) / average > 0.13);
+  assert.ok(contourDifference(first.points, later.points, first.count) > average * 0.01);
+
+  const quieter = geometry({ ...frame, audio: { ...frame.audio, bass: 0.55 } });
+  const quieterRadius = radii(quieter.points, quieter.count, frame);
+  const quieterMean = quieterRadius.reduce((sum, value) => sum + value, 0) / quieter.count;
+  assert.ok(average - quieterMean > 720 * 0.008, "bass changes remain visible at high levels");
+});
+
+test("maximum controls fit the whole silhouette without clipping its lobes into a circle", () => {
+  for (const [width, height] of [
+    [1280, 720],
+    [720, 1280],
+    [960, 960],
+  ]) {
+    const frame = makeToneFrame(0.23, "bass");
+    frame.width = width;
+    frame.height = height;
+    frame.settings.visualScale = 1.5;
+    frame.audio = { ...frame.audio, bass: 1, mid: 1, treble: 1, impact: 1 };
+    const options = {
+      ...DEFAULT_OPTIONS,
+      size: 150,
+      deformation: 100,
+      bassExpansion: 100,
+      detail: "high",
+    };
+    const shape = geometry(frame, options);
+    const radius = radii(shape.points, shape.count, frame);
+    const average = radius.reduce((sum, value) => sum + value, 0) / shape.count;
+    const maximum = Math.max(...radius);
+    assert.ok(maximum <= Math.min(width, height) * 0.43 + 1e-4);
+    assert.ok(Math.min(...radius) > Math.min(width, height) * 0.025);
+    assert.ok((maximum - Math.min(...radius)) / average > 0.2);
+    assert.ok(radius.filter((value) => maximum - value < 0.01).length < shape.count * 0.1);
+  }
+});
+
+test("organic flow stays finite at extreme source times and continuous across its common period", () => {
+  const frame = makeToneFrame(0.51, "mid");
+  const extreme = geometry({ ...frame, time: Number.MAX_VALUE });
+  assert.ok(extreme.points.every(Number.isFinite));
+  const period = (Math.PI * 2 * 20) / ((DEFAULT_OPTIONS.fluidity / 100) * 2.4);
+  const before = geometry({ ...frame, time: period - 1e-6 });
+  const after = geometry({ ...frame, time: period + 1e-6 });
+  assert.ok(contourDifference(before.points, after.points, before.count) < 0.001);
+});

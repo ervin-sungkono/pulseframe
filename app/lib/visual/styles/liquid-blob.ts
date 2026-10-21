@@ -7,6 +7,7 @@ const MAX_RADIUS_RATIO = 0.43;
 const SMOOTH_OFFSETS = [-2, -1, 0, 1, 2] as const;
 const SMOOTH_WEIGHTS = [1 / 16, 4 / 16, 6 / 16, 4 / 16, 1 / 16] as const;
 const geometryBuffer = new Float32Array(SAMPLE_COUNTS.high * 2);
+const radiusBuffer = new Float32Array(SAMPLE_COUNTS.high);
 
 /** Sample count is deliberately bounded so detail never turns into a sharp-edged spectrum. */
 export function liquidBlobSampleCount(detail: BlobOptions["detail"]): number {
@@ -41,57 +42,65 @@ export function writeLiquidBlobGeometry(
   const bassExpansion =
     clamp(options?.bassExpansion ?? DEFAULT_BLOB_OPTIONS.bassExpansion, 0, 100) / 100;
   const sensitivity = clamp(settings.sensitivity, 0.2, 3);
-  const bassBoost = clamp(settings.bassBoost, 0.2, 3);
   const quietThreshold = clamp(settings.quietThreshold, 0, 0.1);
   const visualScale = clamp(settings.visualScale, 0.5, 1.5);
   const baseRadius = short * clamp(0.24 * (size / 100) * visualScale, 0.055, 0.38);
   const centerX = width / 2;
   const centerY = height / 2;
   const time = finite(frame.time);
-  const rawBass = clamp(frame.audio.bass) * bassBoost;
-  const rawMid = clamp(frame.audio.mid);
-  const rawTreble = clamp(frame.audio.treble);
-  const rawImpact = clamp(frame.audio.impact);
-  const react = (amplitude: number) => clamp(1 - Math.exp(-clamp(amplitude) * sensitivity * 3));
-  const bass = react(rawBass);
-  const mid = react(rawMid);
-  const treble = react(rawTreble);
-  const impact = react(rawImpact);
+  // The shared pipeline already applies sensitivity/bass boost to these
+  // normalized features. Applying another limiter here flattens real music.
+  const bass = clamp(frame.audio.bass);
+  const mid = clamp(frame.audio.mid);
+  const treble = clamp(frame.audio.treble);
+  const impact = clamp(frame.audio.impact);
   const bandPeak = peakBandAmplitude(frame.audio.bands);
-  const active = Math.max(rawBass, rawMid, rawTreble, rawImpact, bandPeak) > quietThreshold;
+  const active = Math.max(bass, mid, treble, impact, bandPeak) > quietThreshold;
   const idleLevel = active || frame.reducedMotion ? 0 : idleMotionLevel(options?.idleMotion);
-  const temporalRate = fluidity * 1.35;
-  const phase = frame.reducedMotion ? 0 : time * temporalRate;
+  const temporalRate = fluidity * 2.4;
+  // Phase weights are multiples of 1/20: wrap their common period before
+  // multiplication to keep very large source times finite without a seam.
+  const phase =
+    frame.reducedMotion || !temporalRate ? 0 : (time % ((TAU * 20) / temporalRate)) * temporalRate;
   const audioShape = clamp(bass * 0.48 + mid * 0.34 + treble * 0.18);
-  const radiusLift = baseRadius * (bass * bassExpansion * 0.12 + impact * 0.035);
+  const radiusLift = baseRadius * (bass * bassExpansion * 0.2 + impact * 0.055);
   const maximumRadius = short * MAX_RADIUS_RATIO;
 
-  // A five-tap circular binomial filter softens neighboring angular samples.
-  // Evaluating the taps directly avoids allocating per-frame contour storage.
+  // Compute each angular radius once, then smooth neighbors in a reusable
+  // buffer. No temporal state or per-frame contour allocation is required.
   const rawRadiusAt = (sample: number) => {
     const angle = (sample / count) * TAU - Math.PI / 2;
     const spectralPosition = (sample / count + 0.21) % 1;
-    const spectrum = react(sampleBands(frame.audio.bands, spectralPosition, 0.085));
+    const spectrum =
+      1 - Math.exp(-sampleBands(frame.audio.bands, spectralPosition, 0.085) * sensitivity * 4);
     const lowWave =
-      0.68 * Math.sin(2 * angle + phase * 0.16) + 0.32 * Math.sin(3 * angle - phase * 0.11);
+      0.68 * Math.sin(2 * angle + phase * 0.9) + 0.32 * Math.sin(3 * angle - phase * 0.65);
     const midWave =
-      0.72 * Math.sin(4 * angle - phase * 0.13) + 0.28 * Math.sin(5 * angle + phase * 0.17);
+      0.72 * Math.sin(4 * angle - phase * 0.7) + 0.28 * Math.sin(5 * angle + phase * 0.85);
     const highWave =
-      0.64 * Math.sin(7 * angle + phase * 0.19) + 0.36 * Math.sin(9 * angle - phase * 0.23);
+      0.64 * Math.sin(7 * angle + phase * 0.95) + 0.36 * Math.sin(9 * angle - phase * 1.15);
     const spectrumWave =
-      0.7 * Math.sin(3 * angle + phase * 0.09) + 0.3 * Math.sin(6 * angle - phase * 0.14);
+      0.7 * Math.sin(3 * angle + phase * 0.45) + 0.3 * Math.sin(6 * angle - phase * 0.7);
     const bandContour = bass * lowWave * 0.5 + mid * midWave * 0.34 + treble * highWave * 0.22;
     const spectralContour = spectrum * spectrumWave * 0.24;
     const idleContour =
       idleLevel *
-      (0.68 * Math.sin(2 * angle + phase * 0.16) + 0.32 * Math.sin(3 * angle - phase * 0.11));
-    const deformationScale = deformation * (0.025 + audioShape * 0.22);
-    const radius =
-      baseRadius +
-      radiusLift +
-      baseRadius * (deformationScale * (bandContour + spectralContour) + idleContour);
-    return clamp(radius, short * 0.025, maximumRadius);
+      (0.68 * Math.sin(2 * angle + phase * 0.45) + 0.32 * Math.sin(3 * angle - phase * 0.35));
+    const deformationScale = deformation * (0.08 + audioShape * 0.55);
+    const surfaceOffset =
+      0.38 * Math.tanh((deformationScale * (bandContour + spectralContour)) / 0.38);
+    const radius = baseRadius + radiusLift + baseRadius * (surfaceOffset + idleContour);
+    return Math.max(short * 0.025, radius);
   };
+
+  let outerRadius = 0;
+  for (let index = 0; index < count; index++) {
+    radiusBuffer[index] = rawRadiusAt(index);
+    outerRadius = Math.max(outerRadius, radiusBuffer[index]);
+  }
+  // Fit the entire silhouette uniformly. Per-point clipping turns the largest
+  // size/deformation settings back into a flattened, nearly circular shape.
+  const fit = outerRadius > maximumRadius ? maximumRadius / outerRadius : 1;
 
   for (let index = 0; index < count; index += 1) {
     let radius = 0;
@@ -99,8 +108,9 @@ export function writeLiquidBlobGeometry(
       let neighbor = index + SMOOTH_OFFSETS[tap];
       if (neighbor < 0) neighbor += count;
       else if (neighbor >= count) neighbor -= count;
-      radius += rawRadiusAt(neighbor) * SMOOTH_WEIGHTS[tap];
+      radius += radiusBuffer[neighbor] * SMOOTH_WEIGHTS[tap];
     }
+    radius *= fit;
     const angle = (index / count) * TAU - Math.PI / 2;
     target[index * 2] = centerX + Math.cos(angle) * radius;
     target[index * 2 + 1] = centerY + Math.sin(angle) * radius;
