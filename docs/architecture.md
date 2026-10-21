@@ -91,13 +91,84 @@ not imply the same speedup for a complete export.
 
 ## Visualizer, projects and Quick Looks
 
-The current editor has three canvas modes: Pulse Ring, Spectrum and Edge Bars.
+The editor has six first-class canvas modes: Pulse Ring, Spectrum, Edge Bars,
+Radial Spectrum, Liquid Blob and Spectral Terrain.
 Pulse Ring defaults to Full sound and also offers Bass waves (35–450 Hz) and
-Auto focus. All three use the shared audio analysis. Customization covers color
+Auto focus. All six styles use the shared audio analysis. Customization covers color
 and backdrop, particles, motion, trails, beat lighting, glitch and drop accents,
 logo fitting/placement, track text and the timer. Reduced-motion preferences
 suppress decorative motion effects. The waveform, playback and range controls
 operate on the active source.
+
+### Style rendering and source-time history
+
+`app/lib/visual/styles/types.ts` defines the React-independent style contract.
+The static registry chooses one primary renderer. Background/video, atmosphere,
+lighting, particles, logo fitting, titles and subtitles remain in the shared
+`drawVisualization` pipeline used by preview, PNG capture and video export.
+The original three drawing algorithms live in separate modules with their
+existing calculations preserved; their public geometry helpers remain exported
+from `visualizer.ts` for compatibility.
+
+New style settings are typed groups (`radialOptions`, `blobOptions`,
+`terrainOptions`), with per-property validation/defaults. Existing flat options
+are retained. Missing groups in older projects and Quick Looks receive defaults;
+the project format remains version 2 and preset storage remains version 1.
+Retired IDs still migrate explicitly to Ring or Spectrum and are not new styles.
+All six modes retain separate logo layouts. Nested controls have separate undo
+groups, and Visual section reset restores the active look's option groups.
+
+Prepared frequency history references the existing 30 Hz WASM/JavaScript
+envelopes. It converts log-display bands to calibrated linear amplitudes,
+combines stereo by energy, gates quiet measurements, and uses a causal weighted
+three-frame response with interpolation. Rendering at a source timestamp does
+not depend on previous draw calls or export FPS. Converted samples are cached
+in a maximum of 384 frames, roughly 144 KiB of float payload, rather than copying
+the whole track. No FFT runs inside a style or for a terrain vertex.
+
+The live/unprepared fallback retains at most 304 measured frames (ten seconds
+plus interpolation support). It clears on media replacement, seek, backwards
+time or a discontinuity. Unknown past times return unavailable and are drawn
+without invented historical energy. Preview and PNG capture use the same source;
+offline export supplies the same history adapter with its absolute decode
+offset. New-style export preroll is aligned to the source analysis grid and includes
+an extra 250 ms of filter warm-up at the maximum history depth.
+The renderer owns no media elements, worker, encoder or React state.
+
+- **Radial Spectrum:** distinct polar bars sample the calibrated logarithmic
+  frequency axis. Clockwise and mirrored mappings, outward/inward/both variants,
+  and source-time rotation share one renderer. Inner radius and maximum length
+  are percentages of the short canvas edge before fitting; geometry and Visual
+  size are normalized together to a 44% radius with glow clearance. Bar width is
+  a percentage of its angular step, roundness a percentage of half its width,
+  and 100% rotation speed is one revolution per minute. Inward variants preserve
+  the central logo aperture.
+- **Liquid Blob:** 96/128/160 polar samples form broad bass/mid/treble lobes,
+  smoothed across angular neighbors and connected by a closed quadratic spline.
+  Radius stays positive and below 43% of the short edge. Size scales a nominal
+  24% radius; deformation and bass expansion remain bounded. Fluidity controls
+  the speed of deterministic organic harmonics. Reduced motion freezes those
+  harmonics and idle motion while retaining audio-driven shape changes. A few
+  gradient/highlight passes provide the surface without fluid simulation.
+- **Spectral Terrain:** a 32×24, 48×40 or 64×64 frequency/history mesh samples a
+  two-to-ten-second source-time window. A small frequency filter makes readable
+  ridges. Stable perspective projects it into bounded screen coordinates; peak
+  height does not shrink when density increases. Travel speed controls an
+  illuminated contour crossing the landscape, independently of the actual
+  history window and audio clock. Pausing holds it; reduced motion removes that
+  decorative contour. Earlier ridges can occlude later valleys in projection.
+
+Geometry buffers are bounded and reused where useful. Canvas contexts and
+prepared envelopes key weak caches, so releasing their owners permits cleanup.
+Export timing history separates the new modes and coarse bar-count/detail/grid
+workloads; existing mode profile keys remain unchanged. Encoding, compression,
+resolution and FPS behavior are unchanged.
+
+The built-in Quick Looks contain exactly one look per visual style: Contour
+(Ring), After Hours (Spectrum), Counterflow (Edges), Orbit (Radial), Fluid Dreams
+(Blob), and Neon Horizon (Terrain). Personal Quick Looks remain unchanged, with
+the same save/apply/reset workflows. Advanced controls remain collapsed initially. See [the engineering report](visual-styles-engineering-report.md)
+for verification, measurements and limits.
 
 A project file is portable: it contains a validated manifest, the source media,
 and optional logo/background image bytes, plus appearance settings, subtitles
