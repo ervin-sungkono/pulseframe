@@ -151,15 +151,23 @@ The renderer owns no media elements, worker, encoder or React state.
   instead of clipping individual lobes. Radius stays positive and below 43% of
   the short edge. Size scales a nominal
   24% radius; deformation and bass expansion remain bounded. Fluidity controls
-  the speed of deterministic organic harmonics. Reduced motion freezes those
-  harmonics and idle motion while retaining audio-driven shape changes. A few
+  angular frequency smoothing and a causal history blend (at most 80 ms lookback,
+  with at most 40% blend). Active lobes use fixed angles and follow measured
+  frequency distribution rather than clock-driven rotation. Only optional idle
+  motion uses an absolute-time phase; reduced motion disables it. A few
   gradient/highlight passes provide the surface without fluid simulation.
 - **Spectral Terrain:** a 32×24, 48×40 or 64×64 frequency/history mesh samples a
-  two-to-ten-second source-time window. A small frequency filter makes readable
+  two-to-ten-second source-time window. Interior rows retain fixed source
+  timestamps while their projected depths advance; boundary rows follow the
+  current window. This carries measured ridges through the scene instead of
+  reshaping past audio on a stationary grid. A small frequency filter makes readable
   ridges. Stable perspective projects it into bounded screen coordinates; peak
   height does not shrink when density increases. Travel speed controls an
   illuminated contour crossing the landscape, independently of the actual
-  history window and audio clock. Pausing holds it; reduced motion removes that
+  history window and audio clock. It interpolates by actual row depths so row
+  rollover cannot shift the highlight. Entering/leaving horizontal lines fade over
+  one row interval to avoid doubling boundary-line brightness. Pausing holds it;
+  reduced motion removes that
   decorative contour. Earlier ridges can occlude later valleys in projection.
 
 Geometry buffers are bounded and reused where useful. Canvas contexts and

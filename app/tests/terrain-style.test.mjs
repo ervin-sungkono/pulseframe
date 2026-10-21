@@ -112,10 +112,11 @@ test("sampling reads each absolute history row once and keeps the requested wind
   assert.equal(first, reusable);
   assert.deepEqual(
     calls.map((call) => call.time),
-    [16, 17, 18, 19, 20],
+    Array.from(first.times),
   );
   assert.ok(calls.every((call) => call.width === 64 && call.threshold === 0.02));
-  assert.deepEqual(Array.from(first.times), [16, 17, 18, 19, 20]);
+  assert.deepEqual(Array.from(first.times), [16, 17.333333333333332, 18.666666666666664, 20, 20]);
+  assert.deepEqual(first.depths, Float32Array.from([0, 1 / 3, 2 / 3, 1, 1]));
   assert.ok(row(first, 64, 0)[0] < row(first, 64, 4)[0]);
 
   calls.length = 0;
@@ -123,10 +124,102 @@ test("sampling reads each absolute history row once and keeps the requested wind
   assert.equal(seek, reusable);
   assert.deepEqual(
     calls.map((call) => call.time),
-    [-0.75, 0.25, 1.25, 2.25, 3.25],
+    Array.from(seek.times),
   );
-  assert.deepEqual(Array.from(seek.times), [-0.75, 0.25, 1.25, 2.25, 3.25]);
+  assert.deepEqual(Array.from(seek.times), [-0.75, 0, 4 / 3, 8 / 3, 3.25]);
   assert.ok(row(seek, 64, 0).every((value) => value === 0));
+});
+
+test("terrain interior rows hold source-time samples while their depths advance", () => {
+  const columns = 8;
+  const rows = 8;
+  const historySeconds = 5;
+  const history = {
+    read(time, target) {
+      const ridge = Math.exp(-(((time - 8) / 0.6) ** 2));
+      target.forEach((_value, column) => {
+        target[column] = ridge * (0.2 + 0.8 * Math.sin((column + 1) * 0.4) ** 2);
+      });
+      return true;
+    },
+  };
+  const first = sampleTerrain(history, [], 10.005, historySeconds, columns, rows, 0);
+  const firstLevels = first.levels.slice();
+  const firstTimes = first.times.slice();
+  const firstDepths = first.depths.slice();
+  const nextTime = 10.025;
+  const next = sampleTerrain(history, [], nextTime, historySeconds, columns, rows, 0, first);
+  const deltaTime = nextTime - 10.005;
+
+  assert.equal(next, first);
+  assert.ok(Math.abs(next.times[0] - firstTimes[0] - deltaTime) < 1e-12);
+  assert.ok(Math.abs(next.times[rows - 1] - firstTimes[rows - 1] - deltaTime) < 1e-12);
+  for (let rowIndex = 1; rowIndex < rows - 1; rowIndex++) {
+    assert.equal(next.times[rowIndex], firstTimes[rowIndex]);
+    assert.deepEqual(
+      Array.from(row(next, columns, rowIndex)),
+      Array.from(firstLevels.subarray(rowIndex * columns, (rowIndex + 1) * columns)),
+    );
+    assert.ok(
+      Math.abs(next.depths[rowIndex] - (firstDepths[rowIndex] - deltaTime / historySeconds)) < 1e-7,
+    );
+  }
+});
+
+test("source-time anchored rows keep their geometry continuous when the row buffer rolls", () => {
+  const columns = 8;
+  const rows = 8;
+  const historySeconds = 5;
+  const rowStep = historySeconds / (rows - 2);
+  const rollover = 11 * rowStep;
+  const epsilon = 1e-5;
+  const history = {
+    read(time, target) {
+      target.forEach((_value, column) => {
+        target[column] = 0.75 * Math.exp(-(((time - 5) / 0.4) ** 2)) * (0.25 + column / 16);
+      });
+      return true;
+    },
+  };
+  const before = sampleTerrain(history, [], rollover - epsilon, historySeconds, columns, rows, 0);
+  const after = sampleTerrain(history, [], rollover + epsilon, historySeconds, columns, rows, 0);
+  const beforePoints = projectTerrain(
+    before.levels,
+    columns,
+    rows,
+    640,
+    360,
+    projection,
+    undefined,
+    before.depths,
+  );
+  const afterPoints = projectTerrain(
+    after.levels,
+    columns,
+    rows,
+    640,
+    360,
+    projection,
+    undefined,
+    after.depths,
+  );
+
+  for (let beforeRow = 2; beforeRow < rows - 1; beforeRow++) {
+    const sourceTime = before.times[beforeRow];
+    const afterRow = Array.from(after.times).findIndex(
+      (time) => Math.abs(time - sourceTime) < 1e-9,
+    );
+    assert.equal(afterRow, beforeRow - 1);
+    assert.deepEqual(
+      Array.from(row(after, columns, afterRow)),
+      Array.from(row(before, columns, beforeRow)),
+    );
+    assert.ok(
+      Math.abs(
+        afterPoints[afterRow * columns * 2 + 1] - beforePoints[beforeRow * columns * 2 + 1],
+      ) < 0.01,
+    );
+  }
 });
 
 test("unavailable history is flat and only the current row can use live bands", () => {
@@ -283,9 +376,9 @@ test("renderer draws a deterministic wire surface and sanitizes NaN history valu
   const first = snapshot();
   const repeated = snapshot();
   assert.deepEqual(repeated, first);
-  assert.equal(first.length, 5);
+  assert.equal(first.length, 9);
   const reduced = snapshot(true);
-  assert.equal(reduced.length, 4);
+  assert.equal(reduced.length, 8);
 });
 
 test("NaN inputs are bounded and reusable helper buffers are honored", () => {
@@ -328,4 +421,65 @@ test("NaN inputs are bounded and reusable helper buffers are honored", () => {
   );
   assert.ok(points.every(Number.isFinite));
   assert.ok(Number.isFinite(terrainTravelPosition(Number.NaN, Number.NaN, Number.NaN)));
+});
+
+test("travel highlight remains continuous as anchored rows roll over", () => {
+  const history = {
+    read(time, target) {
+      target.forEach((_value, column) => {
+        target[column] = 0.3 + 0.2 * Math.sin(time * 4 + column * 0.1);
+      });
+      return true;
+    },
+  };
+  for (const density of ["low", "medium", "high"]) {
+    const { rows } = terrainResolution(density);
+    const rollover = 11 * (5 / (rows - 2));
+    const paths = [-1e-7, 1e-7].map((offset) => {
+      const ctx = recordingContext();
+      spectralTerrain.draw(ctx, frameAt(rollover + offset, history), {
+        height: 60,
+        historySeconds: 5,
+        density,
+        perspective: "medium",
+        travelSpeed: 100,
+        wireOpacity: 75,
+        surfaceFill: 10,
+      });
+      return ctx.strokes.at(-1).path;
+    });
+    paths[0].forEach(([x, y], index) => {
+      assert.ok(Math.hypot(x - paths[1][index][0], y - paths[1][index][1]) < 0.01, density);
+    });
+  }
+});
+
+test("entering and leaving terrain rows fade before coinciding with boundary lines", () => {
+  const history = {
+    read(_time, target) {
+      target.fill(0.5);
+      return true;
+    },
+  };
+  for (const density of ["low", "medium", "high"]) {
+    const { rows } = terrainResolution(density);
+    const rollover = 11 * (5 / (rows - 2));
+    const contexts = [-1e-7, 1e-7].map((offset) => {
+      const ctx = recordingContext();
+      spectralTerrain.draw(ctx, frameAt(rollover + offset, history), {
+        height: 60,
+        historySeconds: 5,
+        density,
+        perspective: "medium",
+        travelSpeed: 100,
+        wireOpacity: 75,
+        surfaceFill: 10,
+      });
+      return ctx;
+    });
+    assert.ok(contexts[0].strokes[1].globalAlpha < 1e-5, "leaving row fades to zero");
+    assert.ok(contexts[1].strokes[2].globalAlpha < 1e-5, "entering row starts at zero");
+    assert.ok(contexts[0].strokes[2].globalAlpha > 0.45);
+    assert.ok(contexts[1].strokes[1].globalAlpha > 0.45);
+  }
 });

@@ -21,6 +21,8 @@ export type TerrainSampleBuffer = {
   levels: Float32Array;
   /** Absolute source timestamp for each row, oldest to newest. */
   times: Float64Array;
+  /** Current normalized depth for each row as source-time samples move through the view. */
+  depths: Float32Array;
   /** One byte per row: 1 means measured or supplied by the current-frame fallback. */
   knownRows: Uint8Array;
   /** Temporary target passed to the history provider for each row. */
@@ -35,6 +37,7 @@ export function createTerrainSampleBuffer(columns: number, rows: number): Terrai
     rows: safeRows,
     levels: new Float32Array(safeColumns * safeRows),
     times: new Float64Array(safeRows),
+    depths: new Float32Array(safeRows),
     knownRows: new Uint8Array(safeRows),
     readTarget: new Float32Array(safeColumns),
   };
@@ -47,6 +50,7 @@ function validSampleBuffer(buffer: TerrainSampleBuffer | undefined, columns: num
     buffer.rows === rows &&
     buffer.levels.length === columns * rows &&
     buffer.times.length === rows &&
+    buffer.depths.length === rows &&
     buffer.knownRows.length === rows &&
     buffer.readTarget.length === columns
   );
@@ -68,9 +72,11 @@ function currentBandSample(bands: readonly Float32Array[], position: number) {
 }
 
 /**
- * Fill a fixed, oldest-to-newest history window using absolute source times.
- * Missing rows are cleared rather than carrying values from a previous draw;
- * only the newest row can fall back to the live frame's current bands.
+ * Fill a bounded history lattice using absolute source times. Interior samples
+ * stay anchored to the source clock while their depths advance, so a ridge
+ * travels through the view instead of every row changing at every draw.
+ * Missing rows are cleared rather than carried from a previous draw; only the
+ * newest row can fall back to the live frame's current bands.
  */
 export function sampleTerrain(
   history: FrequencyHistory | undefined,
@@ -92,12 +98,27 @@ export function sampleTerrain(
   const threshold = clamp(quietThreshold, 0, 0.1);
   out.levels.fill(0);
   out.times.fill(0);
+  out.depths.fill(0);
   out.knownRows.fill(0);
+  const hasInterior = out.rows >= 3;
+  const rowStep = hasInterior ? windowSeconds / (out.rows - 2) : windowSeconds;
+  const sourceStep = Math.floor(frameTime / rowStep);
   for (let row = 0; row < out.rows; row++) {
-    const depth = out.rows > 1 ? row / (out.rows - 1) : 1;
-    const sourceTime = frameTime - windowSeconds * (1 - depth);
+    let depth = out.rows > 1 ? row / (out.rows - 1) : 1;
+    let sourceTime = frameTime - windowSeconds * (1 - depth);
+    if (hasInterior && row === 0) {
+      depth = 0;
+      sourceTime = frameTime - windowSeconds;
+    } else if (hasInterior && row === out.rows - 1) {
+      depth = 1;
+      sourceTime = frameTime;
+    } else if (hasInterior) {
+      sourceTime = (sourceStep - out.rows + 2 + row) * rowStep;
+      depth = clamp((sourceTime - (frameTime - windowSeconds)) / windowSeconds);
+    }
     const offset = row * out.columns;
     out.times[row] = sourceTime;
+    out.depths[row] = depth;
 
     out.readTarget.fill(0);
     let measured = false;
@@ -156,6 +177,7 @@ export function projectTerrain(
   height: number,
   options: TerrainProjectionOptions,
   reusable?: Float32Array,
+  rowDepths?: Float32Array,
 ): Float32Array {
   const safeColumns = Math.max(1, Math.min(64, Math.floor(finite(columns, 1))));
   const safeRows = Math.max(1, Math.min(64, Math.floor(finite(rows, 1))));
@@ -172,13 +194,15 @@ export function projectTerrain(
   const floor = Math.max(horizon + 1, h - Math.max(h * 0.035, caption));
   const verticalSpan = Math.max(1, floor - horizon);
   // Height is a world-space terrain displacement. It must not shrink as row
-  // count rises: screen-space depth rows can naturally overlap where a ridge
-  // occludes a farther valley, while the underlying frequency/time lattice
-  // remains regular and unfolded.
+  // count rises: ridges can occlude farther valleys while source-time spacing
+  // stays regular and row depths advance through the view.
   const baseLift = Math.min(short * 0.22 * displayHeight * visualScale, short * 0.2);
   const viewWidth = w * (0.78 + (visualScale - 1) * 0.12);
   for (let row = 0; row < safeRows; row++) {
-    const depth = safeRows > 1 ? row / (safeRows - 1) : 1;
+    const uniformDepth = safeRows > 1 ? row / (safeRows - 1) : 1;
+    const depth = clamp(
+      rowDepths?.length === safeRows ? finite(rowDepths[row], uniformDepth) : uniformDepth,
+    );
     const warped = terrainWarp(depth, options.perspective);
     const baseline = horizon + warped * verticalSpan;
     const lift = baseLift * (0.7 + warped * 0.3);
@@ -253,6 +277,19 @@ function drawSurfaceFill(
   }
 }
 
+function addSurfaceRow(
+  ctx: CanvasRenderingContext2D,
+  points: Float32Array,
+  columns: number,
+  row: number,
+) {
+  for (let column = 0; column < columns; column++) {
+    const index = vertex(points, columns, row, column);
+    if (column === 0) ctx.moveTo(points[index], points[index + 1]);
+    else ctx.lineTo(points[index], points[index + 1]);
+  }
+}
+
 function addSurfaceLines(
   ctx: CanvasRenderingContext2D,
   points: Float32Array,
@@ -261,11 +298,8 @@ function addSurfaceLines(
 ) {
   ctx.beginPath();
   for (let row = 0; row < rows; row++) {
-    for (let column = 0; column < columns; column++) {
-      const index = vertex(points, columns, row, column);
-      if (column === 0) ctx.moveTo(points[index], points[index + 1]);
-      else ctx.lineTo(points[index], points[index + 1]);
-    }
+    // Fade the two moving rows nearest the window boundaries separately.
+    if (row !== 1 && row !== rows - 2) addSurfaceRow(ctx, points, columns, row);
   }
 }
 
@@ -298,15 +332,18 @@ function drawTravelContour(
   columns: number,
   rows: number,
   position: number,
+  depths: Float32Array,
   color: string,
   opacity: number,
   glow: number,
   short: number,
 ) {
   if (opacity <= 0 || columns < 2 || rows < 2) return;
-  const rowPosition = clamp(position) * (rows - 1);
-  const row = Math.min(rows - 2, Math.floor(rowPosition));
-  const mix = rowPosition - row;
+  const depth = clamp(position);
+  let row = 0;
+  while (row < rows - 2 && depths[row + 1] < depth) row++;
+  const span = depths[row + 1] - depths[row];
+  const mix = span > 0 ? clamp((depth - depths[row]) / span) : 0;
   ctx.beginPath();
   for (let column = 0; column < columns; column++) {
     const a = vertex(points, columns, row, column);
@@ -357,6 +394,7 @@ export const spectralTerrain: VisualStyleRenderer<TerrainOptions> = {
         captionHeight: frame.captionHeight,
       },
       buffers.points,
+      buffers.depths,
     );
 
     const short = Math.min(width, height);
@@ -368,17 +406,29 @@ export const spectralTerrain: VisualStyleRenderer<TerrainOptions> = {
     ctx.lineCap = "round";
     drawSurfaceFill(ctx, buffers.points, columns, rows, frame.settings.primary, fillOpacity);
 
-    const horizontal = () => addSurfaceLines(ctx, buffers.points, columns, rows);
-    horizontal();
+    const strokeHorizontal = (alpha: number) => {
+      addSurfaceLines(ctx, buffers.points, columns, rows);
+      ctx.globalAlpha = alpha;
+      ctx.stroke();
+      // New/culling lines fade across one row interval. Without this, a line
+      // coincident with a boundary doubles its brightness at lattice rollover.
+      for (let edge = 0; edge < 2; edge++) {
+        const row = edge === 0 ? 1 : rows - 2;
+        const clearance = row === 1 ? buffers.depths[row] : 1 - buffers.depths[row];
+        ctx.globalAlpha = alpha * clamp(clearance * (rows - 2));
+        ctx.beginPath();
+        addSurfaceRow(ctx, buffers.points, columns, row);
+        ctx.stroke();
+      }
+    };
     ctx.strokeStyle = rgba(frame.settings.primary, wireOpacity);
     ctx.lineWidth = Math.max(0.65, short / 1100);
-    ctx.globalAlpha = 0.46;
     ctx.shadowColor = frame.settings.primary;
     ctx.shadowBlur = Math.min(short * 0.02, glow * short * 0.018);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
+    strokeHorizontal(0.46);
     ctx.shadowBlur = 0;
-    ctx.stroke();
+    strokeHorizontal(1);
+    ctx.globalAlpha = 1;
 
     addDepthLines(ctx, buffers.points, columns, rows);
     ctx.strokeStyle = rgba(frame.settings.secondary, wireOpacity * 0.72);
@@ -398,6 +448,7 @@ export const spectralTerrain: VisualStyleRenderer<TerrainOptions> = {
         columns,
         rows,
         terrainTravelPosition(time, historySeconds, normalized.travelSpeed),
+        buffers.depths,
         frame.settings.secondary,
         wireOpacity * 0.48,
         glow,

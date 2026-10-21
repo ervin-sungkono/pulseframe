@@ -352,7 +352,7 @@ SETUP_JS = r"""async () => {
           height: settings.terrainOptions.height, visualScale: settings.visualScale,
           sensitivity: settings.sensitivity, perspective: settings.terrainOptions.perspective,
           captionHeight: frame.captionHeight,
-        }, terrainPoints);
+        }, terrainPoints, terrainBuffer.depths);
         const projectMs = performance.now() - projectStart;
         if (index >= 30) {
           terrainSampleSamples.push(sampleMs);

@@ -583,6 +583,7 @@ export function CustomizerPanel({
                   max={100}
                   onChange={(fluidity) => updateBlobOptions({ fluidity })}
                 />
+                <p className="setting-hint">Softens audio-driven surface changes.</p>
                 <details className="style-advanced-controls">
                   <summary>Advanced blob controls</summary>
                   <div>

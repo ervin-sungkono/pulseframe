@@ -1,5 +1,6 @@
 import { DEFAULT_BLOB_OPTIONS, type BlobOptions } from "../style-options";
 import { clamp, closedCurve, finite, rgba, sampleBands, TAU } from "./shared";
+import { sampleBarBand } from "./frequency-mapping";
 import type { VisualFrameContext, VisualStyleRenderer } from "./types";
 
 const SAMPLE_COUNTS = { low: 96, medium: 128, high: 160 } as const;
@@ -8,6 +9,9 @@ const SMOOTH_OFFSETS = [-2, -1, 0, 1, 2] as const;
 const SMOOTH_WEIGHTS = [1 / 16, 4 / 16, 6 / 16, 4 / 16, 1 / 16] as const;
 const geometryBuffer = new Float32Array(SAMPLE_COUNTS.high * 2);
 const radiusBuffer = new Float32Array(SAMPLE_COUNTS.high);
+const spectrumBuffer = new Float32Array(SAMPLE_COUNTS.high);
+const responseBands = new Float32Array(96);
+const previousBands = new Float32Array(96);
 
 /** Sample count is deliberately bounded so detail never turns into a sharp-edged spectrum. */
 export function liquidBlobSampleCount(detail: BlobOptions["detail"]): number {
@@ -16,8 +20,8 @@ export function liquidBlobSampleCount(detail: BlobOptions["detail"]): number {
 
 /**
  * Writes a closed, smoothed polar contour into a caller-owned reusable XY array.
- * Fluidity sets the phase rate of absolute-time harmonics; this keeps seeks and
- * out-of-order export frames deterministic without renderer-owned history.
+ * Active lobes follow source-time frequency energy at fixed angular positions.
+ * Only the explicit silence/idle option uses a clock-driven organic phase.
  */
 export function writeLiquidBlobGeometry(
   target: Float32Array,
@@ -57,40 +61,51 @@ export function writeLiquidBlobGeometry(
   const bandPeak = peakBandAmplitude(frame.audio.bands);
   const active = Math.max(bass, mid, treble, impact, bandPeak) > quietThreshold;
   const idleLevel = active || frame.reducedMotion ? 0 : idleMotionLevel(options?.idleMotion);
-  const temporalRate = fluidity * 2.4;
-  // Phase weights are multiples of 1/20: wrap their common period before
-  // multiplication to keep very large source times finite without a seam.
-  const phase =
-    frame.reducedMotion || !temporalRate ? 0 : (time % ((TAU * 20) / temporalRate)) * temporalRate;
-  const audioShape = clamp(bass * 0.48 + mid * 0.34 + treble * 0.18);
+  // Idle animation must not rotate an active contour independently of music.
+  const idlePhase = idleLevel ? (time % ((TAU * 20) / 0.6)) * 0.6 : 0;
   const radiusLift = baseRadius * (bass * bassExpansion * 0.2 + impact * 0.055);
   const maximumRadius = short * MAX_RADIUS_RATIO;
 
-  // Compute each angular radius once, then smooth neighbors in a reusable
-  // buffer. No temporal state or per-frame contour allocation is required.
+  for (let i = 0; i < responseBands.length; i++)
+    responseBands[i] = sampleBands(frame.audio.bands, i / (responseBands.length - 1));
+  // A bounded causal blend softens surface changes without advancing a hidden
+  // simulation. Missing live history simply uses the measured current bands.
+  if (fluidity > 0 && frame.history?.read(time - fluidity * 0.08, previousBands, quietThreshold)) {
+    const blend = fluidity * 0.4;
+    for (let i = 0; i < responseBands.length; i++)
+      responseBands[i] = responseBands[i] * (1 - blend) + previousBands[i] * blend;
+  }
+
+  let spectrumMean = 0;
+  for (let i = 0; i < count; i++) {
+    // Mirror the frequency axis so bass/treble meet continuously at the seam.
+    // Broad frequency windows retain a liquid surface rather than narrow spikes.
+    const position = 1 - Math.abs(1 - (2 * i) / count);
+    spectrumBuffer[i] = Math.sqrt(
+      clamp(sampleBarBand(responseBands, position, 0.14 + fluidity * 0.18) * sensitivity),
+    );
+    spectrumMean += spectrumBuffer[i];
+  }
+  spectrumMean /= count;
+
+  // Compute each radius once, then round neighboring angular samples. The
+  // frequency distribution creates local bulges even when beat energy is steady.
   const rawRadiusAt = (sample: number) => {
     const angle = (sample / count) * TAU - Math.PI / 2;
-    const spectralPosition = (sample / count + 0.21) % 1;
-    const spectrum =
-      1 - Math.exp(-sampleBands(frame.audio.bands, spectralPosition, 0.085) * sensitivity * 4);
-    const lowWave =
-      0.68 * Math.sin(2 * angle + phase * 0.9) + 0.32 * Math.sin(3 * angle - phase * 0.65);
-    const midWave =
-      0.72 * Math.sin(4 * angle - phase * 0.7) + 0.28 * Math.sin(5 * angle + phase * 0.85);
-    const highWave =
-      0.64 * Math.sin(7 * angle + phase * 0.95) + 0.36 * Math.sin(9 * angle - phase * 1.15);
-    const spectrumWave =
-      0.7 * Math.sin(3 * angle + phase * 0.45) + 0.3 * Math.sin(6 * angle - phase * 0.7);
-    const bandContour = bass * lowWave * 0.5 + mid * midWave * 0.34 + treble * highWave * 0.22;
-    const spectralContour = spectrum * spectrumWave * 0.24;
+    const lowWave = 0.68 * Math.sin(2 * angle) + 0.32 * Math.sin(3 * angle);
+    const midWave = 0.72 * Math.sin(3 * angle + 0.7) + 0.28 * Math.sin(4 * angle - 0.4);
+    const highWave = 0.64 * Math.sin(5 * angle + 0.3) + 0.36 * Math.sin(7 * angle - 0.5);
+    const bandContour = bass * lowWave * 0.18 + mid * midWave * 0.42 + treble * highWave * 0.12;
+    const spectralContour = (spectrumBuffer[sample] - spectrumMean) * 1.7;
     const idleContour =
       idleLevel *
-      (0.68 * Math.sin(2 * angle + phase * 0.45) + 0.32 * Math.sin(3 * angle - phase * 0.35));
-    const deformationScale = deformation * (0.08 + audioShape * 0.55);
-    const surfaceOffset =
-      0.38 * Math.tanh((deformationScale * (bandContour + spectralContour)) / 0.38);
-    const radius = baseRadius + radiusLift + baseRadius * (surfaceOffset + idleContour);
-    return Math.max(short * 0.025, radius);
+      (0.68 * Math.sin(2 * angle + idlePhase * 0.45) +
+        0.32 * Math.sin(3 * angle - idlePhase * 0.35));
+    const surfaceOffset = 0.38 * Math.tanh((deformation * (bandContour + spectralContour)) / 0.38);
+    return Math.max(
+      short * 0.025,
+      baseRadius + radiusLift + baseRadius * (surfaceOffset + idleContour),
+    );
   };
 
   let outerRadius = 0;

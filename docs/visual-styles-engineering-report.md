@@ -59,12 +59,16 @@ without discarding existing timing profiles.
 - **Liquid Blob:** 96/128/160 angular samples combine broad bass lobes, midrange
   asymmetry, smaller treble ripples and a bounded transient expansion. A circular
   five-tap filter and closed quadratic spline produce a smooth positive-radius
-  silhouette. A few gradient/highlight passes provide depth. Fluidity changes
-  deterministic harmonic speed. Reduced motion freezes harmonics and idle motion
-  while preserving audio response; this is not a physical fluid simulation.
+  silhouette. Measured frequency windows create local bulges at fixed angles;
+  bass, midrange and treble also modulate broad lobes independently of beat
+  impact. Fluidity sets angular smoothing and a small causal history blend. Only
+  optional silence/idle movement uses time-driven harmonics, disabled by reduced
+  motion. A few gradient/highlight passes provide depth without fluid simulation.
 - **Spectral Terrain:** a 32×24, 48×40 or 64×64 grid samples a two-to-ten-second
-  source-time window, smooths neighboring frequency samples and projects stable
-  perspective wire lines with optional translucent row fills. Seeking reconstructs
+  source-time window on an anchored time lattice. Interior heights stay fixed
+  while their depths advance, preventing past ridges from boiling on a fixed grid.
+  It smooths neighboring frequency samples and projects stable perspective wire
+  lines with optional translucent row fills. Seeking reconstructs
   history immediately. Travel speed moves a decorative illuminated contour; it
   does not speed up or fabricate historical audio. Pause holds source time and
   reduced motion removes that contour. No full 3D engine or pixel simulation is used.
@@ -109,7 +113,7 @@ mobile/touch metrics and 4× CPU throttling on the same desktop host, still draw
 The initial implementation benchmark-only repeat ran after concurrent test/build/browser work
 stopped. The table gives the range of per-case p95 values across seven audio
 cases, in milliseconds; it does not average away the different workloads.
-These initial measurements precede the Liquid Blob responsiveness correction
+These initial measurements precede the audio-response and terrain continuity corrections
 documented below.
 
 | Style | Desktop isolated | Desktop composited | 4× simulated isolated | 4× simulated composited |
@@ -208,42 +212,73 @@ references requires the explicit `--update-references` flag and visual review;
 the default command fails on missing/changed references or browser errors.
 Unit geometry tests cover finer invariants that coarse image signatures cannot.
 
-## Liquid Blob responsiveness correction
+## Audio response and terrain continuity corrections
 
-A follow-up check used the supplied 3:57 stereo 44.1 kHz MP3 and the actual
-Fluid Dreams built-in look. WASM analysis completed with 7,125 envelopes and no
-browser errors. The fault was in shape response: a second gain/limiter flattened
-already-normalized bass/mid/treble levels, while the harmonic phases moved too
-slowly to read clearly in the preview. Per-point radius clipping also suppressed
-lobes at maximum size/deformation.
+Follow-up checks used the supplied 3:57 stereo 44.1 kHz MP3 and the actual
+Fluid Dreams and Neon Horizon built-in looks. WASM analysis produced 7,125
+envelopes with no browser errors. The media and generated videos remain local.
 
-The renderer now consumes normalized features directly, uses stronger bounded
-surface deformation and a visible fluidity range, and fits the complete shape
-uniformly inside the existing 43% radius bound. A reusable 160-float radius buffer
-lets the angular filter reuse each sample instead of evaluating it five times.
-Source-time determinism, reduced motion, silence/idle choices, setting defaults
-and persistence are preserved. Radial motion is deferred until PR #17 is merged;
-this correction adds no object-motion or camera controls.
+An earlier blob correction removed duplicate gain/limiting and fitted the entire
+silhouette uniformly, but still drove active lobes with clock phases. That made
+motion noticeable without making it reliably follow the song. The current
+renderer instead maps measured frequency windows to broad local bulges at fixed
+angles. Bass expansion, midrange lobes and finer treble response are separate;
+beat impact remains a bounded additional expansion. Holding active audio features
+constant holds the contour even at different source times. Different frequency
+profiles change it with identical broad features and zero beat impact.
 
-Across 1,395 audible samples from the full track, using 720p isolated blob
-geometry sampled at 6 Hz, median contour displacement between samples rose from
-0.45 to 2.34 pixels. Median relative radius spread rose from 8.7% to 15.8%.
-These describe visible motion, not rendering speed or display FPS. The audio file
-and generated videos are not committed.
+Fluidity now softens neighboring frequency windows and blends at most 40% of a
+measured history sample at most 80 ms earlier. Unavailable history uses the current
+measured spectrum. Idle motion remains optional and respects reduced motion.
+The existing circular filter, closed curve and uniform 43%-radius bound retain
+smooth, finite, nonintersecting geometry at maximum controls. Reusable buffers
+avoid per-frame spectrum allocations. A full-track 6 Hz probe recorded clearly
+changing contours (mean relative radius spread 33.6%); displacement alone is not
+used as proof of audio following because clock animation can also displace points.
 
-The corrected renderer measured 0.155–0.250 ms p95 in the desktop isolated
-seven-case harness and 0.460–0.645 ms with default compositing; geometry alone was
-0.040–0.060 ms p95. This follow-up did not repeat physical-device or simulated
-mobile timing. All 105 reference frames for the other five styles retained their
-original pixel hashes; only the 21 blob reference cases were refreshed after
-visual review. The actual Fluid Dreams UI passed playback, seeking, pause/hold,
-PNG capture and a 60–65-second range export at 480p/30 FPS from the supplied
-track. The resulting 854×480 WebM contains audio/video and decoded successfully;
-WASM was active and the 390-pixel mobile viewport had no overflow.
-Regression tests now cover sustained broadband music, distinct
-high-level bass response, maximum-control shape preservation, and finite,
-continuous source-time flow. Local full-track analysis and range-export evidence
-live under `/tmp/pulseframe-amnesia/`.
+Terrain previously resampled every row at a fixed screen depth each frame. This
+reshaped historical ridges instead of moving those ridges, producing a jittering
+appearance. Interior rows now retain source-time samples while their projected
+depths move continuously through the requested history window. At row rollover,
+only boundary samples enter/leave; retained ridges keep their heights. The travel
+highlight interpolates using the actual moving depths, avoiding an additional
+jump from indexing a nonuniform grid as if it were uniform. The two entering/
+leaving horizontal lines fade across one row interval, avoiding a brightness
+flash when they coincide with fixed boundary lines. Buffers stay bounded,
+seeking reconstructs the same mesh, and pause holds all geometry.
+
+The repeated seven-case 720p benchmark on the managed Linux/Chromium host gave
+these p95 ranges (milliseconds, 30 warm-up/120 measured submissions per case):
+
+| Corrected style | Desktop isolated | Desktop composited | 4× simulated isolated | 4× simulated composited |
+| --- | ---: | ---: | ---: | ---: |
+| Liquid Blob | 0.210–0.290 | 0.510–0.585 | 1.285–1.400 | 2.835–4.080 |
+| Spectral Terrain | 0.820–0.915 | 1.125–1.225 | 3.830–5.170 | 5.495–7.620 |
+
+These measure Canvas submission, not physical mobile FPS or export throughput.
+After warm-up, explicit-GC heap deltas over the final 1,200-frame intervals were
+−52 bytes for Blob and −44 bytes for Terrain; this observation does not replace
+a cross-device memory profile. The full results are in the local
+`/tmp/pulseframe-audio-travel-verified/` artifacts.
+
+Regression tests cover fixed-audio contours, distinct frequency distributions
+without beat changes, causal smoothing/fallback, stable terrain samples between
+frames, retained vertex continuity and travel-highlight continuity across row
+rollovers at all densities, plus fading of entering/leaving wire lines. A native
+Canvas comparison around rollover using the supplied song found zero change in
+retained frequency samples. Composited-black pixel differences at the boundaries
+were below 0.045/255 mean per channel across all densities; remaining differences
+are concentrated in antialiasing at the window edges. All 30 Node test files pass.
+Visual references cover
+126 cases; only the 42 blob/terrain cases were refreshed after visual review.
+All 84 reference PNGs for Ring, Spectrum, Edge Bars and Radial remain byte-identical.
+
+The production-build browser checks passed both built-in looks with the supplied
+song: playback, seek, pause/hold, PNG capture, and a 60–65-second export at 480p/30
+FPS. Both resulting 854×480 WebMs contain audio/video and decode successfully;
+WASM was active and the 390-pixel mobile viewport had no horizontal overflow.
+Radial object-motion controls remain deferred until PR #17 is merged. No DSP,
+encoder, format-version, camera or object-motion changes accompany these fixes.
 
 ## Limits and follow-up
 

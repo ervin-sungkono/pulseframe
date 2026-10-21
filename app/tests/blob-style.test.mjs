@@ -247,9 +247,9 @@ test("size, deformation, fluidity, expansion and detail controls affect output",
       radii(small.points, small.count, frame).reduce((sum, value) => sum + value, 0),
   );
 
-  const still = geometry({ ...frame, time: 4 }, { ...DEFAULT_OPTIONS, fluidity: 0 });
-  const flowing = geometry({ ...frame, time: 4 }, { ...DEFAULT_OPTIONS, fluidity: 100 });
-  assert.ok(contourDifference(still.points, flowing.points, still.count) > 0.1);
+  const crisp = geometry({ ...frame, time: 4 }, { ...DEFAULT_OPTIONS, fluidity: 0 });
+  const soft = geometry({ ...frame, time: 4 }, { ...DEFAULT_OPTIONS, fluidity: 100 });
+  assert.ok(contourDifference(crisp.points, soft.points, crisp.count) > 0.1);
 
   const undeformed = geometry(frame, { ...DEFAULT_OPTIONS, deformation: 0 });
   const deformed = geometry(frame, { ...DEFAULT_OPTIONS, deformation: 100 });
@@ -302,7 +302,7 @@ test("NaN frame data is contained and same source time matches at 24, 30 and 60 
   assert.deepEqual([...atFiveAfterEight], [...atFiveDirectly]);
 });
 
-test("sustained broadband music keeps a visible liquid contour and source-time flow", () => {
+test("sustained music holds its shape until the measured audio changes", () => {
   // Representative already-normalized levels from the shared analysis pipeline.
   // The previous second gain/limiter made loud music almost static and circular.
   const frame = makeFrame({ width: 1280, height: 720, time: 60 });
@@ -320,7 +320,7 @@ test("sustained broadband music keeps a visible liquid contour and source-time f
   const radius = radii(first.points, first.count, frame);
   const average = radius.reduce((sum, value) => sum + value, 0) / first.count;
   assert.ok((Math.max(...radius) - Math.min(...radius)) / average > 0.13);
-  assert.ok(contourDifference(first.points, later.points, first.count) > average * 0.01);
+  assert.deepEqual(first.points, later.points, "the clock alone must not rotate an active contour");
 
   const quieter = geometry({ ...frame, audio: { ...frame.audio, bass: 0.55 } });
   const quieterRadius = radii(quieter.points, quieter.count, frame);
@@ -357,12 +357,49 @@ test("maximum controls fit the whole silhouette without clipping its lobes into 
   }
 });
 
-test("organic flow stays finite at extreme source times and continuous across its common period", () => {
+test("idle flow stays finite and continuous while active geometry stays independent of the clock", () => {
   const frame = makeToneFrame(0.51, "mid");
   const extreme = geometry({ ...frame, time: Number.MAX_VALUE });
   assert.ok(extreme.points.every(Number.isFinite));
-  const period = (Math.PI * 2 * 20) / ((DEFAULT_OPTIONS.fluidity / 100) * 2.4);
-  const before = geometry({ ...frame, time: period - 1e-6 });
-  const after = geometry({ ...frame, time: period + 1e-6 });
+  const silent = makeFrame();
+  const period = (Math.PI * 2 * 20) / 0.6;
+  const before = geometry({ ...silent, time: period - 1e-6 });
+  const after = geometry({ ...silent, time: period + 1e-6 });
   assert.ok(contourDifference(before.points, after.points, before.count) < 0.001);
+});
+
+test("frequency distribution drives local bulges even with unchanged beat and broad-band levels", () => {
+  const first = makeToneFrame(0.25, "mid");
+  first.width = 1280;
+  first.height = 720;
+  const shifted = makeToneFrame(0.62, "mid");
+  shifted.width = 1280;
+  shifted.height = 720;
+  const atFirstPitch = geometry(first);
+  const atSecondPitch = geometry(shifted);
+  assert.equal(first.audio.impact, shifted.audio.impact);
+  assert.equal(first.audio.mid, shifted.audio.mid);
+  assert.ok(contourDifference(atFirstPitch.points, atSecondPitch.points, atFirstPitch.count) > 8);
+  assert.deepEqual(atFirstPitch.points, geometry({ ...first, time: 120 }).points);
+});
+
+test("fluidity blends only measured past bands and remains reconstructible after seeking", () => {
+  const frame = makeToneFrame(0.62, "mid");
+  const pastBands = makeToneFrame(0.25, "mid").audio.bands[0];
+  const readTimes = [];
+  frame.history = {
+    read(time, target) {
+      readTimes.push(time);
+      for (let i = 0; i < target.length; i++)
+        target[i] = pastBands[Math.round((i * (pastBands.length - 1)) / (target.length - 1))];
+      return true;
+    },
+  };
+  const first = geometry(frame);
+  assert.ok(readTimes.every((time) => time < frame.time && frame.time - time <= 0.08));
+  const currentOnly = geometry({ ...frame, history: undefined });
+  assert.ok(contourDifference(first.points, currentOnly.points, first.count) > 0.1);
+  assert.deepEqual(first.points, geometry(frame).points);
+  const unavailable = geometry({ ...frame, history: { read: () => false } });
+  assert.deepEqual(unavailable.points, currentOnly.points);
 });
