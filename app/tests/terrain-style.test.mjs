@@ -8,6 +8,7 @@ const {
   projectTerrain,
   sampleTerrain,
   spectralTerrain,
+  terrainDepthOpacity,
   terrainResolution,
   terrainTravelPosition,
 } = modules["spectral-terrain"];
@@ -23,26 +24,56 @@ function row(samples, columns, index) {
   return samples.levels.subarray(index * columns, (index + 1) * columns);
 }
 
+function splitSubpaths(path) {
+  const subpaths = [];
+  for (const command of path) {
+    if (command[0] === "move") subpaths.push([command]);
+    else subpaths.at(-1).push(command);
+  }
+  return subpaths;
+}
+
+function assertPathsClose(actual, expected, tolerance, message) {
+  assert.equal(actual.length, expected.length, message);
+  actual.forEach((command, index) => {
+    assert.equal(command[0], expected[index][0], message);
+    command.slice(1).forEach((value, pointIndex) => {
+      assert.ok(Math.abs(value - expected[index][pointIndex + 1]) < tolerance, message);
+    });
+  });
+}
+
 function recordingContext() {
   let path = [];
   const strokes = [];
+  const fills = [];
   return {
     strokes,
+    fills,
     save() {},
     restore() {},
     beginPath() {
       path = [];
     },
     moveTo(x, y) {
-      path.push([x, y]);
+      path.push(["move", x, y]);
     },
     lineTo(x, y) {
-      path.push([x, y]);
+      path.push(["line", x, y]);
+    },
+    bezierCurveTo(...points) {
+      path.push(["curve", ...points]);
     },
     closePath() {
       path.push(["close"]);
     },
-    fill() {},
+    fill() {
+      fills.push({
+        path: path.map((point) => [...point]),
+        fillStyle: this.fillStyle,
+        globalAlpha: this.globalAlpha,
+      });
+    },
     stroke() {
       strokes.push({
         path: path.map((point) => [...point]),
@@ -93,6 +124,15 @@ test("terrain density maps to bounded, exact grid sizes", () => {
   assert.deepEqual(terrainResolution("high"), { columns: 64, rows: 64 });
   assert.ok(terrainResolution("high").columns <= 64);
   assert.ok(terrainResolution("high").rows <= 64);
+});
+
+test("depth opacity changes continuously from faint distance to a clear foreground", () => {
+  const values = Array.from({ length: 1001 }, (_, index) => terrainDepthOpacity(index / 1000));
+  assert.ok(values.every(Number.isFinite));
+  assert.ok(values.every((value, index) => index === 0 || value >= values[index - 1]));
+  assert.ok(values[0] > 0 && values[0] < 0.25);
+  assert.equal(values.at(-1), 1);
+  assert.ok(values.every((value, index) => index === 0 || value - values[index - 1] < 0.002));
 });
 
 test("sampling reads each absolute history row once and keeps the requested window on seeks", () => {
@@ -269,6 +309,95 @@ test("calibrated frequency peaks remain distinct without folding the frequency a
   assert.ok(points.every(Number.isFinite));
 });
 
+test("smoothed terrain contours stay finite, bounded, and preserve separate measured peaks", () => {
+  const columns = 64;
+  const rows = 64;
+  const history = {
+    read(_time, target) {
+      target.fill(0.025);
+      target[Math.round((8 / 63) * (target.length - 1))] = 0.95;
+      target[Math.round((42 / 63) * (target.length - 1))] = 0.65;
+      return true;
+    },
+  };
+  const samples = sampleTerrain(history, [], 5, 4, columns, rows, 0);
+  const points = projectTerrain(
+    samples.levels,
+    columns,
+    rows,
+    640,
+    360,
+    {
+      ...projection,
+      height: 60,
+    },
+    undefined,
+    samples.depths,
+  );
+  const rowIndex = 24;
+  const ctx = recordingContext();
+  spectralTerrain.draw(ctx, frameAt(5, history), {
+    height: 60,
+    historySeconds: 4,
+    density: "high",
+    perspective: "medium",
+    travelSpeed: 0,
+    wireOpacity: 75,
+    surfaceFill: 0,
+  });
+  const path = ctx.strokes[0].path;
+  const startX = points[rowIndex * columns * 2];
+  const startIndex = path.findIndex(
+    (command) => command[0] === "move" && Math.abs(command[1] - startX) < 1e-5,
+  );
+  assert.ok(startIndex >= 0, "recorded smooth contour row");
+  const y = (column) => (column === 0 ? path[startIndex][2] : path[startIndex + column][6]);
+  let previousY = path[startIndex][2];
+  for (let column = 0; column < columns - 1; column++) {
+    const command = path[startIndex + column + 1];
+    assert.equal(command[0], "curve");
+    assert.ok(command.slice(1).every(Number.isFinite));
+    const control1Y = command[2];
+    const control2Y = command[4];
+    const endY = command[6];
+    const lower = Math.min(previousY, endY) - 1e-4;
+    const upper = Math.max(previousY, endY) + 1e-4;
+    assert.ok(control1Y >= lower && control1Y <= upper);
+    assert.ok(control2Y >= lower && control2Y <= upper);
+    previousY = endY;
+  }
+  assert.ok(y(8) < y(7) && y(8) < y(9));
+  assert.ok(y(42) < y(41) && y(42) < y(43));
+  assert.notEqual(y(8), y(42));
+});
+
+test("filled terrain ribbons share the wire curve and gain opacity toward the viewer", () => {
+  const history = {
+    read(_time, target) {
+      target.fill(0.5);
+      return true;
+    },
+  };
+  const ctx = recordingContext();
+  spectralTerrain.draw(ctx, frameAt(5, history), {
+    height: 60,
+    historySeconds: 5,
+    density: "low",
+    perspective: "medium",
+    travelSpeed: 0,
+    wireOpacity: 75,
+    surfaceFill: 20,
+  });
+  const columns = terrainResolution("low").columns;
+  assert.deepEqual(ctx.fills[0].path.slice(0, columns), ctx.strokes[0].path.slice(0, columns));
+
+  const fillAlpha = (fill) => Number(fill.fillStyle.match(/,([\d.]+)\)$/)[1]);
+  const fillValues = ctx.fills.map(fillAlpha);
+  assert.ok(fillValues.every((value, index) => index === 0 || value >= fillValues[index - 1]));
+  const rowValues = ctx.strokes.slice(4, -4).map((stroke) => stroke.globalAlpha);
+  assert.ok(rowValues.every((value, index) => index === 0 || value >= rowValues[index - 1]));
+});
+
 test("terrain height creates visible peaks independent of grid density", () => {
   const rises = [];
   for (const density of ["low", "medium", "high"]) {
@@ -368,7 +497,7 @@ test("renderer draws a deterministic wire surface and sanitizes NaN history valu
     spectralTerrain.draw(ctx, frameAt(2.5, history, reducedMotion), options);
     assert.ok(
       ctx.strokes.every(({ path }) =>
-        path.every(([x, y]) => x === "close" || (Number.isFinite(x) && Number.isFinite(y))),
+        path.every(([kind, ...values]) => kind === "close" || values.every(Number.isFinite)),
       ),
     );
     return ctx.strokes;
@@ -376,9 +505,24 @@ test("renderer draws a deterministic wire surface and sanitizes NaN history valu
   const first = snapshot();
   const repeated = snapshot();
   assert.deepEqual(repeated, first);
-  assert.equal(first.length, 9);
+  assert.equal(first.length, 29);
   const reduced = snapshot(true);
-  assert.equal(reduced.length, 8);
+  assert.equal(reduced.length, 28);
+});
+
+test("zero terrain fill and wire opacity suppress their canvas operations", () => {
+  const ctx = recordingContext();
+  spectralTerrain.draw(ctx, frameAt(2.5, undefined), {
+    height: 60,
+    historySeconds: 5,
+    density: "low",
+    perspective: "medium",
+    travelSpeed: 100,
+    wireOpacity: 0,
+    surfaceFill: 0,
+  });
+  assert.equal(ctx.strokes.length, 0);
+  assert.equal(ctx.fills.length, 0);
 });
 
 test("NaN inputs are bounded and reusable helper buffers are honored", () => {
@@ -435,7 +579,7 @@ test("travel highlight remains continuous as anchored rows roll over", () => {
   for (const density of ["low", "medium", "high"]) {
     const { rows } = terrainResolution(density);
     const rollover = 11 * (5 / (rows - 2));
-    const paths = [-1e-7, 1e-7].map((offset) => {
+    const contexts = [-1e-7, 1e-7].map((offset) => {
       const ctx = recordingContext();
       spectralTerrain.draw(ctx, frameAt(rollover + offset, history), {
         height: 60,
@@ -446,12 +590,80 @@ test("travel highlight remains continuous as anchored rows roll over", () => {
         wireOpacity: 75,
         surfaceFill: 10,
       });
-      return ctx.strokes.at(-1).path;
+      return ctx;
     });
-    paths[0].forEach(([x, y], index) => {
-      assert.ok(Math.hypot(x - paths[1][index][0], y - paths[1][index][1]) < 0.01, density);
+    const paths = contexts.map((ctx) => ctx.strokes.at(-1).path);
+    const columns = terrainResolution(density).columns;
+    for (const path of paths) {
+      assert.equal(path.length, columns, density);
+      assert.equal(path[0][0], "move", density);
+      let previousY = path[0][2];
+      for (let column = 0; column < columns - 1; column++) {
+        const command = path[column + 1];
+        assert.equal(command[0], "curve", density);
+        assert.ok(command.slice(1).every(Number.isFinite), density);
+        const endY = command[6];
+        const lower = Math.min(previousY, endY) - 1e-4;
+        const upper = Math.max(previousY, endY) + 1e-4;
+        assert.ok(command[2] >= lower && command[2] <= upper, density);
+        assert.ok(command[4] >= lower && command[4] <= upper, density);
+        previousY = endY;
+      }
+    }
+    paths[0].forEach((command, index) => {
+      assert.equal(command[0], paths[1][index][0], density);
+      command.slice(1).forEach((value, pointIndex) => {
+        assert.ok(Math.abs(value - paths[1][index][pointIndex + 1]) < 0.01, density);
+      });
     });
+
+    const [beforeGlow, afterGlow] = contexts;
+    const beforeGroups = splitSubpaths(beforeGlow.strokes[0].path);
+    const afterGroups = splitSubpaths(afterGlow.strokes[0].path);
+    // At the near edge, the same source row moves from the aggregate path to
+    // the first faded edge glow stroke; the far edge does the reverse.
+    assertPathsClose(beforeGroups[1], afterGlow.strokes[1].path, 0.01, `${density} near glow`);
+    assertPathsClose(
+      beforeGlow.strokes[2].path,
+      afterGroups[rows - 4],
+      0.01,
+      `${density} far glow`,
+    );
+    assert.ok(
+      Math.abs(beforeGlow.strokes[0].globalAlpha - afterGlow.strokes[1].globalAlpha) < 1e-5,
+    );
+    assert.ok(
+      Math.abs(beforeGlow.strokes[2].globalAlpha - afterGlow.strokes[0].globalAlpha) < 1e-5,
+    );
   }
+});
+
+test("travel highlight opacity follows its interpolated depth continuously", () => {
+  const history = {
+    read(_time, target) {
+      target.fill(0.4);
+      return true;
+    },
+  };
+  const timeSamples = [0, 2.5, 5];
+  const alphaValues = timeSamples.map((time) => {
+    const ctx = recordingContext();
+    spectralTerrain.draw(ctx, frameAt(time, history), {
+      height: 60,
+      historySeconds: 5,
+      density: "low",
+      perspective: "medium",
+      travelSpeed: 100,
+      wireOpacity: 75,
+      surfaceFill: 0,
+    });
+    const stroke = ctx.strokes.at(-1);
+    const alpha = Number(stroke.strokeStyle.match(/,([\d.]+)\)$/)[1]);
+    const depth = terrainTravelPosition(time, 5, 100);
+    assert.ok(Math.abs(alpha - 0.75 * 0.48 * terrainDepthOpacity(depth)) < 1e-6);
+    return alpha;
+  });
+  assert.ok(alphaValues[0] < alphaValues[1] && alphaValues[1] < alphaValues[2]);
 });
 
 test("entering and leaving terrain rows fade before coinciding with boundary lines", () => {
@@ -477,9 +689,52 @@ test("entering and leaving terrain rows fade before coinciding with boundary lin
       });
       return ctx;
     });
-    assert.ok(contexts[0].strokes[1].globalAlpha < 1e-5, "leaving row fades to zero");
-    assert.ok(contexts[1].strokes[2].globalAlpha < 1e-5, "entering row starts at zero");
-    assert.ok(contexts[0].strokes[2].globalAlpha > 0.45);
-    assert.ok(contexts[1].strokes[1].globalAlpha > 0.45);
+    assert.ok(contexts[0].strokes[4].globalAlpha < 1e-5, "entering row begins faded");
+    assert.ok(
+      contexts[1].strokes[rows + 1].globalAlpha < 1e-5,
+      "leaving row fades at the opposite boundary",
+    );
+    assert.ok(contexts[0].strokes[rows + 1].globalAlpha > 0.45);
+    assert.ok(contexts[1].strokes[4].globalAlpha > 0.15);
+    assert.ok(contexts[1].strokes[4].globalAlpha < 0.25);
+    assert.ok(contexts[0].strokes[1].globalAlpha < 1e-5, "near edge glow fades to zero");
+    assert.ok(Math.abs(contexts[1].strokes[1].globalAlpha - 0.2) < 1e-5);
+    assert.ok(Math.abs(contexts[0].strokes[2].globalAlpha - 0.2) < 1e-5);
+    assert.ok(contexts[1].strokes[2].globalAlpha < 1e-5, "far edge glow fades to zero");
   }
+});
+
+test("renderer reconstructs the same paused and sought pose from absolute source time", () => {
+  const history = {
+    read(time, target) {
+      target.forEach((_value, column) => {
+        target[column] =
+          0.2 + 0.45 * Math.exp(-(((time - 6) / 1.1) ** 2)) * Math.sin(column * 0.12) ** 2;
+      });
+      return true;
+    },
+  };
+  const ctx = recordingContext();
+  const options = {
+    height: 60,
+    historySeconds: 5,
+    density: "medium",
+    perspective: "high",
+    travelSpeed: 100,
+    wireOpacity: 75,
+    surfaceFill: 18,
+  };
+  const drawAt = (time) => {
+    spectralTerrain.draw(ctx, frameAt(time, history), options);
+    return structuredClone(ctx.strokes);
+  };
+  const first = drawAt(6.25);
+  ctx.strokes.length = 0;
+  const paused = drawAt(6.25);
+  assert.deepEqual(paused, first);
+  ctx.strokes.length = 0;
+  drawAt(2.75);
+  ctx.strokes.length = 0;
+  const soughtBack = drawAt(6.25);
+  assert.deepEqual(soughtBack, first);
 });

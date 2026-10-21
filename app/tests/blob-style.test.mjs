@@ -110,8 +110,18 @@ function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
 }
 
 function fakeContext() {
-  const calls = { closePath: 0, fill: 0, stroke: 0, shadowBlurs: [] };
-  const gradient = { addColorStop() {} };
+  const calls = { closePath: 0, clip: 0, fill: 0, stroke: 0, shadowBlurs: [], gradients: [] };
+  const makeGradient = (kind) => {
+    const gradient = {
+      kind,
+      stops: [],
+      addColorStop(offset, color) {
+        this.stops.push([offset, color]);
+      },
+    };
+    calls.gradients.push(gradient);
+    return gradient;
+  };
   const ctx = {
     save() {},
     restore() {},
@@ -121,6 +131,9 @@ function fakeContext() {
     closePath() {
       calls.closePath += 1;
     },
+    clip() {
+      calls.clip += 1;
+    },
     fill() {
       calls.fill += 1;
     },
@@ -128,10 +141,10 @@ function fakeContext() {
       calls.stroke += 1;
     },
     createRadialGradient() {
-      return gradient;
+      return makeGradient("radial");
     },
     createLinearGradient() {
-      return gradient;
+      return makeGradient("linear");
     },
     set shadowBlur(value) {
       calls.shadowBlurs.push(value);
@@ -195,9 +208,10 @@ test("writes a bounded, angularly ordered contour and draws it as a closed smoot
   assert.equal(
     calls.closePath,
     3,
-    "surface, radial interior and highlight each use a closed B-spline",
+    "surface, clipping contour and the optional rim use the shared smooth spline",
   );
-  assert.equal(calls.fill, 2);
+  assert.equal(calls.clip, 1, "soft shading is constrained to the deformed contour");
+  assert.equal(calls.fill, 5);
   assert.equal(calls.stroke, 1);
   assert.ok(
     calls.shadowBlurs.every((value) => value <= Math.min(frame.width, frame.height) * 0.016),
@@ -383,23 +397,193 @@ test("frequency distribution drives local bulges even with unchanged beat and br
   assert.deepEqual(atFirstPitch.points, geometry({ ...first, time: 120 }).points);
 });
 
-test("fluidity blends only measured past bands and remains reconstructible after seeking", () => {
+test("fluidity uses measured source-time response, with current data as the fallback", () => {
   const frame = makeToneFrame(0.62, "mid");
   const pastBands = makeToneFrame(0.25, "mid").audio.bands[0];
   const readTimes = [];
   frame.history = {
     read(time, target) {
       readTimes.push(time);
-      for (let i = 0; i < target.length; i++)
-        target[i] = pastBands[Math.round((i * (pastBands.length - 1)) / (target.length - 1))];
+      if (time < 0) return false;
+      for (let i = 0; i < target.length; i++) {
+        const position = (i * (pastBands.length - 1)) / (target.length - 1);
+        const first = Math.floor(position);
+        const fraction = position - first;
+        target[i] =
+          pastBands[first] * (1 - fraction) +
+          pastBands[Math.min(first + 1, pastBands.length - 1)] * fraction;
+      }
       return true;
     },
   };
   const first = geometry(frame);
-  assert.ok(readTimes.every((time) => time < frame.time && frame.time - time <= 0.08));
+  assert.ok(readTimes.length > 1, "the response adapter samples a bounded measured history window");
+  assert.ok(readTimes.every((time) => time <= frame.time && time >= frame.time - 0.9 - 1e-6));
+  assert.ok(
+    readTimes.includes(frame.time),
+    "the response begins at the requested absolute source time",
+  );
   const currentOnly = geometry({ ...frame, history: undefined });
   assert.ok(contourDifference(first.points, currentOnly.points, first.count) > 0.1);
-  assert.deepEqual(first.points, geometry(frame).points);
+  geometry({ ...frame, time: frame.time + 0.5 });
+  assert.deepEqual(
+    first.points,
+    geometry(frame).points,
+    "query order cannot advance hidden blob state",
+  );
   const unavailable = geometry({ ...frame, history: { read: () => false } });
   assert.deepEqual(unavailable.points, currentOnly.points);
+});
+
+test("fast attacks stay visible while a measured release settles by fluidity", () => {
+  const attackTime = 1;
+  const sourceLevelAt = (time) => (time >= 0.97 && time < 1.03 ? 0.78 : 0);
+  const history = {
+    read(time, target) {
+      if (time < 0) return false;
+      target.fill(sourceLevelAt(time));
+      return true;
+    },
+  };
+  const frameAt = (time, level, historySource) => {
+    const bands = new Float32Array(96).fill(level);
+    return makeFrame({
+      time,
+      history: historySource,
+      bands: [bands],
+      reducedMotion: true,
+      audio: {
+        activity: 1 - Math.exp(-level * 1.3 * 8),
+        bass: 1 - Math.exp(-level * 1.3 * 8),
+        mid: 1 - Math.exp(-level * 1.3 * 8),
+        treble: 1 - Math.exp(-level * 1.3 * 8),
+        energy: 1 - Math.exp(-level * 1.3 * 8),
+        impact: 0,
+        bands: [bands],
+        bandLayers: [],
+        ringMix: 0,
+      },
+    });
+  };
+  const quietOptions = { ...DEFAULT_OPTIONS, idleMotion: "off" };
+  const quietFrame = frameAt(0.8, 0, undefined);
+  const attackFrame = frameAt(attackTime, 0.78, history);
+  const releaseFrame = frameAt(1.1, 0, history);
+  const quiet = geometry(quietFrame, quietOptions);
+  const attack = geometry(attackFrame, quietOptions);
+  const releaseDry = geometry(releaseFrame, { ...quietOptions, fluidity: 0 });
+  const releaseWet = geometry(releaseFrame, { ...quietOptions, fluidity: 100 });
+  const quietRadius =
+    radii(quiet.points, quiet.count, quietFrame).reduce((sum, value) => sum + value, 0) /
+    quiet.count;
+  const attackRadius =
+    radii(attack.points, attack.count, attackFrame).reduce((sum, value) => sum + value, 0) /
+    attack.count;
+  const releaseDryRadius =
+    radii(releaseDry.points, releaseDry.count, releaseFrame).reduce(
+      (sum, value) => sum + value,
+      0,
+    ) / releaseDry.count;
+  const releaseWetRadius =
+    radii(releaseWet.points, releaseWet.count, releaseFrame).reduce(
+      (sum, value) => sum + value,
+      0,
+    ) / releaseWet.count;
+
+  assert.ok(
+    attackRadius > quietRadius + 2,
+    "current measurements produce an immediate visible attack",
+  );
+  assert.ok(
+    releaseDryRadius <= quietRadius + 0.001,
+    "fluidity zero uses the current measured frame",
+  );
+  assert.ok(
+    releaseWetRadius > releaseDryRadius + 0.5,
+    "fluidity blends the measured release tail back into the current frame",
+  );
+  assert.ok(releaseWetRadius < attackRadius, "the source-time response settles after the attack");
+});
+
+test("the clipped gel surface keeps soft color shading when internal glow is disabled", () => {
+  const frame = makeToneFrame(0.36, "mid");
+  const { ctx, calls } = fakeContext();
+  blob.liquidBlob.draw(ctx, frame, { ...DEFAULT_OPTIONS, internalGlow: 0 });
+
+  assert.equal(calls.clip, 1);
+  assert.equal(calls.stroke, 0, "internal contours are controlled by internalGlow");
+  assert.equal(calls.fill, 4, "base fill and three clipped shading passes remain visible");
+  assert.equal(calls.closePath, 2, "disabling internalGlow removes its inset contour");
+  const highlight = calls.gradients.find((gradient) =>
+    gradient.stops.some(([, color]) => color.includes("255,255,255")),
+  );
+  assert.ok(highlight, "the surface contains an off-center soft highlight");
+  const alpha = highlight.stops.map(([, color]) => Number(color.match(/,([\d.]+)\)$/)?.[1] ?? 0));
+  assert.ok(
+    Math.max(...alpha) <= 0.18,
+    "the highlight stays restrained instead of flattening to white",
+  );
+  assert.ok(highlight.stops.some(([, color]) => color.includes("97,229,255")));
+  assert.ok(
+    highlight.stops.some(([, color]) => color.includes("255,255,255,0.12")),
+    "the small highlight mixes a low-opacity white center with the secondary color",
+  );
+
+  const darkGradients = calls.gradients.filter((gradient) =>
+    gradient.stops.some(([, color]) => color.includes("0,0,0")),
+  );
+  assert.equal(darkGradients.length, 2, "directional and edge shading use neutral dark tint");
+  const maxDarkAlpha = Math.max(
+    ...darkGradients.flatMap((gradient) =>
+      gradient.stops.map(([, color]) => Number(color.match(/,([\d.]+)\)$/)?.[1] ?? 0)),
+    ),
+  );
+  assert.ok(maxDarkAlpha >= 0.16 && maxDarkAlpha <= 0.17);
+
+  const withGlow = fakeContext();
+  blob.liquidBlob.draw(withGlow.ctx, frame, { ...DEFAULT_OPTIONS, internalGlow: 70 });
+  assert.equal(
+    withGlow.calls.stroke,
+    1,
+    "internalGlow adds one subtle deformation-following directional rim",
+  );
+  assert.equal(withGlow.calls.fill, 5);
+  assert.equal(withGlow.calls.closePath, 3);
+});
+
+test("idle motion fades smoothly across the quiet threshold", () => {
+  const frame = makeFrame({ time: 5 });
+  const atLevel = (level) =>
+    geometry(
+      {
+        ...frame,
+        audio: {
+          ...frame.audio,
+          bass: level,
+          mid: level,
+          treble: level,
+          impact: 0,
+          bands: [new Float32Array(96).fill(level)],
+        },
+      },
+      { ...DEFAULT_OPTIONS, idleMotion: "subtle" },
+    );
+  const before = atLevel(frame.settings.quietThreshold - 1e-6);
+  const after = atLevel(frame.settings.quietThreshold + 1e-6);
+  assert.ok(
+    contourDifference(before.points, after.points, before.count) < 0.01,
+    "nearly equal quiet measurements must not switch on a different idle contour",
+  );
+});
+
+test("audio sensitivity scales local frequency deformation without changing supplied broad features", () => {
+  const frame = makeToneFrame(0.4, "mid");
+  const before = { bass: frame.audio.bass, mid: frame.audio.mid, treble: frame.audio.treble };
+  const low = geometry({ ...frame, settings: { ...frame.settings, sensitivity: 0.2 } });
+  const high = geometry({ ...frame, settings: { ...frame.settings, sensitivity: 3 } });
+  assert.ok(contourDifference(low.points, high.points, low.count) > 0.5);
+  assert.deepEqual(
+    { bass: frame.audio.bass, mid: frame.audio.mid, treble: frame.audio.treble },
+    before,
+  );
 });

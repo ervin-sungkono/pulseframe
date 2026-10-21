@@ -1,4 +1,5 @@
 import { DEFAULT_TERRAIN_OPTIONS, type TerrainOptions } from "../style-options";
+import { styleResponseHistory } from "./audio-response";
 import { clamp, finite, rgba } from "./shared";
 import type { FrequencyHistory, VisualFrameContext, VisualStyleRenderer } from "./types";
 
@@ -12,6 +13,13 @@ const RESOLUTIONS: Record<TerrainOptions["density"], TerrainResolution> = {
 
 export function terrainResolution(density: TerrainOptions["density"]): TerrainResolution {
   return RESOLUTIONS[density] ?? RESOLUTIONS.medium;
+}
+
+/** Smoothly fades distant terrain detail while keeping the nearest ridge clear. */
+export function terrainDepthOpacity(depth: number) {
+  const value = clamp(depth);
+  const smooth = value * value * (3 - 2 * value);
+  return 0.18 + smooth * 0.82;
 }
 
 export type TerrainSampleBuffer = {
@@ -231,14 +239,21 @@ export function terrainTravelPosition(time: number, historySeconds: number, trav
   return (1 - Math.cos(cycle * Math.PI * 2)) / 2;
 }
 
-type TerrainBuffers = TerrainSampleBuffer & { points: Float32Array };
+type TerrainBuffers = TerrainSampleBuffer & {
+  points: Float32Array;
+  travelPoints: Float32Array;
+};
 const contextBuffers = new WeakMap<CanvasRenderingContext2D, TerrainBuffers>();
 
 function getBuffers(ctx: CanvasRenderingContext2D, columns: number, rows: number) {
   let buffers = contextBuffers.get(ctx);
   if (!buffers || buffers.columns !== columns || buffers.rows !== rows) {
     const sample = createTerrainSampleBuffer(columns, rows);
-    buffers = { ...sample, points: new Float32Array(columns * rows * 2) };
+    buffers = {
+      ...sample,
+      points: new Float32Array(columns * rows * 2),
+      travelPoints: new Float32Array(columns * 2),
+    };
     contextBuffers.set(ctx, buffers);
   }
   return buffers;
@@ -251,6 +266,8 @@ function vertex(points: Float32Array, columns: number, row: number, column: numb
 function drawSurfaceFill(
   ctx: CanvasRenderingContext2D,
   points: Float32Array,
+  levels: Float32Array,
+  depths: Float32Array,
   columns: number,
   rows: number,
   color: string,
@@ -261,18 +278,20 @@ function drawSurfaceFill(
     // Each depth ribbon is filled back-to-front. A nearer ridge can then cover
     // a farther strip instead of having all overlapping strips merged at once.
     ctx.beginPath();
-    for (let column = 0; column < columns - 1; column++) {
-      const a = vertex(points, columns, row, column);
-      const b = vertex(points, columns, row, column + 1);
-      const c = vertex(points, columns, row + 1, column + 1);
-      const d = vertex(points, columns, row + 1, column);
-      ctx.moveTo(points[a], points[a + 1]);
-      ctx.lineTo(points[b], points[b + 1]);
-      ctx.lineTo(points[c], points[c + 1]);
-      ctx.lineTo(points[d], points[d + 1]);
-      ctx.closePath();
-    }
-    ctx.fillStyle = rgba(color, opacity);
+    addSurfaceRow(ctx, points, columns, row);
+    const farEdge = vertex(points, columns, row + 1, columns - 1);
+    ctx.lineTo(points[farEdge], points[farEdge + 1]);
+    addSurfaceRow(ctx, points, columns, row + 1, true, false);
+    ctx.closePath();
+    let energy = 0;
+    const first = row * columns;
+    const second = (row + 1) * columns;
+    for (let column = 0; column < columns; column++)
+      energy += clamp(levels[first + column]) + clamp(levels[second + column]);
+    energy /= columns * 2;
+    const depth = (finite(depths[row]) + finite(depths[row + 1])) * 0.5;
+    const heightShade = 0.74 + clamp(energy) * 0.26;
+    ctx.fillStyle = rgba(color, opacity * terrainDepthOpacity(depth) * heightShade);
     ctx.fill();
   }
 }
@@ -282,12 +301,73 @@ function addSurfaceRow(
   points: Float32Array,
   columns: number,
   row: number,
+  reverse = false,
+  move = true,
 ) {
-  for (let column = 0; column < columns; column++) {
-    const index = vertex(points, columns, row, column);
-    if (column === 0) ctx.moveTo(points[index], points[index + 1]);
-    else ctx.lineTo(points[index], points[index + 1]);
+  const step = reverse ? -1 : 1;
+  const firstColumn = reverse ? columns - 1 : 0;
+  const first = vertex(points, columns, row, firstColumn);
+  if (move) ctx.moveTo(points[first], points[first + 1]);
+  for (let column = 0; column < columns - 1; column++) {
+    const startColumn = firstColumn + step * column;
+    const endColumn = startColumn + step;
+    const start = vertex(points, columns, row, startColumn);
+    const end = vertex(points, columns, row, endColumn);
+    const x0 = points[start];
+    const y0 = points[start + 1];
+    const x1 = points[end];
+    const y1 = points[end + 1];
+    const dx = x1 - x0;
+    const secant = (y1 - y0) / dx;
+    let startSlope = contourTangent(points, columns, row, startColumn);
+    let endSlope = contourTangent(points, columns, row, endColumn);
+
+    // A local monotone limiter keeps the Bezier control points between the
+    // measured endpoint heights, so a narrow frequency peak cannot overshoot.
+    if (Math.abs(secant) <= 1e-12) {
+      startSlope = 0;
+      endSlope = 0;
+    } else {
+      let startRatio = Math.max(0, Math.min(3, startSlope / secant));
+      let endRatio = Math.max(0, Math.min(3, endSlope / secant));
+      const magnitude = startRatio * startRatio + endRatio * endRatio;
+      if (magnitude > 9) {
+        const scale = 3 / Math.sqrt(magnitude);
+        startRatio *= scale;
+        endRatio *= scale;
+      }
+      startSlope = startRatio * secant;
+      endSlope = endRatio * secant;
+    }
+
+    ctx.bezierCurveTo(
+      x0 + dx / 3,
+      y0 + (startSlope * dx) / 3,
+      x1 - dx / 3,
+      y1 - (endSlope * dx) / 3,
+      x1,
+      y1,
+    );
   }
+}
+
+function contourTangent(points: Float32Array, columns: number, row: number, column: number) {
+  const current = vertex(points, columns, row, column);
+  if (column === 0) {
+    const next = vertex(points, columns, row, column + 1);
+    return (points[next + 1] - points[current + 1]) / (points[next] - points[current]);
+  }
+  if (column === columns - 1) {
+    const previous = vertex(points, columns, row, column - 1);
+    return (points[current + 1] - points[previous + 1]) / (points[current] - points[previous]);
+  }
+  const previous = vertex(points, columns, row, column - 1);
+  const next = vertex(points, columns, row, column + 1);
+  const before =
+    (points[current + 1] - points[previous + 1]) / (points[current] - points[previous]);
+  const after = (points[next + 1] - points[current + 1]) / (points[next] - points[current]);
+  if (before * after <= 0) return 0;
+  return (2 * before * after) / (before + after);
 }
 
 function addSurfaceLines(
@@ -300,6 +380,27 @@ function addSurfaceLines(
   for (let row = 0; row < rows; row++) {
     // Fade the two moving rows nearest the window boundaries separately.
     if (row !== 1 && row !== rows - 2) addSurfaceRow(ctx, points, columns, row);
+  }
+}
+
+function strokeSurfaceRows(
+  ctx: CanvasRenderingContext2D,
+  points: Float32Array,
+  depths: Float32Array,
+  columns: number,
+  rows: number,
+  opacity: number,
+) {
+  for (let row = 0; row < rows; row++) {
+    let rowOpacity = opacity * terrainDepthOpacity(depths[row]);
+    if (row === 1 || row === rows - 2) {
+      const clearance = row === 1 ? depths[row] : 1 - depths[row];
+      rowOpacity *= clamp(clearance * (rows - 2));
+    }
+    ctx.globalAlpha = rowOpacity;
+    ctx.beginPath();
+    addSurfaceRow(ctx, points, columns, row);
+    ctx.stroke();
   }
 }
 
@@ -329,6 +430,7 @@ function addDepthLines(
 function drawTravelContour(
   ctx: CanvasRenderingContext2D,
   points: Float32Array,
+  travelPoints: Float32Array,
   columns: number,
   rows: number,
   position: number,
@@ -344,16 +446,16 @@ function drawTravelContour(
   while (row < rows - 2 && depths[row + 1] < depth) row++;
   const span = depths[row + 1] - depths[row];
   const mix = span > 0 ? clamp((depth - depths[row]) / span) : 0;
-  ctx.beginPath();
   for (let column = 0; column < columns; column++) {
     const a = vertex(points, columns, row, column);
     const b = vertex(points, columns, row + 1, column);
-    const x = points[a] + (points[b] - points[a]) * mix;
-    const y = points[a + 1] + (points[b + 1] - points[a + 1]) * mix;
-    if (column === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+    const offset = column * 2;
+    travelPoints[offset] = points[a] + (points[b] - points[a]) * mix;
+    travelPoints[offset + 1] = points[a + 1] + (points[b + 1] - points[a + 1]) * mix;
   }
-  ctx.strokeStyle = rgba(color, opacity);
+  ctx.beginPath();
+  addSurfaceRow(ctx, travelPoints, columns, 0);
+  ctx.strokeStyle = rgba(color, opacity * terrainDepthOpacity(depth));
   ctx.lineWidth = Math.max(0.7, short / 800);
   ctx.shadowColor = color;
   ctx.shadowBlur = Math.min(short * 0.016, glow * short * 0.015);
@@ -370,8 +472,9 @@ export const spectralTerrain: VisualStyleRenderer<TerrainOptions> = {
     const buffers = getBuffers(ctx, columns, rows);
     const time = finite(frame.time, 0);
     const historySeconds = clamp(normalized.historySeconds, 2, 10);
+    const responseHistory = frame.history ? styleResponseHistory(frame.history) : undefined;
     sampleTerrain(
-      frame.history,
+      responseHistory,
       frame.audio.bands,
       time,
       historySeconds,
@@ -404,47 +507,53 @@ export const spectralTerrain: VisualStyleRenderer<TerrainOptions> = {
     ctx.save();
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
-    drawSurfaceFill(ctx, buffers.points, columns, rows, frame.settings.primary, fillOpacity);
+    drawSurfaceFill(
+      ctx,
+      buffers.points,
+      buffers.levels,
+      buffers.depths,
+      columns,
+      rows,
+      frame.settings.primary,
+      fillOpacity,
+    );
 
-    const strokeHorizontal = (alpha: number) => {
+    if (wireOpacity > 0) {
+      ctx.strokeStyle = rgba(frame.settings.primary, wireOpacity);
+      ctx.lineWidth = Math.max(0.65, short / 1100);
+      ctx.shadowColor = frame.settings.primary;
+      ctx.shadowBlur = Math.min(short * 0.02, glow * short * 0.018);
       addSurfaceLines(ctx, buffers.points, columns, rows);
-      ctx.globalAlpha = alpha;
+      // Keep one soft under-stroke, then draw each row once at its continuous
+      // depth opacity without repeating the shadow pass.
+      ctx.globalAlpha = 0.2;
       ctx.stroke();
-      // New/culling lines fade across one row interval. Without this, a line
-      // coincident with a boundary doubles its brightness at lattice rollover.
       for (let edge = 0; edge < 2; edge++) {
         const row = edge === 0 ? 1 : rows - 2;
         const clearance = row === 1 ? buffers.depths[row] : 1 - buffers.depths[row];
-        ctx.globalAlpha = alpha * clamp(clearance * (rows - 2));
+        ctx.globalAlpha = 0.2 * clamp(clearance * (rows - 2));
         ctx.beginPath();
         addSurfaceRow(ctx, buffers.points, columns, row);
         ctx.stroke();
       }
-    };
-    ctx.strokeStyle = rgba(frame.settings.primary, wireOpacity);
-    ctx.lineWidth = Math.max(0.65, short / 1100);
-    ctx.shadowColor = frame.settings.primary;
-    ctx.shadowBlur = Math.min(short * 0.02, glow * short * 0.018);
-    strokeHorizontal(0.46);
-    ctx.shadowBlur = 0;
-    strokeHorizontal(1);
-    ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+      strokeSurfaceRows(ctx, buffers.points, buffers.depths, columns, rows, 1);
+      ctx.globalAlpha = 1;
 
-    addDepthLines(ctx, buffers.points, columns, rows);
-    ctx.strokeStyle = rgba(frame.settings.secondary, wireOpacity * 0.72);
-    ctx.lineWidth = Math.max(0.55, short / 1400);
-    ctx.globalAlpha = 0.42;
-    ctx.shadowColor = frame.settings.secondary;
-    ctx.shadowBlur = Math.min(short * 0.018, glow * short * 0.015);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0;
-    ctx.stroke();
+      addDepthLines(ctx, buffers.points, columns, rows);
+      ctx.strokeStyle = rgba(frame.settings.secondary, wireOpacity * 0.72);
+      ctx.lineWidth = Math.max(0.55, short / 1400);
+      ctx.globalAlpha = 0.42 * terrainDepthOpacity(0.56);
+      ctx.shadowBlur = 0;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
 
-    if (!frame.reducedMotion && normalized.travelSpeed > 0) {
+    if (wireOpacity > 0 && !frame.reducedMotion && normalized.travelSpeed > 0) {
       drawTravelContour(
         ctx,
         buffers.points,
+        buffers.travelPoints,
         columns,
         rows,
         terrainTravelPosition(time, historySeconds, normalized.travelSpeed),
