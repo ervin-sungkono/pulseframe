@@ -194,6 +194,8 @@ test("successful download URLs revoke after 60 seconds or immediately on teardow
 test("hook snapshots mutable export inputs before lazy import and retains prepared assets by reference", async () => {
   const settingsPath = join(testDirectory, "export-settings.mjs");
   const estimatePath = join(testDirectory, "export-time-estimate.mjs");
+  const timelinePath = join(testDirectory, "export-timeline.mjs");
+  const analysisPath = join(testDirectory, "audio-analysis-config.mjs");
   const timePath = join(testDirectory, "time.mjs");
   const reactPath = join(testDirectory, "react-mock.mjs");
   const adapterPath = join(testDirectory, "export-video-mock.mjs");
@@ -202,6 +204,7 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
     settingsPath,
     `
     export const COMPRESSED_VIDEO_QUALITY = 0.68;
+    export const EXPORT_FRAME_RATES = [24, 30, 60];
     export function exportDimensions(format, resolution) {
       return format === 'square'
         ? { width: resolution, height: resolution }
@@ -219,6 +222,23 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
       compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
     }).outputText,
   );
+  for (const [relative, path] of [
+    ["audio/audio-analysis-config", analysisPath],
+    ["export/export-timeline", timelinePath],
+  ]) {
+    const source = readFileSync(new URL(`../lib/${relative}.ts`, import.meta.url), "utf8")
+      .replaceAll(
+        '"../audio/audio-analysis-config"',
+        JSON.stringify(pathToFileURL(analysisPath).href),
+      )
+      .replaceAll('"./export-settings"', JSON.stringify(pathToFileURL(settingsPath).href));
+    writeFileSync(
+      path,
+      ts.transpileModule(source, {
+        compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+      }).outputText,
+    );
+  }
   const timeSource = readFileSync(new URL("../lib/time.ts", import.meta.url), "utf8");
   writeFileSync(
     timePath,
@@ -260,6 +280,7 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
       '"@/lib/export/export-time-estimate"',
       JSON.stringify(pathToFileURL(estimatePath).href),
     )
+    .replaceAll('"@/lib/export/export-timeline"', JSON.stringify(pathToFileURL(timelinePath).href))
     .replaceAll('"@/lib/time"', JSON.stringify(pathToFileURL(timePath).href))
     .replaceAll('"@/lib/export/export-video"', JSON.stringify(pathToFileURL(adapterPath).href));
   writeFileSync(

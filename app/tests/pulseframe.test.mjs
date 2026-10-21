@@ -1033,9 +1033,12 @@ test("all retired project modes migrate to supported styles and retain the selec
     assert.equal(opened.settings.logoFitScale[target], 75);
     assert.deepEqual(opened.settings.logoPlacements[target], layout);
     assert.deepEqual(Object.keys(opened.settings.logoPlacements).sort(), [
+      "blob",
       "edges",
+      "radial",
       "ring",
       "spectrum",
+      "terrain",
     ]);
   }
 });
