@@ -2,7 +2,9 @@
 """Capture tolerant visual references and benchmark native Canvas renderers.
 
 Requires Python 3.10+ and Playwright for Python (plus Chromium). No application
-dependency is added. The script expects the Vite app to be served at --base-url;
+dependency is added. Restart Vite after source edits so direct probe imports do
+not observe a different hot-reload module instance from the renderer.
+The script expects the Vite app to be served at --base-url;
 all captures and timing output default to /tmp.
 
 Examples:
@@ -37,6 +39,7 @@ SETUP_JS = r"""async () => {
     { PreparedFrequencyHistory, RollingFrequencyHistory, bandEnergy },
     { buildRadialSpectrumGeometry },
     { writeLiquidBlobGeometry },
+    { styleResponseHistory },
     { createTerrainSampleBuffer, terrainResolution, sampleTerrain, projectTerrain },
   ] = await Promise.all([
     import('/lib/visual/visualizer.ts'),
@@ -45,6 +48,7 @@ SETUP_JS = r"""async () => {
     import('/lib/visual/styles/frequency-history.ts'),
     import('/lib/visual/styles/radial-spectrum.ts'),
     import('/lib/visual/styles/liquid-blob.ts'),
+    import('/lib/visual/styles/audio-response.ts'),
     import('/lib/visual/styles/spectral-terrain.ts'),
   ]);
   const sampleRate = 48000;
@@ -344,7 +348,7 @@ SETUP_JS = r"""async () => {
       } else {
         const { columns, rows } = terrainShape;
         const sampleStart = performance.now();
-        sampleTerrain(frame.history, frame.audio.bands, frame.time, settings.terrainOptions.historySeconds,
+        sampleTerrain(styleResponseHistory(frame.history), frame.audio.bands, frame.time, settings.terrainOptions.historySeconds,
           columns, rows, settings.quietThreshold, terrainBuffer);
         const sampleMs = performance.now() - sampleStart;
         const projectStart = performance.now();
@@ -401,6 +405,7 @@ SETUP_JS = r"""async () => {
         }
         return { drawCount: count, historyCacheFrames: history.cachedFrames,
           rollingHistoryCacheFrames: rollingHistory.cachedFrames,
+          styleResponseCacheFrames: mode === 'blob' || mode === 'terrain' ? styleResponseHistory(history).cachedFrames : 0,
           canvasPixels: canvas.width * canvas.height };
       },
     };
@@ -627,6 +632,11 @@ def main() -> None:
     else:
         comparison = {'passed': False, 'caseCount': 0, 'failedCount': 1,
             'cases': [{'case': str(REFERENCE), 'passed': False, 'error': 'reference fixture is missing; rerun with --update-references'}]}
+
+    for mode in ('blob', 'terrain'):
+        cache_frames = memory_probe[mode]['observations'][-1]['styleResponseCacheFrames']
+        if not 0 < cache_frames <= 768:
+            raise SystemExit(f'{mode}: response cache instrumentation is inactive or unbounded; restart Vite after source edits and rerun')
 
     metadata = {
       'generatedAtUtc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),

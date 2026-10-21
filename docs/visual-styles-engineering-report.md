@@ -17,6 +17,8 @@ The Rust/WASM DSP implementation, encoder, resolution/FPS choices and optional
 video-compression behavior are unchanged. Rendering stays local to the device.
 No production dependency was added.
 
+The follow-up music-video polish plan is recorded in [visual-polish-plan.md](visual-polish-plan.md).
+
 ## Architecture decisions
 
 The shared canvas pipeline still owns background images/video, atmosphere,
@@ -57,21 +59,23 @@ without discarding existing timing profiles.
   Primary/secondary colors form a gradient. Rotation uses source seconds, with
   100% equal to one revolution per minute; reduced motion freezes rotation.
 - **Liquid Blob:** 96/128/160 angular samples combine broad bass lobes, midrange
-  asymmetry, smaller treble ripples and a bounded transient expansion. A circular
-  five-tap filter and closed quadratic spline produce a smooth positive-radius
-  silhouette. Measured frequency windows create local bulges at fixed angles;
-  bass, midrange and treble also modulate broad lobes independently of beat
-  impact. Fluidity sets angular smoothing and a small causal history blend. Only
-  optional silence/idle movement uses time-driven harmonics, disabled by reduced
-  motion. A few gradient/highlight passes provide depth without fluid simulation.
-- **Spectral Terrain:** a 32×24, 48×40 or 64×64 grid samples a two-to-ten-second
-  source-time window on an anchored time lattice. Interior heights stay fixed
-  while their depths advance, preventing past ridges from boiling on a fixed grid.
-  It smooths neighboring frequency samples and projects stable perspective wire
-  lines with optional translucent row fills. Seeking reconstructs
-  history immediately. Travel speed moves a decorative illuminated contour; it
-  does not speed up or fabricate historical audio. Pause holds source time and
-  reduced motion removes that contour. No full 3D engine or pixel simulation is used.
+  asymmetry, finer treble detail and bounded beat expansion. Fixed-angle measured
+  frequency windows add local bulges. The shared peak-release adapter supplies
+  frequency-dependent settling; Fluidity blends at most 55% response and controls
+  spatial softness. A circular five-tap filter and closed quadratic spline keep
+  the positive-radius silhouette smooth. Clipped directional/edge shading and a
+  small soft highlight add volume; Internal Glow controls the interior wash and
+  directional inset rim. Idle movement fades in near silence and respects reduced
+  motion. No physical fluid simulation or autonomous active rotation is used.
+- **Spectral Terrain:** a 32×24, 48×40 or 64×64 grid samples two-to-ten seconds
+  of source-time response history. Interior heights stay anchored while depths
+  advance. Bounded monotone cubic contours smooth frequency ridges without
+  overshoot; fill and wire share those curves. Continuous depth opacity and
+  energy-dependent ribbon shading create distance cues. The traveling highlight
+  follows the same curve and depth fade. Both wire and glow edge rows fade at
+  rollover. Seeking reconstructs history immediately. Travel speed changes the
+  decorative contour, preserving historical timing. Pause holds source time;
+  reduced motion removes the contour. No 3D engine or pixel simulation is used.
 
 ## Files
 
@@ -212,7 +216,10 @@ references requires the explicit `--update-references` flag and visual review;
 the default command fails on missing/changed references or browser errors.
 Unit geometry tests cover finer invariants that coarse image signatures cannot.
 
-## Audio response and terrain continuity corrections
+## Initial audio response and terrain continuity corrections
+
+This section records the initial corrections; the music-video polish below
+replaces the short delayed blend and extends the surface treatment.
 
 Follow-up checks used the supplied 3:57 stereo 44.1 kHz MP3 and the actual
 Fluid Dreams and Neon Horizon built-in looks. WASM analysis produced 7,125
@@ -279,6 +286,95 @@ FPS. Both resulting 854×480 WebMs contain audio/video and decode successfully;
 WASM was active and the 390-pixel mobile viewport had no horizontal overflow.
 Radial object-motion controls remain deferred until PR #17 is merged. No DSP,
 encoder, format-version, camera or object-motion changes accompany these fixes.
+
+## Music-video polish
+
+The detailed scope and acceptance criteria are in
+[the implementation plan](visual-polish-plan.md). This pass adds the shared
+`app/lib/visual/styles/audio-response.ts` model and
+`app/tests/style-audio-response.test.mjs`, and updates the two renderers, their
+focused tests, live-history revision contract, export preroll/workload signatures,
+Fluid Dreams/Neon Horizon defaults, the Fluidity hint and native Canvas harness.
+It adds no production dependency or option/schema version.
+
+The response uses measured current audio plus a finite exponential peak-release
+kernel, with roughly 180/125/75 ms bass/mid/treble releases and smooth frequency
+transitions. It introduces no extra attack interpolation. The 900 ms history
+kernel reaches zero continuously at its boundary. Raw/response caches each hold
+at most 384 96-band frames (about 288 KiB total float payload); a weak owner avoids
+retaining released sources. Mutable live history revisions invalidate cached
+measurements, including seeks, replacement and expiry. Unknown current times
+remain unavailable, rather than replaying a cached response. Tests cover five
+minutes of queries, cold/warm seek equality, reset, finite invalid inputs,
+frequency-dependent decay and current-only availability.
+
+Maximum-depth terrain export now includes the 900 ms response lookback plus
+250 ms source-filter support before the visible ten-second window. The same
+response adapter feeds preview and export; clipped/full prepared envelopes and
+24/30/60 FPS poses are tested for equivalent source-time geometry. Blob and
+Terrain export timing workload keys change to avoid learning from the cheaper
+previous renderer, while original-style timing keys stay intact.
+
+Fluid Dreams now uses a smaller, more expressive silhouette, stronger spatial
+softness, restrained aura and fewer particles; aggressive beat/drop accents are
+disabled. Neon Horizon uses a clean background, gently shaded surface and low
+ambient beat lighting so a second grid does not compete with the terrain.
+Both retain their stable IDs and existing reset, project and personal-look flows.
+
+Validation for this pass:
+
+- All 31 Node test files pass, including the new response model tests. TypeScript,
+  ESLint, Prettier, production build and diff checks pass.
+- Native Canvas captures cover six styles × seven audio cases × three aspects;
+  only the 42 Blob/Terrain reference signatures change. All 84 PNG hashes for the
+  other four styles remain identical. Maximum controls and both curated looks
+  were visually reviewed in landscape, portrait and square.
+- Desktop/mobile controls, live parameter changes during playback, pause/seek,
+  PNG capture, project reopening and personal Quick Look persistence pass for all
+  three new styles. Six full/clipped short-track exports contain audio/video and
+  decode; the actual Amnesia track also passes 60–65-second exports using the
+  two curated looks. WAV/MP3 media remain local; WASM activation is observed.
+- Cancellation produces no late download and releases the export lock. A
+  subsequent JavaScript-backend terrain export contains audio/video and decodes.
+- The real-song and synthetic cases separate current pitch response from beat
+  response and exercise sustained notes, silence and transients. This is not a
+  listening study across multiple genres or physical mobile hardware.
+
+A separate maximum-controls trace used the supplied 237.48-second song, source
+seconds 60–62.5, 1280×720 native Canvas, 30 warm-up and 120 measured frames. Every
+style-specific control, shared scale and glow was set to its supported maximum;
+particles/trails/beat lighting were disabled to isolate the primary style.
+Blob measured 1.700 ms p95 and Terrain 2.625 ms on the desktop host; 4× CPU
+throttling measured 2.145 and 8.815 ms respectively. The first cold draw was
+11.08/28.53 ms on desktop and 9.95/46.98 ms in the later throttled pass; JIT/cache
+warm-up and host variation make these single observations unsuitable for FPS
+claims. Default-control seven-case results and retained-memory observations are
+reported separately. Timings include history/geometry and Canvas submission,
+with analysis completed beforehand, and exclude GPU readback and encoding.
+
+The final seven-case repeat used Node 24.19.0 and headless Chromium
+151.0.7922.173 on the managed Debian Linux host. A fresh Vite process was used
+so direct probe imports and renderer imports share the same module instance;
+hot reload can otherwise duplicate the probe's response-cache instrumentation.
+The harness now rejects an inactive or unbounded response-cache probe.
+
+| Polished style | Desktop isolated p95 | Desktop composited p95 | 4× simulated isolated p95 | 4× simulated composited p95 |
+| --- | ---: | ---: | ---: | ---: |
+| Liquid Blob | 0.250–0.295 ms | 0.560–0.680 ms | 1.660–2.075 ms | 3.090–5.795 ms |
+| Spectral Terrain | 0.885–0.940 ms | 1.175–1.500 ms | 4.900–6.120 ms | 5.745–6.575 ms |
+
+These ranges fit the stated submission-time budgets on this host, without
+establishing universal display FPS. The geometry probe includes the response
+adapter in terrain sampling, rather than timing only raw history access. After
+3,600 frames and explicit GC, response caches held 359 frames for Blob and 396
+for Terrain, below the combined 768-frame bound. The final 1,200-frame retained
+heap changes were −60 and +48 bytes; raw source history held 180 test frames and
+live history stayed at its 304-frame bound. These are observational JS-heap
+results, not GPU/physical-device memory guarantees. Default/full results are in
+`/tmp/pulseframe-polish-verified/`; the separate real-song maximum-controls
+trace is `/tmp/pulseframe-polish-max-performance.json`.
+
+
 
 ## Limits and follow-up
 

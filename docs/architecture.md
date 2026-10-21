@@ -132,7 +132,16 @@ time or a discontinuity. Unknown past times return unavailable and are drawn
 without invented historical energy. Preview and PNG capture use the same source;
 offline export supplies the same history adapter with its absolute decode
 offset. New-style export preroll is aligned to the source analysis grid and includes
-an extra 250 ms of filter warm-up at the maximum history depth.
+an extra 1.15 seconds at the maximum history depth (900 ms response lookback
+plus 250 ms of analysis-filter warm-up).
+Blob and Terrain share a source-time peak-release adapter in `audio-response.ts`.
+It preserves current causal attacks, then lets bass/mids/treble settle at about
+180/125/75 ms respectively. The finite exponential kernel fades to zero at its
+900 ms lookback limit. Only measured past audio contributes, so no frame-clock
+simulation or FFT is needed. Two 384-frame caches add at most about 288 KiB of
+float payload per source, shared by the two styles. Live-history revisions and
+quiet-threshold changes invalidate caches; source ownership remains weak.
+
 The renderer owns no media elements, worker, encoder or React state.
 
 - **Radial Spectrum:** distinct polar bars sample the calibrated logarithmic
@@ -151,29 +160,37 @@ The renderer owns no media elements, worker, encoder or React state.
   instead of clipping individual lobes. Radius stays positive and below 43% of
   the short edge. Size scales a nominal
   24% radius; deformation and bass expansion remain bounded. Fluidity controls
-  angular frequency smoothing and a causal history blend (at most 80 ms lookback,
-  with at most 40% blend). Active lobes use fixed angles and follow measured
+  angular frequency smoothing and up to 55% of the shared release response.
+  Current normalized features are retained without another gain stage; raw
+  frequency amplitudes receive sensitivity once. Active lobes use fixed angles and follow measured
   frequency distribution rather than clock-driven rotation. Only optional idle
-  motion uses an absolute-time phase; reduced motion disables it. A few
-  gradient/highlight passes provide the surface without fluid simulation.
+  motion uses an absolute-time phase and fades in near silence; reduced motion
+  disables it. Clipped directional shading, edge shading and a soft highlight
+  provide volume. Internal Glow adds an interior wash and directional inset rim,
+  using the same closed-curve helper and a reusable inset buffer.
 - **Spectral Terrain:** a 32×24, 48×40 or 64×64 frequency/history mesh samples a
   two-to-ten-second source-time window. Interior rows retain fixed source
   timestamps while their projected depths advance; boundary rows follow the
   current window. This carries measured ridges through the scene instead of
   reshaping past audio on a stationary grid. A small frequency filter makes readable
-  ridges. Stable perspective projects it into bounded screen coordinates; peak
+  ridges. Bounded monotone cubic contours pass through measured frequency
+  vertices, and the optional fill uses the same contour as the wire. Continuous
+  depth fading reduces distant contrast, while row energy subtly shades fills.
+  Stable perspective projects it into bounded screen coordinates; peak
   height does not shrink when density increases. Travel speed controls an
   illuminated contour crossing the landscape, independently of the actual
   history window and audio clock. It interpolates by actual row depths so row
   rollover cannot shift the highlight. Entering/leaving horizontal lines fade over
-  one row interval to avoid doubling boundary-line brightness. Pausing holds it;
+  one row interval in both the base and glow passes to avoid brightness changes.
+  The traveling contour uses the same smooth curve and depth fade. Pausing holds it;
   reduced motion removes that
   decorative contour. Earlier ridges can occlude later valleys in projection.
 
 Geometry buffers are bounded and reused where useful. Canvas contexts and
 prepared envelopes key weak caches, so releasing their owners permits cleanup.
 Export timing history separates the new modes and coarse bar-count/detail/grid
-workloads; existing mode profile keys remain unchanged. Encoding, compression,
+workloads. Blob/Terrain use revised workload signatures so their previous render
+timings cannot bias estimates; other mode keys remain unchanged. Encoding, compression,
 resolution and FPS behavior are unchanged.
 
 The built-in Quick Looks contain exactly one look per visual style: Contour

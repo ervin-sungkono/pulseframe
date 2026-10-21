@@ -292,10 +292,18 @@ test("new style workload profiles distinguish costly geometry without changing e
   assert.notEqual(workload().styleComplexity, radial.styleComplexity);
   settings.mode = "blob";
   const blob = workload();
+  assert.ok(
+    blob.styleComplexity.startsWith("response2-"),
+    "new render costs do not reuse older blob timings",
+  );
   settings.blobOptions.detail = "high";
   assert.notEqual(workload().styleComplexity, blob.styleComplexity);
   settings.mode = "terrain";
   const terrain = workload();
+  assert.ok(
+    terrain.styleComplexity.startsWith("response2-"),
+    "new render costs do not reuse older terrain timings",
+  );
   settings.terrainOptions.density = "high";
   assert.notEqual(workload().styleComplexity, terrain.styleComplexity);
   const highDensity = workload();
