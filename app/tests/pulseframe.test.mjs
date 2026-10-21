@@ -12,6 +12,7 @@ const { settingsSchema, migrateSettings } = modules["visual-settings"];
 const { DEFAULT_SETTINGS } = modules["customizer-config"];
 const {
   createAudioReactiveState,
+  audioResponse,
   soundResponse,
   warmSoundResponse,
   drawVisualization,
@@ -298,6 +299,67 @@ test("silence, DC and inaudible noise do not cause deformation; kicks do", () =>
   assert.ok(response.bassPulse > 0.1);
   assert.ok(response.energy > 0.1);
 });
+test("the live analyser fallback eases motion separately and holds its envelope at zero delta", () => {
+  const state = createAudioReactiveState();
+  const loudFrequency = new Uint8Array(2048).fill(255);
+  const loudWave = Uint8Array.from({ length: 4096 }, (_, index) => (index % 2 ? 255 : 0));
+  const silentFrequency = new Uint8Array(2048);
+  const silentWave = new Uint8Array(4096).fill(128);
+  const response = audioResponse(
+    loudFrequency,
+    loudWave,
+    settings.quietThreshold,
+    settings.sensitivity,
+    state,
+    1000 / 30,
+    48000,
+    settings.bassBoost,
+    settings.responseStyle,
+  );
+  assert.ok(state.motionPulse > 0 && state.motionPulse < response.bassPulse);
+
+  for (let frame = 1; frame < 30; frame++)
+    audioResponse(
+      loudFrequency,
+      loudWave,
+      settings.quietThreshold,
+      settings.sensitivity,
+      state,
+      1000 / 30,
+      48000,
+      settings.bassBoost,
+      settings.responseStyle,
+    );
+  assert.ok(state.motionPulse > 0.5);
+
+  const held = state.motionPulse;
+  audioResponse(
+    loudFrequency,
+    loudWave,
+    settings.quietThreshold,
+    settings.sensitivity,
+    state,
+    0,
+    48000,
+    settings.bassBoost,
+    settings.responseStyle,
+  );
+  assert.equal(state.motionPulse, held);
+
+  for (let frame = 0; frame < 180; frame++)
+    audioResponse(
+      silentFrequency,
+      silentWave,
+      settings.quietThreshold,
+      settings.sensitivity,
+      state,
+      1000 / 30,
+      48000,
+      settings.bassBoost,
+      settings.responseStyle,
+    );
+  assert.ok(state.motionPulse < 0.02);
+});
 test("drop events use fixed source time, retain cut history, and end exactly", async () => {
   const events = await findDropEvents(generateDemo(24000, 32), 24000);
   assert.ok(
@@ -371,6 +433,53 @@ function fakeCanvas(width, height) {
     };
   return { ctx, draws, coords, operations };
 }
+test("audio-reactive rendering applies motionPulse rather than the faster hit contour", () => {
+  const w = 1280,
+    h = 720;
+  const active = {
+    ...settings,
+    motionPreset: "orbit",
+    motionBehavior: "audio-reactive",
+    motionAmount: 100,
+    motionSpeed: 1,
+    cameraShake: false,
+    particles: false,
+    trails: false,
+    beatRays: false,
+  };
+  const sound = new PcmFeatures([new Float32Array(48000)], 48000, 0, "js").at(0.8);
+  const state = createAudioReactiveState();
+  state.activity = 1;
+  state.ringPulse = 1;
+  state.motionPulse = 0.25;
+  state.ringMix = 1;
+  const { ctx, operations } = fakeCanvas(w, h);
+
+  drawVisualization(
+    ctx,
+    active,
+    sound.frequency,
+    sound.wave,
+    [],
+    2,
+    0,
+    null,
+    null,
+    state,
+    48000,
+    1,
+    [],
+    { sound },
+  );
+
+  const firstTranslate = operations.find((operation) => operation.name === "translate");
+  const expected = modules.motion.ringMotion(2, w, h, active, state.motionPulse);
+  const hitPose = modules.motion.ringMotion(2, w, h, active, state.ringPulse);
+  assert.ok(firstTranslate, "object transform should translate the ring group");
+  assert.ok(Math.abs(firstTranslate.args[0] - (w / 2 + expected.x)) < 1e-9);
+  assert.ok(Math.abs(firstTranslate.args[1] - (h / 2 + expected.y)) < 1e-9);
+  assert.ok(Math.hypot(expected.x - hitPose.x, expected.y - hitPose.y) > 10);
+});
 test("all three styles remain visible in silence across every export ratio", () => {
   const sound = new PcmFeatures([new Float32Array(48000)], 48000).at(0.8);
   for (const mode of ["ring", "spectrum", "edges"])

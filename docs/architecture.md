@@ -106,8 +106,11 @@ and Beat jump. Motion intensity controls travel, rotation or zoom; the existing
 Motion speed controls repeating movement. The ring, orbit accents and uploaded
 logo move together. Switching visual styles retains the ring settings.
 Choose **Continuous** for looping motion through silent sections or
-**Audio-reactive** to scale the movement with the existing smoothed bass-hit
-envelope and ease back toward rest during silence. Continuous is the default
+**Audio-reactive** to ease movement with a slower envelope derived from bass
+hits and return toward rest during silence. This prevents individual transients
+from snapping the ring's position. The motion response advances with source
+audio time and is replayed when seeking; ring/logo pulses, Beat jump and camera
+shake retain their faster beat response. Continuous is the default
 for new and older saved settings. Beat jump always follows the bass envelope;
 its behavior selector is disabled to avoid applying that response twice.
 Reactive Rotate rocks within 15 degrees of its original angle at full intensity
