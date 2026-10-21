@@ -1,4 +1,4 @@
-import type { VisualSettings } from "./visual-settings-model";
+import { MAX_RING_TRAVEL_PERCENT, type VisualSettings } from "./visual-settings-model";
 
 export type MotionTransform = { x: number; y: number; rotation: number; scale: number };
 
@@ -54,52 +54,79 @@ export function ringMotion(
     return identity();
 
   const shortEdge = Math.min(w, h);
+  const limit = shortEdge * (MAX_RING_TRAVEL_PERCENT / 100) * amount;
   const activity = clamp01(Number.isFinite(pulse) ? pulse : 0);
-  const idle = { x: 0, y: 0, rotation: 0, scale: 1 };
+  const reactive = settings.motionBehavior === "audio-reactive";
+  // Beat jump already applies the supplied envelope; never multiply it twice.
+  const response = reactive && preset !== "beat" ? activity : 1;
+  if (!response) return identity();
+  let transform: MotionTransform;
   switch (preset) {
     case "orbit": {
       const phase = motionPhase(time, speed, TAU / 12);
-      const radius = shortEdge * 0.1 * amount;
-      return { x: Math.cos(phase) * radius, y: Math.sin(phase) * radius, rotation: 0, scale: 1 };
+      transform = { x: Math.cos(phase) * limit, y: Math.sin(phase) * limit, rotation: 0, scale: 1 };
+      break;
     }
     case "bounce": {
       const phase = motionPhase(time, speed, TAU / 4.8);
-      const rise = shortEdge * 0.12 * amount;
-      return { x: 0, y: -rise * (1 - Math.cos(phase)) * 0.5, rotation: 0, scale: 1 };
+      transform = { x: 0, y: -limit * (1 - Math.cos(phase)) * 0.5, rotation: 0, scale: 1 };
+      break;
     }
     case "drift": {
       const phase = motionPhase(time, speed, TAU / 17);
       const verticalPhase = motionPhase(time, speed, (TAU / 17) * 0.71);
-      return {
-        x: Math.sin(phase) * shortEdge * 0.1 * amount,
-        y: Math.sin(verticalPhase + 1.2) * shortEdge * 0.07 * amount,
+      transform = {
+        x: Math.sin(phase) * limit * 0.8,
+        y: Math.sin(verticalPhase + 1.2) * limit * 0.6,
         rotation: 0,
         scale: 1,
       };
+      break;
     }
     case "rotate": {
       // Reducing the rate keeps each amount value a smooth full rotation loop.
       const phase = motionPhase(time, speed * amount, TAU / 16);
-      return { x: 0, y: 0, rotation: phase % TAU, scale: 1 };
+      // Rock around the original angle in reactive mode. Scaling a wrapped
+      // full turn by an audio envelope would jump at every phase boundary.
+      transform = {
+        x: 0,
+        y: 0,
+        rotation: reactive ? Math.sin(phase) * (Math.PI / 12) * amount : phase,
+        scale: 1,
+      };
+      break;
     }
     case "zoom": {
       const phase = motionPhase(time, speed, TAU / 8.5);
-      return { x: 0, y: 0, rotation: 0, scale: 1 + 0.06 * amount * (1 + Math.sin(phase)) };
+      transform = { x: 0, y: 0, rotation: 0, scale: 1 + 0.06 * amount * (1 + Math.sin(phase)) };
+      break;
     }
     case "beat": {
-      if (!activity) return idle;
+      if (!activity) return identity();
       const jump = activity * amount;
-      return {
+      transform = {
         x: 0,
-        y: -shortEdge * 0.08 * jump,
+        y: -limit * activity,
         rotation: 0,
         scale: 1 + 0.12 * jump,
       };
+      break;
     }
     case "none":
     default:
-      return idle;
+      return identity();
   }
+
+  // Limit the whole translation vector, including diagonal travel. Each frame
+  // is relative to the original composition, never the previous position.
+  const distance = Math.hypot(transform.x, transform.y);
+  const travel = distance > limit ? limit / distance : 1;
+  return {
+    x: transform.x * travel * response,
+    y: transform.y * travel * response,
+    rotation: transform.rotation * response,
+    scale: 1 + (transform.scale - 1) * response,
+  };
 }
 
 const SHAKE_RATE = 8.5;

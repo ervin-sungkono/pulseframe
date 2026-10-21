@@ -7,6 +7,7 @@ import {
   DEFAULT_LOGO_AUTO_FIT,
   DEFAULT_LOGO_FIT_SCALE,
   DEFAULT_LOGO_PLACEMENTS,
+  MAX_RING_TRAVEL_PERCENT,
   type VisualMode,
   type MotionPreset,
   type ParticleMode,
@@ -620,6 +621,32 @@ export function CustomizerPanel({
                   <p className="setting-hint">
                     Moves the ring, its orbit accents, and logo. Titles and subtitles stay still.
                   </p>
+                  <div className="setting-choice">
+                    <span>Motion behavior</span>
+                    <div className="pill-group" role="group" aria-label="Motion behavior">
+                      {(["continuous", "audio-reactive"] as const).map((behavior) => (
+                        <button
+                          type="button"
+                          key={behavior}
+                          disabled={
+                            settings.motionPreset === "none" || settings.motionPreset === "beat"
+                          }
+                          className={settings.motionBehavior === behavior ? "active" : ""}
+                          aria-pressed={settings.motionBehavior === behavior}
+                          onClick={() => change("motionBehavior", behavior)}
+                        >
+                          {behavior === "continuous" ? "Continuous" : "Audio-reactive"}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="setting-hint">
+                      {settings.motionPreset === "beat"
+                        ? "Beat jump always follows bass hits."
+                        : settings.motionBehavior === "audio-reactive"
+                          ? "Follows bass hits and eases back to rest during silence. Rotate gently rocks around its original angle."
+                          : "Keeps moving during silent sections while playback advances."}
+                    </p>
+                  </div>
                   <SettingSlider
                     label="Motion intensity"
                     value={settings.motionAmount}
@@ -629,6 +656,10 @@ export function CustomizerPanel({
                     disabled={settings.motionPreset === "none"}
                     onChange={(value) => change("motionAmount", value)}
                   />
+                  <p className="setting-hint">
+                    Travel stays within {MAX_RING_TRAVEL_PERCENT}% of the shorter canvas side from
+                    the original position. Lower intensity reduces this distance.
+                  </p>
                 </>
               ) : (
                 <p className="setting-hint">

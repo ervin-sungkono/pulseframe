@@ -5,6 +5,8 @@ export type ParticleFlow = "drift" | "rise" | "orbit";
 export type ResponseStyle = "punchy" | "balanced" | "smooth";
 export type BeatLighting = "rays" | "aura" | "beams" | "edges";
 export type MotionPreset = "none" | "orbit" | "bounce" | "drift" | "rotate" | "zoom" | "beat";
+export type MotionBehavior = "continuous" | "audio-reactive";
+export const MAX_RING_TRAVEL_PERCENT = 8;
 export type LogoPlacement = { x: number; y: number; size: number };
 
 export type VisualSettings = {
@@ -31,6 +33,7 @@ export type VisualSettings = {
   visualScale: number;
   motionSpeed: number;
   motionPreset: MotionPreset;
+  motionBehavior: MotionBehavior;
   motionAmount: number;
   cameraShake: boolean;
   cameraShakeAmount: number;

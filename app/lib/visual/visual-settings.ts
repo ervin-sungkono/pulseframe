@@ -53,6 +53,7 @@ export const settingsSchema = z.object({
     .enum(["none", "orbit", "bounce", "drift", "rotate", "zoom", "beat"])
     .default("none"),
   motionAmount: percent.min(0).max(100).default(50),
+  motionBehavior: z.enum(["continuous", "audio-reactive"]).default("continuous"),
   cameraShake: z.boolean().default(false),
   cameraShakeAmount: percent.min(0).max(100).default(35),
   particleSize: percent.min(0.25).max(3),

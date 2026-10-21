@@ -84,8 +84,7 @@ test("all ring presets stay finite and within their motion bounds across aspect 
       for (const time of times) {
         const transform = ringMotion(time, w, h, active, 1);
         finiteTransform(transform);
-        assert.ok(Math.abs(transform.x) <= shortEdge * 0.12 + 1e-9);
-        assert.ok(Math.abs(transform.y) <= shortEdge * 0.12 + 1e-9);
+        assert.ok(Math.hypot(transform.x, transform.y) <= shortEdge * 0.08 + 1e-9);
         assert.ok(transform.rotation >= 0 && transform.rotation <= Math.PI * 2 + 1e-9);
         assert.ok(transform.scale >= 1 && transform.scale <= 1.12 + 1e-9);
       }
@@ -99,6 +98,103 @@ test("all ring presets stay finite and within their motion bounds across aspect 
     motionSpeed: 0.1,
   };
   finiteTransform(ringMotion(Number.MAX_VALUE, 640, 480, tinyRotation, 0));
+});
+
+test("continuous motion ignores audio strength while reactive motion scales toward its original pose", () => {
+  for (const motionPreset of ["orbit", "bounce", "drift", "rotate", "zoom"]) {
+    const continuous = { ...settings, motionPreset, motionAmount: 100 };
+    const reactive = { ...continuous, motionBehavior: "audio-reactive" };
+    assert.deepEqual(
+      ringMotion(3, 1280, 720, continuous, 0),
+      ringMotion(3, 1280, 720, continuous, 1),
+    );
+    assert.deepEqual(ringMotion(3, 1280, 720, reactive, 0), identity);
+    assert.deepEqual(ringMotion(3, 1280, 720, reactive, 1, true), identity);
+    const full = ringMotion(3, 1280, 720, reactive, 1);
+    const quiet = ringMotion(3, 1280, 720, reactive, 0.25);
+    assert.ok(full.x || full.y || full.rotation || full.scale !== 1, motionPreset);
+    for (const key of ["x", "y", "rotation"])
+      assert.ok(Math.abs(quiet[key] - full[key] * 0.25) < 1e-10, `${motionPreset}: ${key}`);
+    assert.ok(Math.abs(quiet.scale - 1 - (full.scale - 1) * 0.25) < 1e-10);
+    const legacy = without(continuous, "motionBehavior");
+    assert.deepEqual(ringMotion(3, 1280, 720, legacy, 0), ringMotion(3, 1280, 720, continuous, 0));
+  }
+});
+
+test("ring travel remains inside its radial limit over long tracks, lower intensities and repeated seeks", () => {
+  for (const [w, h] of [
+    [1280, 720],
+    [720, 1280],
+    [800, 800],
+  ]) {
+    for (const motionBehavior of ["continuous", "audio-reactive"]) {
+      for (const motionPreset of ["orbit", "bounce", "drift", "beat"]) {
+        for (const motionAmount of [0, 25, 50, 100]) {
+          const active = { ...settings, motionBehavior, motionPreset, motionAmount };
+          const limit = Math.min(w, h) * 0.08 * (motionAmount / 100);
+          const pose = ringMotion(1.25, w, h, active, 0.75);
+          for (let time = 0; time <= 3600; time += 1.37) {
+            const transform = ringMotion(time, w, h, active, 1);
+            assert.ok(Math.hypot(transform.x, transform.y) <= limit + 1e-9);
+          }
+          assert.deepEqual(ringMotion(1.25, w, h, active, 0.75), pose);
+        }
+      }
+    }
+  }
+});
+
+test("reactive rotation stays near its original angle and is continuous across phase wrapping", () => {
+  const active = {
+    ...settings,
+    motionPreset: "rotate",
+    motionBehavior: "audio-reactive",
+    motionAmount: 100,
+  };
+  for (let time = 0; time < 120; time += 0.1) {
+    const transform = ringMotion(time, 800, 800, active, 1);
+    assert.ok(Math.abs(transform.rotation) <= Math.PI / 12 + 1e-12);
+  }
+  for (const pulse of [0.25, 0.75, 1]) {
+    const before = ringMotion(16 - 1e-6, 800, 800, active, pulse);
+    const after = ringMotion(16 + 1e-6, 800, 800, active, pulse);
+    assert.ok(Math.abs(before.rotation - after.rotation) < 1e-6);
+  }
+});
+
+test("Beat jump remains audio-driven in either behavior without applying the pulse twice", () => {
+  const active = { ...settings, motionPreset: "beat", motionAmount: 100 };
+  for (const pulse of [0, 0.25, 0.75, 1])
+    assert.deepEqual(
+      ringMotion(2, 1000, 700, active, pulse),
+      ringMotion(2, 1000, 700, { ...active, motionBehavior: "audio-reactive" }, pulse),
+    );
+});
+
+test("reactive motion eases toward rest using the shared audio response during trailing silence", () => {
+  const { createAudioReactiveState, soundResponse } = modules.visualizer;
+  const active = {
+    ...settings,
+    motionPreset: "orbit",
+    motionBehavior: "audio-reactive",
+    motionAmount: 100,
+  };
+  const state = createAudioReactiveState();
+  const loud = { rms: 0.3, rmsDb: -10, bassDb: -10, middleDb: -20, highDb: -30, bands: [] };
+  for (let i = 0; i < 30; i++) soundResponse(loud, active, state, 1000 / 30);
+  let previous = ringMotion(1, 1280, 720, active, state.ringPulse);
+  assert.ok(Math.hypot(previous.x, previous.y) > 1);
+  const silent = { rms: 0, rmsDb: -160, bassDb: -160, middleDb: -160, highDb: -160, bands: [] };
+  let lastPulse = state.ringPulse;
+  for (let i = 1; i <= 60; i++) {
+    soundResponse(silent, active, state, 1000 / 30);
+    assert.ok(state.ringPulse < lastPulse);
+    const pose = ringMotion(1 + i / 30, 1280, 720, active, state.ringPulse);
+    assert.ok(Math.hypot(pose.x, pose.y) < Math.hypot(previous.x, previous.y));
+    lastPulse = state.ringPulse;
+    previous = pose;
+  }
+  assert.ok(Math.hypot(previous.x, previous.y) < 1e-6);
 });
 
 test("ring loop presets are continuous at each waveform's wrap point", () => {
