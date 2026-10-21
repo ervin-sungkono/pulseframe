@@ -30,7 +30,8 @@ import {
   DEFAULT_EXPORT_FRAME_RATE,
   type ExportFrameRate,
 } from "./export-settings";
-import { exportFrames, exportSoundAt } from "./export-timeline";
+import { exportAnalysisStart, exportFrames, exportSoundAt } from "./export-timeline";
+import { PreparedFrequencyHistory } from "../visual/styles/frequency-history";
 import {
   ExportRunClock,
   makeExportTimingProfileBase,
@@ -114,7 +115,7 @@ export async function exportVisualVideo({
   let output: Output<Mp4OutputFormat | WebMOutputFormat, BufferTarget> | null = null;
   let features: PcmFeatures | null = null;
   try {
-    const analysisStart = prepared ? 0 : Math.max(0, start - 10);
+    const analysisStart = prepared ? 0 : exportAnalysisStart(start, settings);
     const dspReady = initializeDsp();
     const sound =
       prepared ??
@@ -229,6 +230,7 @@ export async function exportVisualVideo({
         )
       : null;
     const frameFeatures = features;
+    const frequencyHistory = new PreparedFrequencyHistory(sound.envelopes, analysisStart);
     const history = warmSoundResponse(sound.envelopes, settings, start - analysisStart),
       audioState = history.state;
     let lastAnalysisTime = history.lastTime;
@@ -281,7 +283,13 @@ export async function exportVisualVideo({
         sourceAudio?.sampleRate ?? 48000,
         duration,
         subtitles,
-        { sound: frameData, background, reducedMotion, drop: dropEnvelope(events, absoluteTime) },
+        {
+          sound: frameData,
+          background,
+          reducedMotion,
+          drop: dropEnvelope(events, absoluteTime),
+          history: frequencyHistory,
+        },
       );
       lastAnalysisTime = analysisTime;
       await videoSource.add(localTime, frameDuration, { keyFrame });

@@ -21,6 +21,7 @@ export type ExportWorkload = {
   /** Prepared sources have no export-time decode; fallback decode span is bucketed. */
   analysisBucket: string;
   mode: string;
+  styleComplexity?: string;
   ringLayers: number;
   spectrumReflectionTier: "off" | "low" | "medium" | "high";
   glowTier: "off" | "low" | "medium" | "high";
@@ -116,6 +117,7 @@ function validWorkload(value: unknown): value is ExportWorkload {
     isText(workload.durationBucket) &&
     isText(workload.analysisBucket) &&
     isText(workload.mode) &&
+    (workload.styleComplexity === undefined || isText(workload.styleComplexity)) &&
     Number.isInteger(workload.ringLayers) &&
     Number(workload.ringLayers) >= 0 &&
     Number(workload.ringLayers) <= 4 &&
@@ -506,6 +508,7 @@ export function makeExportWorkload(input: {
   analysisSeconds: number;
   preparedAudio: boolean;
   mode: string;
+  styleComplexity?: string;
   ringLayers: number;
   spectrumReflection: number;
   glow: number;
@@ -541,6 +544,7 @@ export function makeExportWorkload(input: {
     durationBucket: timingDurationBucket(input.durationSeconds),
     analysisBucket: input.preparedAudio ? "prepared" : timingDurationBucket(input.analysisSeconds),
     mode: input.mode,
+    ...(input.styleComplexity ? { styleComplexity: input.styleComplexity } : {}),
     ringLayers:
       input.mode === "ring" && Number.isInteger(input.ringLayers)
         ? Math.max(1, Math.min(4, input.ringLayers))
@@ -616,6 +620,14 @@ export function makeExportWorkloadForExport(input: {
     analysisSeconds: input.analysisSeconds,
     preparedAudio: input.preparedAudio,
     mode: settings.mode,
+    styleComplexity:
+      settings.mode === "radial"
+        ? `bars-${settings.radialOptions.barCount <= 64 ? "low" : settings.radialOptions.barCount <= 112 ? "medium" : "high"}`
+        : settings.mode === "blob"
+          ? `${settings.blobOptions.detail}-${settings.blobOptions.internalGlow > 0 ? "lit" : "flat"}`
+          : settings.mode === "terrain"
+            ? `${settings.terrainOptions.density}-${settings.terrainOptions.historySeconds <= 5 ? "short" : "long"}-${settings.terrainOptions.surfaceFill > 0 ? "filled" : "wire"}`
+            : undefined,
     ringLayers: settings.ringLayers,
     spectrumReflection: settings.spectrumReflection,
     glow: settings.glow,

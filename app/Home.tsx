@@ -51,7 +51,7 @@ import {
 import { CustomizerPanel } from "@/components/CustomizerPanel";
 import { ExportDialog } from "@/components/ExportDialog";
 import { PresetDialog } from "@/components/PresetDialog";
-import { applyPreset, presetStyle, type SavedPreset } from "@/lib/visual/presets";
+import { applyPreset, presetStyle, visualModeName, type SavedPreset } from "@/lib/visual/presets";
 import {
   BUILTIN_LOOKS,
   DEFAULT_SETTINGS,
@@ -257,8 +257,13 @@ export default function Home() {
     setMediaLoop(looping);
   }, [looping, setMediaLoop]);
 
-  const update = <K extends keyof VisualSettings>(key: K, value: VisualSettings[K]) => {
-    if (!exportingRef.current) setSettings((current) => ({ ...current, [key]: value }), key);
+  const update = <K extends keyof VisualSettings>(
+    key: K,
+    value: VisualSettings[K],
+    historyGroup?: string,
+  ) => {
+    if (!exportingRef.current)
+      setSettings((current) => ({ ...current, [key]: value }), historyGroup ?? key);
   };
   const applyLook = (changes: Partial<VisualSettings>) => {
     if (!exportingRef.current) setSettings((current) => ({ ...current, ...changes }));
@@ -418,7 +423,7 @@ export default function Home() {
       setProjectOpen(false);
       setNotice(
         project.migratedStyle
-          ? `Opened ${projectFile.name}. Its older visual style now uses ${project.settings.mode === "ring" ? "Pulse Ring" : "Spectrum"}.`
+          ? `Opened ${projectFile.name}. Its older visual style now uses ${visualModeName(project.settings.mode)}.`
           : `Opened ${projectFile.name}.`,
       );
     } catch (caught) {

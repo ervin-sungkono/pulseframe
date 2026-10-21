@@ -3,8 +3,26 @@ import type { ResponseStyle, VisualSettings } from "./visual-settings-model";
 import { activeSubtitles, type SubtitleCue } from "../subtitles/model";
 import type { SoundEnvelope } from "../audio/audio-features";
 import { drawGlitch } from "./glitch";
-import { drawTrackOverlay, trackOverlayLayout } from "./track-overlay";
+import { drawTrackOverlay } from "./track-overlay";
 import { drawBeatLighting } from "./beat-lighting";
+import { clamp, rgba, ringBandAmplitude } from "./styles/legacy-common";
+import { ringInnerRadius } from "./styles/pulse-ring";
+import { drawVisualStyle } from "./styles/registry";
+import type { FrequencyHistory } from "./styles/types";
+import { bandEnergy } from "./styles/frequency-history";
+import { sampleBands } from "./styles/shared";
+import { radialSpectrumAperture } from "./styles/radial-spectrum";
+import { DEFAULT_RADIAL_OPTIONS } from "./style-options";
+export { ringBandAmplitude } from "./styles/legacy-common";
+export { ringMagnitude } from "./styles/pulse-ring";
+export { spectrumLayout } from "./styles/spectrum";
+export { sampleBarBand } from "./styles/frequency-mapping";
+export { edgeBarLayout, edgeBarResponse } from "./styles/edge-bars";
+
+const styleBandBuffers = new WeakMap<
+  CanvasRenderingContext2D,
+  { current: Float32Array; prior: Float32Array }
+>();
 
 export type Particle = {
   x: number;
@@ -27,6 +45,7 @@ export type AudioReactiveState = {
   ringBands: Float32Array[][];
 };
 export type RenderExtras = {
+  history?: FrequencyHistory;
   sound?: SoundEnvelope | null;
   background?: LogoLayer | null;
   drop?: number;
@@ -59,21 +78,12 @@ export function makeParticles(count: number): Particle[] {
   }));
 }
 
-const rgba = (hex: string, alpha: number) => {
-  const v = hex.replace("#", "");
-  const r = parseInt(v.slice(0, 2), 16) || 0;
-  const g = parseInt(v.slice(2, 4), 16) || 0;
-  const b = parseInt(v.slice(4, 6), 16) || 0;
-  return `rgba(${r},${g},${b},${alpha})`;
-};
-
 const average = (data: Uint8Array, start: number, end: number) => {
   let sum = 0;
   for (let i = start; i < end; i++) sum += data[i] || 0;
   return sum / Math.max(1, end - start) / 255;
 };
 
-const clamp = (value: number) => Math.max(0, Math.min(1, value));
 const band = (data: Uint8Array, start: number, end: number) => {
   let peak = 0;
   for (let i = start; i < end; i++) peak = Math.max(peak, data[i] || 0);
@@ -90,12 +100,6 @@ function smooth(
   if (deltaMs <= 0) return current;
   const period = target > current ? attackMs : releaseMs;
   return current + (target - current) * (1 - Math.exp(-deltaMs / period));
-}
-
-/** Relative linear amplitude with the -12 dB display ceiling normalized to 1. */
-export function ringBandAmplitude(value: number) {
-  const floor = 10 ** (-63 / 20);
-  return clamp((10 ** (((clamp(value) - 1) * 63) / 20) - floor) / (1 - floor));
 }
 
 function updateRingResponse(
@@ -375,361 +379,6 @@ function drawBackdrop(
   }
 }
 
-const ringInnerRadius = (unit: number, bass: number) => unit * (0.205 + bass * 0.016) * 0.88;
-
-export function ringMagnitude(
-  bands: Float32Array[],
-  position: number,
-  sensitivity: number,
-  mirrored: boolean,
-  focus: "auto" | "bass" | "full" = "full",
-  top = 16000,
-  autoMix = 0,
-  bassBoost = 1,
-): number {
-  if (focus === "auto") {
-    const bass = ringMagnitude(bands, position, sensitivity * bassBoost, mirrored, "bass", top);
-    const full = ringMagnitude(bands, position, sensitivity, mirrored, "full", top);
-    return bass + (full - bass) * clamp(autoMix);
-  }
-  const u = ((position % 1) + 1) % 1,
-    folded = u <= 0.5 ? u * 2 : (1 - u) * 2;
-  // Bass focus spreads 35–450 Hz over each side instead of cramming it into
-  // a few points of a 35–16000 Hz spectrum. Full sound retains that range.
-  const mapped =
-    focus === "bass"
-      ? Math.log((35 + folded * (Math.min(450, top) - 35)) / 35) / Math.log(Math.max(36, top) / 35)
-      : folded;
-  const sample = (channel: Float32Array | undefined) => {
-    if (!channel?.length) return 0;
-    const index = mapped * (channel.length - 1),
-      a = Math.floor(index),
-      f = index - a;
-    const value = (i: number) => channel[Math.max(0, Math.min(channel.length - 1, i))] || 0;
-    return 0.65 * (value(a) * (1 - f) + value(a + 1) * f) + 0.175 * (value(a - 1) + value(a + 2));
-  };
-  const left = sample(bands[0]),
-    right = sample(bands[Math.min(1, bands.length - 1)]);
-  const shared = Math.sqrt((left * left + right * right) / 2);
-  const edge = clamp(Math.min(folded, 1 - folded) / 0.055),
-    blend = edge * edge * (3 - 2 * edge);
-  const magnitude = mirrored ? shared : shared + ((u < 0.5 ? left : right) - shared) * blend;
-  const contour = focus === "bass" ? Math.sin(Math.PI * folded) ** 0.45 : 1;
-  return (1 - Math.exp(-magnitude * sensitivity * 3)) * contour;
-}
-
-function drawRing(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  s: VisualSettings,
-  bandLayers: Float32Array[][],
-  bass: number,
-  energy: number,
-  sampleRate: number,
-  autoMix: number,
-) {
-  const unit = Math.min(w, h),
-    segments = 160;
-  const innerRadius = ringInnerRadius(unit, bass),
-    layers = Math.max(1, Math.min(4, Math.round(s.ringLayers ?? 3)));
-  const radius = innerRadius + unit * 0.007;
-  ctx.save();
-  // Paint outside-in: offset contours expose contrasting, solid ribbons,
-  // while the common inner aperture stays free for a fitted logo.
-  for (let layer = layers - 1; layer >= 0; layer--) {
-    const gradient = ctx.createLinearGradient(w * 0.23, h * 0.25, w * 0.76, h * 0.76);
-    const primary = layer % 2 ? s.secondary : s.primary,
-      secondary = layer % 2 ? s.primary : s.secondary;
-    gradient.addColorStop(0, secondary);
-    gradient.addColorStop(0.55, primary);
-    gradient.addColorStop(1, secondary);
-    const points: { x: number; y: number }[] = [];
-    ctx.beginPath();
-    for (let i = 0; i < segments; i++) {
-      const u = i / segments,
-        angle = u * Math.PI * 2 - Math.PI / 2;
-      const response = ringMagnitude(
-        bandLayers[layer] ?? bandLayers[0] ?? [],
-        u,
-        s.sensitivity * (s.ringFocus === "bass" ? s.bassBoost : 1),
-        s.ringMirror ?? false,
-        s.ringFocus ?? "auto",
-        Math.min(16000, sampleRate / 2),
-        autoMix,
-        s.bassBoost,
-      );
-      const r = radius + layer * unit * 0.003 + response * unit * (0.16 + layer * 0.008);
-      const x = w / 2 + Math.cos(angle) * r,
-        y = h / 2 + Math.sin(angle) * r;
-      points.push({ x, y });
-    }
-    const midpoint = (a: (typeof points)[number], b: (typeof points)[number]) =>
-      [(a.x + b.x) / 2, (a.y + b.y) / 2] as const;
-    ctx.moveTo(...midpoint(points.at(-1)!, points[0]));
-    for (let i = 0; i < points.length; i++)
-      ctx.quadraticCurveTo(
-        points[i].x,
-        points[i].y,
-        ...midpoint(points[i], points[(i + 1) % points.length]),
-      );
-    ctx.closePath();
-    ctx.moveTo(w / 2 + innerRadius, h / 2);
-    ctx.arc(w / 2, h / 2, innerRadius, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.globalAlpha = layer ? clamp((s.ringRearOpacity ?? 30) / 100) * (1 - 0.18 * (layer - 1)) : 1;
-    ctx.fillStyle = gradient;
-    ctx.shadowColor = primary;
-    ctx.shadowBlur = s.glow * unit * (layer ? 0.01 : 0.012);
-    ctx.fill("evenodd");
-  }
-  ctx.globalAlpha = 1;
-  ctx.shadowBlur = 0;
-  ctx.beginPath();
-  ctx.arc(w / 2, h / 2, innerRadius, 0, Math.PI * 2);
-  ctx.fillStyle = rgba(s.background, 0.72);
-  ctx.fill();
-  ctx.strokeStyle = rgba(s.secondary, 0.32 + energy * 0.16);
-  ctx.lineWidth = Math.max(1, unit * 0.002);
-  ctx.stroke();
-  ctx.restore();
-}
-
-/** Final canvas coordinates: scaling changes the composition, never its center or bounds. */
-export function spectrumLayout(
-  w: number,
-  h: number,
-  scale: number,
-  glow: number,
-  reservedTop = 0,
-  reservedBottom = 0,
-) {
-  const short = Math.min(w, h),
-    margin = Math.max(12, short * 0.035 + glow * short * 0.018);
-  const zone = Math.max(1, Math.min(w - margin * 2, w * 0.78 * scale));
-  const count = Math.max(32, Math.min(72, Math.round(zone / 12 / 2) * 2));
-  const gap = Math.min((zone / count) * 0.4, Math.max(1.5, zone * 0.0025));
-  const barWidth = (zone - gap * (count - 1)) / count;
-  const maxHalf = Math.max(
-    2,
-    Math.min(
-      short * 0.32 * scale,
-      h / 2 - margin,
-      h / 2 - reservedTop - margin,
-      h / 2 - reservedBottom - margin,
-    ),
-  );
-  return {
-    centerX: w / 2,
-    centerY: h / 2,
-    x: (w - zone) / 2,
-    zone,
-    count,
-    gap,
-    barWidth,
-    maxHalf,
-    margin,
-  };
-}
-
-/** Smooth neighboring bands, then average one bar's fractional frequency footprint. */
-export function sampleBarBand(
-  channel: Float32Array | undefined,
-  position: number,
-  bandwidth: number,
-) {
-  if (!channel?.length) return 0;
-  if (channel.length === 1) return channel[0];
-  const value = (index: number) => channel[Math.max(0, Math.min(channel.length - 1, index))];
-  // A small binomial filter softens repeated bass bins without altering DSP
-  // measurements or the separate Pulse Ring response.
-  const filtered = (index: number) =>
-    (value(index - 2) +
-      4 * value(index - 1) +
-      6 * value(index) +
-      4 * value(index + 1) +
-      value(index + 2)) /
-    16;
-  const center = clamp(position) * (channel.length - 1),
-    halfWidth = (clamp(bandwidth) * (channel.length - 1)) / 2,
-    first = Math.max(0, center - halfWidth),
-    last = Math.min(channel.length - 1, center + halfWidth);
-  if (last <= first) {
-    const index = Math.floor(center),
-      fraction = center - index;
-    return filtered(index) * (1 - fraction) + filtered(index + 1) * fraction;
-  }
-  let area = 0;
-  for (let left = first; left < last;) {
-    const index = Math.floor(left),
-      right = Math.min(last, index + 1),
-      start = left - index,
-      end = right - index,
-      amplitude = filtered(index),
-      slope = filtered(index + 1) - amplitude;
-    area += amplitude * (right - left) + (slope * (end * end - start * start)) / 2;
-    left = right;
-  }
-  return area / (last - first);
-}
-
-export function edgeBarLayout(
-  w: number,
-  h: number,
-  scale: number,
-  glow: number,
-  centerClearance = 0,
-) {
-  const base = spectrumLayout(w, h, scale, glow);
-  return {
-    ...base,
-    maxHeight: Math.max(
-      2,
-      Math.min(Math.min(w, h) * 0.32 * scale, h * 0.38, h / 2 - centerClearance - base.margin),
-    ),
-  };
-}
-export function edgeBarResponse(
-  bands: Float32Array[],
-  index: number,
-  count: number,
-  edge: "top" | "bottom",
-  sensitivity: number,
-) {
-  const position = edge === "top" ? index / (count - 1) : 1 - index / (count - 1);
-  const bandwidth = 1 / Math.max(1, count - 1);
-  const left = sampleBarBand(bands[0], position, bandwidth),
-    right = sampleBarBand(bands[Math.min(1, bands.length - 1)], position, bandwidth);
-  return 1 - Math.exp(-Math.sqrt((left * left + right * right) / 2) * sensitivity * 3.8);
-}
-function drawEdgeBars(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  s: VisualSettings,
-  bands: Float32Array[],
-  fittedLogo: boolean,
-) {
-  const clear = fittedLogo
-    ? Math.min(w, h) * 0.085 * (s.logoFitScale.edges / 100) + s.glow * 16
-    : 0;
-  const { x, count, gap, barWidth, maxHeight } = edgeBarLayout(w, h, s.visualScale, s.glow, clear),
-    idle = Math.min(3, maxHeight);
-  ctx.save();
-  for (const edge of ["top", "bottom"] as const) {
-    const gradient = ctx.createLinearGradient(
-      0,
-      edge === "top" ? 0 : h,
-      0,
-      edge === "top" ? maxHeight : h - maxHeight,
-    );
-    gradient.addColorStop(0, s.primary);
-    gradient.addColorStop(0.65, s.primary);
-    gradient.addColorStop(1, s.secondary);
-    ctx.fillStyle = gradient;
-    ctx.shadowColor = s.primary;
-    ctx.shadowBlur = s.glow * Math.min(w, h) * 0.009;
-    for (let i = 0; i < count; i++) {
-      const amp = idle + edgeBarResponse(bands, i, count, edge, s.sensitivity) * (maxHeight - idle);
-      ctx.beginPath();
-      ctx.roundRect(
-        x + i * (barWidth + gap),
-        edge === "top" ? 0 : h - amp,
-        barWidth,
-        amp,
-        Math.min(barWidth / 2, amp / 2) * clamp((s.spectrumRoundness ?? 100) / 100),
-      );
-      ctx.fill();
-    }
-  }
-  ctx.restore();
-}
-
-function drawSpectrum(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  s: VisualSettings,
-  bands: Float32Array[],
-  energy: number,
-  impact: number,
-  fittedLogo: boolean,
-  captionLane: number,
-) {
-  const short = Math.min(w, h),
-    edge = Math.max(22, short * 0.055);
-  // Reserve the same caption lane for the whole track, preventing layout jumps.
-  let top = fittedLogo ? h * 0.21 + short * 0.085 * (s.logoFitScale.spectrum / 100) : 0;
-  let bottom = captionLane ? edge + captionLane : 0;
-  const overlay = trackOverlayLayout(w, h, s, captionLane);
-  top = Math.max(top, overlay.topSpace);
-  bottom = Math.max(bottom, overlay.bottomSpace);
-  const layout = spectrumLayout(w, h, s.visualScale, s.glow, top, bottom);
-  const { x, centerY: mid, zone, count, gap, barWidth, maxHalf } = layout;
-  const idle = Math.min(maxHalf, Math.max(2, short * 0.004));
-  const bars = Array.from({ length: count }, (_, i) => {
-    const pos = Math.abs(i - (count - 1) / 2) / ((count - 1) / 2);
-    // Each mirrored half spans the full frequency range.
-    const bandwidth = 2 / (count - 1);
-    const left = sampleBarBand(bands[0], pos, bandwidth),
-      right = sampleBarBand(bands[Math.min(1, bands.length - 1)], pos, bandwidth);
-    const value = Math.sqrt((left * left + right * right) / 2);
-    const response = clamp(
-      1 - Math.exp(-value * s.sensitivity * 3.8) + impact * 0.12 * (1 - pos) ** 2,
-    );
-    const amp = idle + response * (maxHalf - idle),
-      bx = x + i * (barWidth + gap);
-    const radius = Math.min(barWidth / 2, amp) * clamp((s.spectrumRoundness ?? 100) / 100);
-    return { amp, bx, radius };
-  });
-  ctx.save();
-  // Each half shares one clip and shadow setup; retain individual gradients.
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, w, mid);
-  ctx.clip();
-  ctx.shadowColor = s.primary;
-  ctx.shadowBlur = s.glow * short * 0.014;
-  for (const { amp, bx, radius } of bars) {
-    const upper = ctx.createLinearGradient(0, mid - amp, 0, mid);
-    upper.addColorStop(0, s.secondary);
-    upper.addColorStop(0.25, s.primary);
-    upper.addColorStop(1, s.secondary);
-    ctx.fillStyle = upper;
-    ctx.beginPath();
-    ctx.roundRect(bx, mid - amp, barWidth, amp * 2, radius);
-    ctx.fill();
-  }
-  ctx.restore();
-  const reflection = clamp((s.spectrumReflection ?? 45) / 100);
-  if (reflection > 0) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, mid, w, h - mid);
-    ctx.clip();
-    ctx.shadowBlur = 0;
-    for (const { amp, bx, radius } of bars) {
-      const lower = ctx.createLinearGradient(0, mid, 0, mid + amp);
-      lower.addColorStop(0, rgba(s.secondary, reflection));
-      lower.addColorStop(0.45, rgba(s.primary, reflection * 0.65));
-      lower.addColorStop(1, rgba(s.secondary, reflection * 0.08));
-      ctx.fillStyle = lower;
-      ctx.beginPath();
-      ctx.roundRect(bx, mid - amp, barWidth, amp * 2, radius);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = rgba(s.secondary, 0.2 + energy * 0.25);
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(x, mid);
-  ctx.lineTo(x + zone, mid);
-  ctx.stroke();
-  ctx.restore();
-}
-
 /** Log-frequency, linear-amplitude bands for the non-PCM demo fallback. */
 function fallbackBands(frequency: Uint8Array, sampleRate: number, activity: number) {
   const top = Math.min(16000, sampleRate / 2);
@@ -772,8 +421,29 @@ function drawLogo(
   ctx.globalAlpha = s.logoOpacity / 100;
   if (s.logoAutoFit[s.mode]) {
     const short = Math.min(w, h);
-    const circle = s.mode === "ring";
-    const width = circle ? ringInnerRadius(short, bass) * 2 * s.visualScale : short * 0.36;
+    const circle = s.mode === "ring" || s.mode === "radial" || s.mode === "blob";
+    const radialAperture =
+      s.mode === "radial"
+        ? radialSpectrumAperture(
+            {
+              width: w,
+              height: h,
+              visualScale: s.visualScale,
+              glow: s.glow,
+            },
+            s.radialOptions ?? DEFAULT_RADIAL_OPTIONS,
+          ) * 1.9
+        : 0;
+    const blobAperture =
+      short * Math.min(0.25, ((0.27 * (s.blobOptions?.size ?? 100)) / 100) * s.visualScale);
+    const width =
+      s.mode === "ring"
+        ? ringInnerRadius(short, bass) * 2 * s.visualScale
+        : s.mode === "radial"
+          ? radialAperture
+          : s.mode === "blob"
+            ? blobAperture
+            : short * 0.36;
     const height = circle ? width : short * 0.17;
     const centerY = circle || s.mode === "edges" ? h / 2 : h * 0.21;
     const scale = Math.max(0.5, Math.min(1, (s.logoFitScale?.[s.mode] ?? 100) / 100));
@@ -1092,6 +762,46 @@ export function drawVisualization(
   const bands = extras.sound
     ? (state.ringBands[0] ?? [])
     : fallbackBands(frequency, sampleRate, activity);
+  let styleAudio = {
+    activity,
+    bass: bassPulse,
+    mid: energy,
+    treble: energy,
+    energy,
+    impact: ringPulse,
+    bands,
+    bandLayers: extras.sound ? state.ringBands : [bands],
+    ringMix: extras.sound ? state.ringMix : 1,
+  };
+  if (settings.mode === "radial" || settings.mode === "blob" || settings.mode === "terrain") {
+    let buffers = styleBandBuffers.get(ctx);
+    if (!buffers) {
+      buffers = { current: new Float32Array(96), prior: new Float32Array(96) };
+      styleBandBuffers.set(ctx, buffers);
+    }
+    const measured = extras.history?.read(time, buffers.current, settings.quietThreshold);
+    if (!measured)
+      for (let i = 0; i < buffers.current.length; i++)
+        buffers.current[i] = sampleBands(bands, i / (buffers.current.length - 1));
+    const previous = extras.history?.read(time - 0.15, buffers.prior, settings.quietThreshold);
+    const bass = bandEnergy(buffers.current, 0, 0.27, settings.sensitivity * settings.bassBoost);
+    const mid = bandEnergy(buffers.current, 0.27, 0.7, settings.sensitivity);
+    const treble = bandEnergy(buffers.current, 0.7, 1, settings.sensitivity);
+    const priorBass = previous
+      ? bandEnergy(buffers.prior, 0, 0.27, settings.sensitivity * settings.bassBoost)
+      : 0;
+    const energy = Math.max(bass, mid, treble);
+    styleAudio = {
+      ...styleAudio,
+      activity: energy,
+      bass,
+      mid,
+      treble,
+      energy,
+      impact: Math.max(0, Math.min(1, (bass - priorBass) * 2)),
+      bands: [buffers.current],
+    };
+  }
   ctx.clearRect(0, 0, w, h);
   const drop = settings.dropEffects && !extras.reducedMotion ? (extras.drop ?? 0) : 0;
   drawBackdrop(ctx, w, h, settings, motionTime, video, extras.background, drop);
@@ -1119,38 +829,24 @@ export function drawVisualization(
     ctx.restore();
   }
   ctx.save();
-  ctx.globalAlpha = 0.7 + activity * 0.3;
+  ctx.globalAlpha = 0.7 + styleAudio.activity * 0.3;
   if (settings.mode === "ring") {
     ctx.translate(w / 2, h / 2);
     ctx.scale(settings.visualScale, settings.visualScale);
     ctx.translate(-w / 2, -h / 2);
   }
-  if (settings.mode === "ring")
-    drawRing(
-      ctx,
-      w,
-      h,
-      settings,
-      extras.sound ? state.ringBands : [bands],
-      ringPulse,
-      energy,
-      sampleRate,
-      extras.sound ? state.ringMix : 1,
-    );
-  if (settings.mode === "edges")
-    drawEdgeBars(ctx, w, h, settings, bands, !!logo && settings.logoAutoFit.edges);
-  if (settings.mode === "spectrum")
-    drawSpectrum(
-      ctx,
-      w,
-      h,
-      settings,
-      bands,
-      energy,
-      ringPulse,
-      !!logo && settings.logoAutoFit.spectrum,
-      captionHeight,
-    );
+  drawVisualStyle(ctx, {
+    width: w,
+    height: h,
+    time,
+    sampleRate,
+    settings,
+    reducedMotion: !!extras.reducedMotion,
+    fittedLogo: !!logo && settings.logoAutoFit[settings.mode],
+    captionHeight,
+    audio: styleAudio,
+    history: extras.history,
+  });
   if (settings.trails) {
     ctx.save();
     ctx.translate(w / 2, h / 2);

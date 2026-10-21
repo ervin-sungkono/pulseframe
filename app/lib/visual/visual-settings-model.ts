@@ -1,4 +1,6 @@
-export type VisualMode = "ring" | "spectrum" | "edges";
+import type { RadialOptions, BlobOptions, TerrainOptions } from "./style-options";
+export const VISUAL_MODES = ["ring", "spectrum", "edges", "radial", "blob", "terrain"] as const;
+export type VisualMode = (typeof VISUAL_MODES)[number];
 export type ParticleMode = "stardust" | "sparks" | "constellation" | "comets";
 export type BackdropMode = "nebula" | "grid" | "clean";
 export type ParticleFlow = "drift" | "rise" | "orbit";
@@ -8,6 +10,9 @@ export type LogoPlacement = { x: number; y: number; size: number };
 
 export type VisualSettings = {
   mode: VisualMode;
+  radialOptions: RadialOptions;
+  blobOptions: BlobOptions;
+  terrainOptions: TerrainOptions;
   spectrumRoundness: number;
   spectrumReflection: number;
   ringLayers: number;
@@ -66,16 +71,25 @@ export const DEFAULT_LOGO_PLACEMENTS: Record<VisualMode, LogoPlacement> = {
   ring: { x: 50, y: 50, size: 26 },
   spectrum: { x: 50, y: 25, size: 17 },
   edges: { x: 50, y: 50, size: 20 },
+  radial: { x: 50, y: 50, size: 20 },
+  blob: { x: 50, y: 50, size: 20 },
+  terrain: { x: 50, y: 25, size: 20 },
 };
 
 export const DEFAULT_LOGO_AUTO_FIT: Record<VisualMode, boolean> = {
   ring: true,
   spectrum: true,
   edges: true,
+  radial: true,
+  blob: true,
+  terrain: true,
 };
 
 export const DEFAULT_LOGO_FIT_SCALE: Record<VisualMode, number> = {
   ring: 100,
   spectrum: 100,
   edges: 100,
+  radial: 100,
+  blob: 100,
+  terrain: 100,
 };

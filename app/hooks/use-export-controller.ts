@@ -18,6 +18,7 @@ import {
   type RemainingEstimate,
   type TimeRange,
 } from "@/lib/export/export-time-estimate";
+import { exportAnalysisStart } from "@/lib/export/export-timeline";
 import { formatTimestamp } from "@/lib/time";
 
 export type UseExportControllerOptions = {
@@ -51,7 +52,10 @@ function sourceProfileBase(source: ExportSource): ExportTimingProfileBase {
     preparedAudio: !!source.prepared,
     workload: makeExportWorkloadForExport({
       durationSeconds: source.range[1] - source.range[0],
-      analysisSeconds: Math.max(0, source.range[1] - Math.max(0, source.range[0] - 10)),
+      analysisSeconds: Math.max(
+        0,
+        source.range[1] - exportAnalysisStart(source.range[0], settings),
+      ),
       preparedAudio: !!source.prepared,
       settings,
       subtitles: source.subtitles.length > 0,

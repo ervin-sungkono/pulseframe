@@ -45,5 +45,19 @@ export function applyPreset(current: VisualSettings, style: PresetStyle): Visual
     trackArtist: current.trackArtist,
   };
 }
-export const visualModeName = (mode: VisualSettings["mode"]) =>
-  mode === "ring" ? "Pulse Ring" : mode === "edges" ? "Edge Bars" : "Spectrum";
+export const visualModeName = (mode: VisualSettings["mode"]) => {
+  switch (mode) {
+    case "ring":
+      return "Pulse Ring";
+    case "spectrum":
+      return "Spectrum";
+    case "edges":
+      return "Edge Bars";
+    case "radial":
+      return "Radial Spectrum";
+    case "blob":
+      return "Liquid Blob";
+    case "terrain":
+      return "Spectral Terrain";
+  }
+};

@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { VisualSettings } from "../visual/visual-settings-model";
+import {
+  VISUAL_MODES,
+  type VisualMode,
+  type VisualSettings,
+} from "../visual/visual-settings-model";
 import { settingsSchema, migrateSettings } from "../visual/visual-settings";
 import {
   DEFAULT_EXPORT_FRAME_RATE,
@@ -162,12 +166,9 @@ export async function readProjectFile(file: File): Promise<ProjectContent> {
     frameRate: data.frameRate,
     range: data.range,
     settings: migrateSettings(data.settings),
-    migratedStyle:
-      data.settings.mode === "ring" ||
-      data.settings.mode === "spectrum" ||
-      data.settings.mode === "edges"
-        ? undefined
-        : data.settings.mode,
+    migratedStyle: VISUAL_MODES.includes(data.settings.mode as VisualMode)
+      ? undefined
+      : data.settings.mode,
     subtitles: data.subtitles,
     media: new File([file.slice(mediaStart, logoStart)], data.media.name, {
       type: data.media.type,

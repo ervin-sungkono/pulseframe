@@ -203,6 +203,72 @@
   opacity: 0.8;
   box-shadow: none;
 }
+.look-art.radial::before {
+  width: 38px;
+  height: 38px;
+  top: 9px;
+  left: calc(50% - 19px);
+  border: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    from 3deg,
+    var(--look-secondary) 0deg 3deg,
+    transparent 3deg 12deg
+  );
+  mask-image: radial-gradient(circle, transparent 0 28%, #000 32% 65%, transparent 70%);
+  box-shadow: 0 0 12px var(--look-primary);
+}
+.look-art.radial::after {
+  display: block;
+  width: 11px;
+  height: 11px;
+  top: 22px;
+  left: calc(50% - 5px);
+  border: 1px solid var(--look-primary);
+  background: var(--look-background);
+}
+.look-art.blob::before {
+  width: 39px;
+  height: 36px;
+  top: 10px;
+  left: calc(50% - 19px);
+  border: 1px solid var(--look-secondary);
+  border-radius: 44% 56% 60% 40% / 47% 40% 60% 53%;
+  background: radial-gradient(
+    circle at 35% 28%,
+    var(--look-secondary),
+    var(--look-primary) 62%,
+    transparent
+  );
+  box-shadow:
+    0 0 14px var(--look-primary),
+    inset 0 0 10px var(--look-secondary);
+}
+.look-art.blob::after {
+  display: none;
+}
+.look-art.terrain::before {
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  border: 0;
+  border-radius: 0;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 6px, var(--look-primary) 6px 7px),
+    repeating-linear-gradient(90deg, transparent 0 11px, var(--look-secondary) 11px 12px);
+  clip-path: polygon(0 30%, 20% 42%, 45% 22%, 65% 40%, 82% 18%, 100% 32%, 100% 100%, 0 100%);
+  opacity: 0.8;
+  box-shadow: none;
+}
+.look-art.terrain::after {
+  display: none;
+}
+.look-art.radial i,
+.look-art.blob i,
+.look-art.terrain i {
+  display: none;
+}
 .preset-card {
   flex-wrap: wrap;
 }

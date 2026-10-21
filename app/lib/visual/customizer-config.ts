@@ -3,8 +3,14 @@ import {
   DEFAULT_LOGO_AUTO_FIT,
   DEFAULT_LOGO_FIT_SCALE,
   DEFAULT_LOGO_PLACEMENTS,
+  VISUAL_MODES,
   type VisualSettings,
 } from "./visual-settings-model";
+import {
+  DEFAULT_BLOB_OPTIONS,
+  DEFAULT_RADIAL_OPTIONS,
+  DEFAULT_TERRAIN_OPTIONS,
+} from "./style-options";
 
 export type CustomizerSection = "visual" | "colors" | "motion" | "audio" | "logo" | "track";
 
@@ -17,6 +23,9 @@ export const SECTION_KEYS: Record<CustomizerSection, readonly (keyof VisualSetti
     "ringRearOpacity",
     "ringMirror",
     "ringFocus",
+    "radialOptions",
+    "blobOptions",
+    "terrainOptions",
     "visualScale",
   ],
   colors: [
@@ -76,6 +85,9 @@ export const palettes = [
 
 export const DEFAULT_SETTINGS: VisualSettings = {
   mode: "ring",
+  radialOptions: DEFAULT_RADIAL_OPTIONS,
+  blobOptions: DEFAULT_BLOB_OPTIONS,
+  terrainOptions: DEFAULT_TERRAIN_OPTIONS,
   spectrumRoundness: 100,
   spectrumReflection: 45,
   ringLayers: 3,
@@ -136,16 +148,17 @@ function makeStyle(changes: Partial<VisualSettings>): PresetStyle {
   const normalized: VisualSettings = {
     ...DEFAULT_SETTINGS,
     ...changes,
+    radialOptions: { ...DEFAULT_SETTINGS.radialOptions, ...changes.radialOptions },
+    blobOptions: { ...DEFAULT_SETTINGS.blobOptions, ...changes.blobOptions },
+    terrainOptions: { ...DEFAULT_SETTINGS.terrainOptions, ...changes.terrainOptions },
     logoAutoFit: { ...DEFAULT_SETTINGS.logoAutoFit, ...changes.logoAutoFit },
     logoFitScale: { ...DEFAULT_SETTINGS.logoFitScale, ...changes.logoFitScale },
-    logoPlacements: {
-      ring: { ...DEFAULT_SETTINGS.logoPlacements.ring, ...changes.logoPlacements?.ring },
-      spectrum: {
-        ...DEFAULT_SETTINGS.logoPlacements.spectrum,
-        ...changes.logoPlacements?.spectrum,
-      },
-      edges: { ...DEFAULT_SETTINGS.logoPlacements.edges, ...changes.logoPlacements?.edges },
-    },
+    logoPlacements: Object.fromEntries(
+      VISUAL_MODES.map((mode) => [
+        mode,
+        { ...DEFAULT_SETTINGS.logoPlacements[mode], ...changes.logoPlacements?.[mode] },
+      ]),
+    ) as VisualSettings["logoPlacements"],
   };
   const { trackTitle: _trackTitle, trackArtist: _trackArtist, ...style } = normalized;
   void _trackTitle;
@@ -295,6 +308,84 @@ const lookDefinitions: Array<Omit<BuiltinLook, "settings"> & { changes: Partial<
         trails: true,
         beatRays: false,
         glow: 1.1,
+      },
+    },
+    {
+      id: "orbit",
+      name: "Orbit",
+      caption: "Rotating radial spectrum",
+      changes: {
+        mode: "radial",
+        primary: palettes[0].secondary,
+        secondary: palettes[0].primary,
+        background: palettes[5].background,
+        backdrop: "clean",
+        radialOptions: {
+          ...DEFAULT_RADIAL_OPTIONS,
+          barCount: 112,
+          innerRadius: 24,
+          maxBarLength: 24,
+          direction: "mirrored",
+          rotationSpeed: 18,
+          variant: "both",
+        },
+        particles: false,
+        trails: true,
+        beatRays: false,
+        glow: 1.25,
+      },
+    },
+    {
+      id: "fluid-dreams",
+      name: "Fluid Dreams",
+      caption: "Soft living waveform",
+      changes: {
+        mode: "blob",
+        primary: palettes[0].primary,
+        secondary: palettes[2].primary,
+        background: palettes[0].background,
+        backdrop: "nebula",
+        blobOptions: {
+          ...DEFAULT_BLOB_OPTIONS,
+          size: 110,
+          deformation: 35,
+          fluidity: 60,
+          detail: "medium",
+          bassExpansion: 70,
+          internalGlow: 60,
+          idleMotion: "subtle",
+        },
+        particles: true,
+        particleMode: "stardust",
+        trails: false,
+        beatLighting: "aura",
+        glow: 1.45,
+      },
+    },
+    {
+      id: "neon-horizon",
+      name: "Neon Horizon",
+      caption: "A moving audio landscape",
+      changes: {
+        mode: "terrain",
+        primary: palettes[0].secondary,
+        secondary: palettes[0].primary,
+        background: "#10091f",
+        backdrop: "grid",
+        terrainOptions: {
+          ...DEFAULT_TERRAIN_OPTIONS,
+          height: 60,
+          historySeconds: 5,
+          density: "medium",
+          perspective: "medium",
+          wireOpacity: 82,
+          surfaceFill: 12,
+        },
+        particles: false,
+        trails: false,
+        beatRays: true,
+        beatLighting: "beams",
+        glow: 1.25,
       },
     },
   ];
