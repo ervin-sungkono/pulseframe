@@ -21,6 +21,7 @@ export type AudioReactiveState = {
   activity: number;
   bass: number;
   energy: number;
+  motionPulse: number;
   bands: Float32Array[];
   ringBaseline: number;
   ringPulse: number;
@@ -39,6 +40,7 @@ export function createAudioReactiveState(): AudioReactiveState {
     activity: 0,
     bass: 0,
     energy: 0,
+    motionPulse: 0,
     bands: [],
     ringBaseline: 0,
     ringPulse: 0,
@@ -187,6 +189,9 @@ export function soundResponse(
       );
     }
   updateRingResponse(frame, settings, state, activity, deltaMs, speed);
+  // Ease movement separately from sharp ring/logo hits. Source-time state is
+  // replayed by preview seeks and export warmup, and stays still when paused.
+  state.motionPulse = smooth(state.motionPulse, state.ringPulse, deltaMs, 450, 600);
   return {
     activity: state.activity,
     bassPulse: state.bass * state.activity,
@@ -269,9 +274,11 @@ export function audioResponse(
       ) * sensitivity,
     ) * activity;
   state.energy = smooth(state.energy, targetEnergy, deltaMs, 32 * speed, 180 * speed);
+  const bassPulse = state.bass * state.activity;
+  state.motionPulse = smooth(state.motionPulse, bassPulse, deltaMs, 450, 600);
   return {
     activity: state.activity,
-    bassPulse: state.bass * state.activity,
+    bassPulse,
     energy: state.energy,
   };
 }
@@ -1111,7 +1118,11 @@ export function drawVisualization(
     audibleActivity,
     extras.reducedMotion,
   );
-  const object = ringMotion(time, w, h, settings, ringPulse, extras.reducedMotion);
+  const motionPulse =
+    settings.motionBehavior === "audio-reactive" && settings.motionPreset !== "beat"
+      ? state.motionPulse
+      : ringPulse;
+  const object = ringMotion(time, w, h, settings, motionPulse, extras.reducedMotion);
   // Keep the composition on screen in silent passages. Only the audio-driven
   // part of each shape is gated, so low-level analyser noise cannot animate it.
   const captionHeight = subtitleLane(ctx, w, h, subtitles);

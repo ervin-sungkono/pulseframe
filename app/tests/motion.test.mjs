@@ -171,7 +171,7 @@ test("Beat jump remains audio-driven in either behavior without applying the pul
     );
 });
 
-test("reactive motion eases toward rest using the shared audio response during trailing silence", () => {
+test("reactive motion uses its own slower envelope, rests in silence, and holds while paused", () => {
   const { createAudioReactiveState, soundResponse } = modules.visualizer;
   const active = {
     ...settings,
@@ -181,20 +181,102 @@ test("reactive motion eases toward rest using the shared audio response during t
   };
   const state = createAudioReactiveState();
   const loud = { rms: 0.3, rmsDb: -10, bassDb: -10, middleDb: -20, highDb: -30, bands: [] };
-  for (let i = 0; i < 30; i++) soundResponse(loud, active, state, 1000 / 30);
-  let previous = ringMotion(1, 1280, 720, active, state.ringPulse);
+  soundResponse(loud, active, state, 1000 / 30);
+  assert.ok(state.ringPulse > state.motionPulse * 5);
+  for (let i = 1; i < 30; i++) soundResponse(loud, active, state, 1000 / 30);
+  assert.ok(state.motionPulse > 0.3);
+  let previous = ringMotion(1, 1280, 720, active, state.motionPulse);
   assert.ok(Math.hypot(previous.x, previous.y) > 1);
+
+  const held = state.motionPulse;
+  soundResponse(loud, active, state, 0);
+  assert.equal(state.motionPulse, held, "a paused source clock must hold the motion envelope");
+
   const silent = { rms: 0, rmsDb: -160, bassDb: -160, middleDb: -160, highDb: -160, bands: [] };
-  let lastPulse = state.ringPulse;
+  let lastPulse = state.motionPulse;
   for (let i = 1; i <= 60; i++) {
     soundResponse(silent, active, state, 1000 / 30);
-    assert.ok(state.ringPulse < lastPulse);
-    const pose = ringMotion(1 + i / 30, 1280, 720, active, state.ringPulse);
+    assert.ok(state.motionPulse < lastPulse);
+    const pose = ringMotion(1 + i / 30, 1280, 720, active, state.motionPulse);
     assert.ok(Math.hypot(pose.x, pose.y) < Math.hypot(previous.x, previous.y));
-    lastPulse = state.ringPulse;
+    lastPulse = state.motionPulse;
     previous = pose;
   }
-  assert.ok(Math.hypot(previous.x, previous.y) < 1e-6);
+  assert.ok(state.motionPulse < 0.02);
+});
+
+test("a 120 bpm bass train does not turn transient hits into fast orbit travel", () => {
+  const { PcmFeatures } = modules["audio-features"];
+  const { createAudioReactiveState, soundResponse } = modules.visualizer;
+  const active = {
+    ...settings,
+    motionPreset: "orbit",
+    motionBehavior: "audio-reactive",
+    motionAmount: 100,
+    motionSpeed: 1,
+  };
+  const sampleRate = 48000;
+  const duration = 8;
+  const samples = new Float32Array(sampleRate * duration);
+  for (let beatTime = 0; beatTime < duration; beatTime += 0.5) {
+    const start = Math.round(beatTime * sampleRate);
+    const length = Math.round(0.09 * sampleRate);
+    for (let offset = 0; offset < length && start + offset < samples.length; offset++) {
+      samples[start + offset] =
+        0.8 *
+        Math.exp(-offset / (sampleRate * 0.022)) *
+        Math.sin((2 * Math.PI * 65 * offset) / sampleRate);
+    }
+  }
+
+  const analyzer = new PcmFeatures([samples], sampleRate, 0, "js");
+  try {
+    const state = createAudioReactiveState();
+    const rawPulse = [];
+    const motionPulse = [];
+    const frameCount = duration * 30;
+    for (let frame = 0; frame < frameCount; frame++) {
+      const time = frame / 30;
+      soundResponse(analyzer.at(time, false), active, state, frame ? 1000 / 30 : 0);
+      rawPulse.push(state.ringPulse);
+      motionPulse.push(state.motionPulse);
+    }
+
+    const speedsFor = (pulses, motionSettings = active) => {
+      const poses = pulses.map((pulse, frame) =>
+        ringMotion(frame / 30, 1280, 720, motionSettings, pulse),
+      );
+      const speeds = poses
+        .slice(1)
+        .map((pose, index) => Math.hypot(pose.x - poses[index].x, pose.y - poses[index].y) * 30);
+      return {
+        peak: Math.max(...speeds),
+        mean: speeds.reduce((sum, speed) => sum + speed, 0) / speeds.length,
+      };
+    };
+    const rawSpeed = speedsFor(rawPulse);
+    const smoothedSpeed = speedsFor(motionPulse);
+    const continuousSpeed = speedsFor(motionPulse, {
+      ...active,
+      motionBehavior: "continuous",
+    });
+
+    // This sample has fast attack/release motion above 1,000 px/s with the
+    // shared hit envelope. The motion-specific envelope keeps movement under
+    // 200 px/s while still reaching a useful fraction of the travel range.
+    assert.ok(rawSpeed.peak > 1000, `${rawSpeed.peak} px/s raw peak`);
+    assert.ok(rawSpeed.mean > 150, `${rawSpeed.mean} px/s raw mean`);
+    assert.ok(smoothedSpeed.peak < 200, `${smoothedSpeed.peak} px/s smoothed peak`);
+    assert.ok(smoothedSpeed.mean < 40, `${smoothedSpeed.mean} px/s smoothed mean`);
+    assert.ok(smoothedSpeed.mean < continuousSpeed.mean * 1.25);
+    assert.ok(smoothedSpeed.peak < continuousSpeed.peak * 4);
+    assert.ok(
+      Math.max(...motionPulse) > 0.2,
+      "movement should remain responsive to the beat train",
+    );
+  } finally {
+    analyzer.dispose();
+  }
 });
 
 test("ring loop presets are continuous at each waveform's wrap point", () => {
