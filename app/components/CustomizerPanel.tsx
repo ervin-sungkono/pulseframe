@@ -21,7 +21,6 @@ const modes: { id: VisualMode; name: string; description: string }[] = [
   { id: "spectrum", name: "Spectrum", description: "Bars with a soft reflection" },
   { id: "edges", name: "Edge Bars", description: "Opposite frequency directions" },
   { id: "radial", name: "Radial Spectrum", description: "Frequency bars around a center" },
-  { id: "blob", name: "Liquid Blob", description: "A fluid, audio-reactive shape" },
   { id: "terrain", name: "Spectral Terrain", description: "A scrolling sound landscape" },
 ];
 const fitTargets: Record<VisualMode, string> = {
@@ -29,7 +28,6 @@ const fitTargets: Record<VisualMode, string> = {
   spectrum: "upper frame",
   edges: "center frame",
   radial: "center aperture",
-  blob: "blob center",
   terrain: "upper frame",
 };
 const particleModes: ParticleMode[] = ["stardust", "sparks", "constellation", "comets"];
@@ -327,12 +325,6 @@ export function CustomizerPanel({
       { ...settings.radialOptions, ...changes },
       `radialOptions.${Object.keys(changes)[0]}`,
     );
-  const updateBlobOptions = (changes: Partial<VisualSettings["blobOptions"]>) =>
-    change(
-      "blobOptions",
-      { ...settings.blobOptions, ...changes },
-      `blobOptions.${Object.keys(changes)[0]}`,
-    );
   const updateTerrainOptions = (changes: Partial<VisualSettings["terrainOptions"]>) =>
     change(
       "terrainOptions",
@@ -552,78 +544,6 @@ export function CustomizerPanel({
                       min={-100}
                       max={100}
                       onChange={(rotationSpeed) => updateRadialOptions({ rotationSpeed })}
-                    />
-                  </div>
-                </details>
-              </div>
-            )}
-            {settings.mode === "blob" && (
-              <div className="style-options">
-                <SettingSlider
-                  label="Blob size"
-                  value={settings.blobOptions.size}
-                  display={`${settings.blobOptions.size}%`}
-                  min={50}
-                  max={150}
-                  onChange={(size) => updateBlobOptions({ size })}
-                />
-                <SettingSlider
-                  label="Deformation"
-                  value={settings.blobOptions.deformation}
-                  display={`${settings.blobOptions.deformation}%`}
-                  min={0}
-                  max={100}
-                  onChange={(deformation) => updateBlobOptions({ deformation })}
-                />
-                <SettingSlider
-                  label="Fluidity"
-                  value={settings.blobOptions.fluidity}
-                  display={`${settings.blobOptions.fluidity}%`}
-                  min={0}
-                  max={100}
-                  onChange={(fluidity) => updateBlobOptions({ fluidity })}
-                />
-                <p className="setting-hint">
-                  Softens the shape and lets it settle after each sound.
-                </p>
-                <details className="style-advanced-controls">
-                  <summary>Advanced blob controls</summary>
-                  <div>
-                    <OptionGroup
-                      label="Surface detail"
-                      value={settings.blobOptions.detail}
-                      options={[
-                        { value: "low", label: "Low" },
-                        { value: "medium", label: "Medium" },
-                        { value: "high", label: "High" },
-                      ]}
-                      onChange={(detail) => updateBlobOptions({ detail })}
-                    />
-                    <SettingSlider
-                      label="Bass expansion"
-                      value={settings.blobOptions.bassExpansion}
-                      display={`${settings.blobOptions.bassExpansion}%`}
-                      min={0}
-                      max={100}
-                      onChange={(bassExpansion) => updateBlobOptions({ bassExpansion })}
-                    />
-                    <SettingSlider
-                      label="Internal glow"
-                      value={settings.blobOptions.internalGlow}
-                      display={`${settings.blobOptions.internalGlow}%`}
-                      min={0}
-                      max={100}
-                      onChange={(internalGlow) => updateBlobOptions({ internalGlow })}
-                    />
-                    <OptionGroup
-                      label="Idle motion"
-                      value={settings.blobOptions.idleMotion}
-                      options={[
-                        { value: "off", label: "Off" },
-                        { value: "subtle", label: "Subtle" },
-                        { value: "active", label: "Active" },
-                      ]}
-                      onChange={(idleMotion) => updateBlobOptions({ idleMotion })}
                     />
                   </div>
                 </details>

@@ -8,15 +8,6 @@ export type RadialOptions = {
   rotationSpeed: number;
   variant: "outward" | "inward" | "both";
 };
-export type BlobOptions = {
-  size: number;
-  deformation: number;
-  fluidity: number;
-  detail: "low" | "medium" | "high";
-  bassExpansion: number;
-  internalGlow: number;
-  idleMotion: "off" | "subtle" | "active";
-};
 export type TerrainOptions = {
   height: number;
   historySeconds: number;
@@ -35,15 +26,6 @@ export const DEFAULT_RADIAL_OPTIONS: RadialOptions = {
   direction: "clockwise",
   rotationSpeed: 0,
   variant: "outward",
-};
-export const DEFAULT_BLOB_OPTIONS: BlobOptions = {
-  size: 100,
-  deformation: 35,
-  fluidity: 60,
-  detail: "medium",
-  bassExpansion: 70,
-  internalGlow: 45,
-  idleMotion: "subtle",
 };
 export const DEFAULT_TERRAIN_OPTIONS: TerrainOptions = {
   height: 60,

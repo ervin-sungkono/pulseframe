@@ -421,7 +421,7 @@ function drawLogo(
   ctx.globalAlpha = s.logoOpacity / 100;
   if (s.logoAutoFit[s.mode]) {
     const short = Math.min(w, h);
-    const circle = s.mode === "ring" || s.mode === "radial" || s.mode === "blob";
+    const circle = s.mode === "ring" || s.mode === "radial";
     const radialAperture =
       s.mode === "radial"
         ? radialSpectrumAperture(
@@ -434,16 +434,12 @@ function drawLogo(
             s.radialOptions ?? DEFAULT_RADIAL_OPTIONS,
           ) * 1.9
         : 0;
-    const blobAperture =
-      short * Math.min(0.25, ((0.27 * (s.blobOptions?.size ?? 100)) / 100) * s.visualScale);
     const width =
       s.mode === "ring"
         ? ringInnerRadius(short, bass) * 2 * s.visualScale
         : s.mode === "radial"
           ? radialAperture
-          : s.mode === "blob"
-            ? blobAperture
-            : short * 0.36;
+          : short * 0.36;
     const height = circle ? width : short * 0.17;
     const centerY = circle || s.mode === "edges" ? h / 2 : h * 0.21;
     const scale = Math.max(0.5, Math.min(1, (s.logoFitScale?.[s.mode] ?? 100) / 100));
@@ -773,7 +769,7 @@ export function drawVisualization(
     bandLayers: extras.sound ? state.ringBands : [bands],
     ringMix: extras.sound ? state.ringMix : 1,
   };
-  if (settings.mode === "radial" || settings.mode === "blob" || settings.mode === "terrain") {
+  if (settings.mode === "radial" || settings.mode === "terrain") {
     let buffers = styleBandBuffers.get(ctx);
     if (!buffers) {
       buffers = { current: new Float32Array(96), prior: new Float32Array(96) };

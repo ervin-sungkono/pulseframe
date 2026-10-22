@@ -55,8 +55,6 @@ export const visualModeName = (mode: VisualSettings["mode"]) => {
       return "Edge Bars";
     case "radial":
       return "Radial Spectrum";
-    case "blob":
-      return "Liquid Blob";
     case "terrain":
       return "Spectral Terrain";
   }

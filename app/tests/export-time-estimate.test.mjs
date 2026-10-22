@@ -290,14 +290,6 @@ test("new style workload profiles distinguish costly geometry without changing e
   const radial = workload();
   settings.radialOptions.barCount = 160;
   assert.notEqual(workload().styleComplexity, radial.styleComplexity);
-  settings.mode = "blob";
-  const blob = workload();
-  assert.ok(
-    blob.styleComplexity.startsWith("fluid3-"),
-    "new render costs do not reuse older blob timings",
-  );
-  settings.blobOptions.detail = "high";
-  assert.notEqual(workload().styleComplexity, blob.styleComplexity);
   settings.mode = "terrain";
   const terrain = workload();
   assert.ok(
@@ -312,5 +304,5 @@ test("new style workload profiles distinguish costly geometry without changing e
   const colored = workload();
   settings.primary = "#ff0000";
   assert.deepEqual(workload(), colored);
-  assert.equal(new Set([radial.mode, blob.mode, terrain.mode]).size, 3);
+  assert.equal(new Set([radial.mode, terrain.mode]).size, 2);
 });

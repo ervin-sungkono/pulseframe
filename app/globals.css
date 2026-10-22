@@ -727,18 +727,6 @@ h2 {
 .mode-glyph.radial i:nth-child(5) {
   transform: rotate(288deg) translateY(1px);
 }
-.mode-glyph.blob i {
-  display: none;
-}
-.mode-glyph.blob::before {
-  content: "";
-  width: 25px;
-  height: 25px;
-  border: 1px solid currentColor;
-  border-radius: 44% 56% 60% 40% / 47% 40% 60% 53%;
-  background: radial-gradient(circle at 35% 28%, #d5a8ff, #7653d4 62%, #352751);
-  box-shadow: 0 0 12px #ab85ed77;
-}
 .mode-glyph.terrain {
   overflow: hidden;
   align-items: flex-end;

@@ -121,7 +121,7 @@ class MusicalResponseHistory implements FrequencyHistory {
 
 const histories = new WeakMap<FrequencyHistory, MusicalResponseHistory>();
 
-/** Shared only by Blob and Terrain; original styles retain their current response. */
+/** Source-time release for Terrain; other styles retain their current response. */
 export function styleResponseHistory(source: FrequencyHistory) {
   let response = histories.get(source);
   if (!response) {

@@ -47,7 +47,7 @@ def main():
             setup = page.evaluate(harness.SETUP_JS)
             contexts[version], pages[version] = context, page
             sessions[version] = context.new_cdp_session(page)
-        # All six styles use default isolated and full compositing. Actual curated
+        # All five styles use default isolated and full compositing. Actual curated
         # looks are measured too, since enabling particles changes their cost.
         modes, cases = setup["modes"], setup["audioNames"]
         if args.cases:

@@ -30,23 +30,3 @@ export function sampleBands(bands: readonly Float32Array[], position: number, wi
   }
   return Math.sqrt(sum / Math.max(1, bands.length));
 }
-
-/** A closed quadratic B-spline stays inside its bounded control-point hull. */
-export function closedCurve(ctx: CanvasRenderingContext2D, points: Float32Array, count: number) {
-  if (count < 3) return;
-  ctx.beginPath();
-  ctx.moveTo(
-    (points[(count - 1) * 2] + points[0]) / 2,
-    (points[(count - 1) * 2 + 1] + points[1]) / 2,
-  );
-  for (let i = 0; i < count; i++) {
-    const next = (i + 1) % count;
-    ctx.quadraticCurveTo(
-      points[i * 2],
-      points[i * 2 + 1],
-      (points[i * 2] + points[next * 2]) / 2,
-      (points[i * 2 + 1] + points[next * 2 + 1]) / 2,
-    );
-  }
-  ctx.closePath();
-}

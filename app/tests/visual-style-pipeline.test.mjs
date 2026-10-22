@@ -43,9 +43,8 @@ const envelopes = Array.from({ length: 3000 }, (_, index) => ({
   ],
 }));
 
-test("registry contains exactly the six first-class style IDs", () => {
+test("registry contains exactly the five first-class style IDs", () => {
   assert.deepEqual(Object.keys(VISUAL_STYLE_RENDERERS).sort(), [
-    "blob",
     "edges",
     "radial",
     "ring",
@@ -56,7 +55,7 @@ test("registry contains exactly the six first-class style IDs", () => {
 
 test("new styles share source-time geometry across preview warm-up, clipped export and capture", () => {
   const history = new PreparedFrequencyHistory(envelopes);
-  for (const mode of ["radial", "blob", "terrain"]) {
+  for (const mode of ["radial", "terrain"]) {
     const settings = {
       ...DEFAULT_SETTINGS,
       mode,

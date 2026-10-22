@@ -623,11 +623,9 @@ export function makeExportWorkloadForExport(input: {
     styleComplexity:
       settings.mode === "radial"
         ? `bars-${settings.radialOptions.barCount <= 64 ? "low" : settings.radialOptions.barCount <= 112 ? "medium" : "high"}`
-        : settings.mode === "blob"
-          ? `fluid3-${settings.blobOptions.detail}-${settings.blobOptions.internalGlow > 0 ? "lit" : "flat"}`
-          : settings.mode === "terrain"
-            ? `response2-${settings.terrainOptions.density}-${settings.terrainOptions.historySeconds <= 5 ? "short" : "long"}-${settings.terrainOptions.surfaceFill > 0 ? "filled" : "wire"}`
-            : undefined,
+        : settings.mode === "terrain"
+          ? `response2-${settings.terrainOptions.density}-${settings.terrainOptions.historySeconds <= 5 ? "short" : "long"}-${settings.terrainOptions.surfaceFill > 0 ? "filled" : "wire"}`
+          : undefined,
     ringLayers: settings.ringLayers,
     spectrumReflection: settings.spectrumReflection,
     glow: settings.glow,

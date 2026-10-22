@@ -38,7 +38,6 @@ SETUP_JS = r"""async () => {
     { PcmFeatures },
     { PreparedFrequencyHistory, RollingFrequencyHistory, bandEnergy },
     { buildRadialSpectrumGeometry },
-    { writeLiquidBlobGeometry },
     { styleResponseHistory },
     { createTerrainSampleBuffer, terrainResolution, sampleTerrain, projectTerrain },
   ] = await Promise.all([
@@ -47,7 +46,6 @@ SETUP_JS = r"""async () => {
     import('/lib/audio/pcm-features.ts'),
     import('/lib/visual/styles/frequency-history.ts'),
     import('/lib/visual/styles/radial-spectrum.ts'),
-    import('/lib/visual/styles/liquid-blob.ts'),
     import('/lib/visual/styles/audio-response.ts'),
     import('/lib/visual/styles/spectral-terrain.ts'),
   ]);
@@ -55,7 +53,7 @@ SETUP_JS = r"""async () => {
   const durationSeconds = 6;
   const sampleCount = sampleRate * durationSeconds;
   const audioNames = ['silence', 'bass', 'mid', 'high', 'impulse', 'high_intensity', 'low_intensity'];
-  const modes = ['ring', 'spectrum', 'edges', 'radial', 'blob', 'terrain'];
+  const modes = ['ring', 'spectrum', 'edges', 'radial', 'terrain'];
   const componentSets = {
     silence: [],
     bass: [[82.41, 0.36]],
@@ -144,7 +142,6 @@ SETUP_JS = r"""async () => {
     Object.assign(settings, changes);
     settings.mode = mode;
     if (changes.radialOptions) settings.radialOptions = { ...DEFAULT_SETTINGS.radialOptions, ...changes.radialOptions };
-    if (changes.blobOptions) settings.blobOptions = { ...DEFAULT_SETTINGS.blobOptions, ...changes.blobOptions };
     if (changes.terrainOptions) settings.terrainOptions = { ...DEFAULT_SETTINGS.terrainOptions, ...changes.terrainOptions };
     if (!compositing) {
       settings.particles = false;
@@ -260,18 +257,13 @@ SETUP_JS = r"""async () => {
       radialOptions: { barCount: 160, innerRadius: 40, maxBarLength: 35, barWidth: 100,
         roundness: 100, direction: 'mirrored', rotationSpeed: 100, variant: 'both' },
     },
-    blob: {
-      visualScale: 1.5, glow: 2.5,
-      blobOptions: { size: 150, deformation: 100, fluidity: 100, detail: 'high',
-        bassExpansion: 100, internalGlow: 100, idleMotion: 'active' },
-    },
     terrain: {
       visualScale: 1.5, glow: 2.5,
       terrainOptions: { height: 100, historySeconds: 10, density: 'high', perspective: 'high',
         travelSpeed: 200, wireOpacity: 100, surfaceFill: 100 },
     },
   };
-  const builtinIds = { radial: 'orbit', blob: 'fluid-dreams', terrain: 'neon-horizon' };
+  const builtinIds = { radial: 'orbit', terrain: 'neon-horizon' };
   const renderSpecialPng = (mode, kind, aspectName, width, height) => {
     const { canvas, ctx } = makeCanvas(width, height);
     let settings;
@@ -295,7 +287,7 @@ SETUP_JS = r"""async () => {
       dataUrl: canvas.toDataURL('image/png'), width, height, aspectName, mode, kind, builtinId,
       caseName, pixelFnv1a32: hashCanvasPixels(ctx, width, height),
       screenshotEnvelopeIndex: 150, screenshotEnvelopeTimeSeconds: 151 / 30,
-      controls: mode === 'radial' ? settings.radialOptions : mode === 'blob' ? settings.blobOptions : settings.terrainOptions,
+      controls: mode === 'radial' ? settings.radialOptions : settings.terrainOptions,
       visualScale: settings.visualScale, glow: settings.glow,
     };
   };
@@ -326,8 +318,7 @@ SETUP_JS = r"""async () => {
     const settings = makeSettings(mode, true);
     const history = new PreparedFrequencyHistory(audio[caseName]);
     const frames = Array.from({ length: 150 }, (_, index) => geometryFrame(mode, caseName, index, history, settings, width, height));
-    const radialSamples = [], blobSamples = [], terrainSampleSamples = [], terrainProjectSamples = [];
-    const blobTarget = new Float32Array(160 * 2);
+    const radialSamples = [], terrainSampleSamples = [], terrainProjectSamples = [];
     let terrainBuffer = null;
     let terrainPoints = null;
     let terrainShape = null;
@@ -344,10 +335,6 @@ SETUP_JS = r"""async () => {
           bands: frame.audio.bands, sensitivity: settings.sensitivity, visualScale: settings.visualScale,
           glow: settings.glow }, settings.radialOptions);
         if (index >= 30) radialSamples.push(performance.now() - start);
-      } else if (mode === 'blob') {
-        const start = performance.now();
-        writeLiquidBlobGeometry(blobTarget, frame, settings.blobOptions);
-        if (index >= 30) blobSamples.push(performance.now() - start);
       } else {
         const { columns, rows } = terrainShape;
         const sampleStart = performance.now();
@@ -369,14 +356,12 @@ SETUP_JS = r"""async () => {
     }
     return mode === 'radial'
       ? { geometryApi: stats(radialSamples), preparedHistoryCacheFrames: history.cachedFrames }
-      : mode === 'blob'
-        ? { geometryApi: stats(blobSamples), preparedHistoryCacheFrames: history.cachedFrames }
-        : { historySampleApi: stats(terrainSampleSamples), projectionApi: stats(terrainProjectSamples),
+      : { historySampleApi: stats(terrainSampleSamples), projectionApi: stats(terrainProjectSamples),
             preparedHistoryCacheFrames: history.cachedFrames, rows: terrainShape.rows, columns: terrainShape.columns };
   };
   const renderGeometryRuns = (caseNames, width, height) => {
     const output = {};
-    for (const mode of ['radial', 'blob', 'terrain']) {
+    for (const mode of ['radial', 'terrain']) {
       output[mode] = {};
       for (const caseName of caseNames) output[mode][caseName] = geometryRun(mode, caseName, width, height);
     }
@@ -408,7 +393,7 @@ SETUP_JS = r"""async () => {
         }
         return { drawCount: count, historyCacheFrames: history.cachedFrames,
           rollingHistoryCacheFrames: rollingHistory.cachedFrames,
-          styleResponseCacheFrames: mode === 'blob' || mode === 'terrain' ? styleResponseHistory(history).cachedFrames : 0,
+          styleResponseCacheFrames: mode === 'terrain' ? styleResponseHistory(history).cachedFrames : 0,
           canvasPixels: canvas.width * canvas.height };
       },
     };
@@ -424,12 +409,11 @@ SETUP_JS = r"""async () => {
       beatRays: DEFAULT_SETTINGS.beatRays, dropEffects: DEFAULT_SETTINGS.dropEffects,
       glitch: DEFAULT_SETTINGS.glitch, backdrop: DEFAULT_SETTINGS.backdrop,
       glow: DEFAULT_SETTINGS.glow, visualScale: DEFAULT_SETTINGS.visualScale,
-      radialOptions: DEFAULT_SETTINGS.radialOptions, blobOptions: DEFAULT_SETTINGS.blobOptions,
+      radialOptions: DEFAULT_SETTINGS.radialOptions,
       terrainOptions: DEFAULT_SETTINGS.terrainOptions, particleCount: DEFAULT_SETTINGS.particleCount,
     },
     builtins: BUILTIN_LOOKS.filter((look) => Object.values(builtinIds).includes(look.id)).map(({ id, name, settings }) => ({
-      id, name, mode: settings.mode, radialOptions: settings.radialOptions,
-      blobOptions: settings.blobOptions, terrainOptions: settings.terrainOptions,
+      id, name, mode: settings.mode, radialOptions: settings.radialOptions, terrainOptions: settings.terrainOptions,
     })),
     maxControlSettings: maxChanges,
   };
@@ -566,7 +550,7 @@ def main() -> None:
                     key = f'{mode}/{aspect}/{case_name}'
                     signatures[key] = {'width': width, 'height': height, **signature}
         qa_manifest = []
-        for mode in ('radial', 'blob', 'terrain'):
+        for mode in ('radial', 'terrain'):
             for kind in ('max_controls', 'builtin_polished'):
                 for aspect, (width, height) in dimensions.items():
                     item = page.evaluate(SPECIAL_PNG_JS, {'mode': mode, 'kind': kind,
@@ -582,7 +566,7 @@ def main() -> None:
         cdp = context.new_cdp_session(page)
         cdp.send('HeapProfiler.enable')
         memory_probe = {}
-        for mode in ('radial', 'blob', 'terrain'):
+        for mode in ('radial', 'terrain'):
             page.evaluate(MEMORY_SETUP_JS, mode)
             observations = []
             for step, frames in (('baseline', 0), ('after1200', 1200), ('after2400', 1200), ('after3600', 1200)):
@@ -636,7 +620,7 @@ def main() -> None:
         comparison = {'passed': False, 'caseCount': 0, 'failedCount': 1,
             'cases': [{'case': str(REFERENCE), 'passed': False, 'error': 'reference fixture is missing; rerun with --update-references'}]}
 
-    for mode in ('blob', 'terrain'):
+    for mode in ('terrain',):
         cache_frames = memory_probe[mode]['observations'][-1]['styleResponseCacheFrames']
         if not 0 < cache_frames <= 768:
             raise SystemExit(f'{mode}: response cache instrumentation is inactive or unbounded; restart Vite after source edits and rerun')

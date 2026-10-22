@@ -11,13 +11,11 @@ const { PresetStore, PRESET_STORAGE_KEY } = modules["preset-store"];
 const { makeProjectFile, readProjectFile } = modules["project-file"];
 const { VISUAL_MODES, DEFAULT_LOGO_AUTO_FIT, DEFAULT_LOGO_FIT_SCALE, DEFAULT_LOGO_PLACEMENTS } =
   modules["visual-settings-model"];
-const { DEFAULT_RADIAL_OPTIONS, DEFAULT_BLOB_OPTIONS, DEFAULT_TERRAIN_OPTIONS } =
-  modules["style-options"];
+const { DEFAULT_RADIAL_OPTIONS, DEFAULT_TERRAIN_OPTIONS } = modules["style-options"];
 
-const newModes = ["radial", "blob", "terrain"];
+const newModes = ["radial", "terrain"];
 const optionDefaults = {
   radialOptions: DEFAULT_RADIAL_OPTIONS,
-  blobOptions: DEFAULT_BLOB_OPTIONS,
   terrainOptions: DEFAULT_TERRAIN_OPTIONS,
 };
 const media = new File(["small audio fixture"], "fixture.wav", { type: "audio/wav" });
@@ -52,8 +50,8 @@ async function openProject(settings, filename = "style.pulseframe") {
   return { manifest, opened };
 }
 
-test("all six visual modes have complete logo defaults and the three style option defaults", () => {
-  assert.deepEqual(VISUAL_MODES, ["ring", "spectrum", "edges", "radial", "blob", "terrain"]);
+test("all five visual modes have complete logo defaults and both style option defaults", () => {
+  assert.deepEqual(VISUAL_MODES, ["ring", "spectrum", "edges", "radial", "terrain"]);
   assert.deepEqual(Object.keys(DEFAULT_LOGO_AUTO_FIT).sort(), [...VISUAL_MODES].sort());
   assert.deepEqual(Object.keys(DEFAULT_LOGO_FIT_SCALE).sort(), [...VISUAL_MODES].sort());
   assert.deepEqual(Object.keys(DEFAULT_LOGO_PLACEMENTS).sort(), [...VISUAL_MODES].sort());
@@ -65,7 +63,6 @@ test("all six visual modes have complete logo defaults and the three style optio
 
   const parsed = settingsSchema.parse(DEFAULT_SETTINGS);
   assert.deepEqual(parsed.radialOptions, DEFAULT_RADIAL_OPTIONS);
-  assert.deepEqual(parsed.blobOptions, DEFAULT_BLOB_OPTIONS);
   assert.deepEqual(parsed.terrainOptions, DEFAULT_TERRAIN_OPTIONS);
   for (const mode of VISUAL_MODES) {
     assert.equal(typeof parsed.logoAutoFit[mode], "boolean");
@@ -82,11 +79,6 @@ test("option schema accepts exact documented bounds and rejects out-of-range and
     ["radialOptions", "barWidth", 20, 100, 0.1],
     ["radialOptions", "roundness", 0, 100, 0.1],
     ["radialOptions", "rotationSpeed", -100, 100, 0.1],
-    ["blobOptions", "size", 50, 150, 0.1],
-    ["blobOptions", "deformation", 0, 100, 0.1],
-    ["blobOptions", "fluidity", 0, 100, 0.1],
-    ["blobOptions", "bassExpansion", 0, 100, 0.1],
-    ["blobOptions", "internalGlow", 0, 100, 0.1],
     ["terrainOptions", "height", 0, 100, 0.1],
     ["terrainOptions", "historySeconds", 2, 10, 0.1],
     ["terrainOptions", "travelSpeed", 0, 200, 0.1],
@@ -122,8 +114,6 @@ test("option schema accepts exact documented bounds and rejects out-of-range and
   for (const [group, field, allowed] of [
     ["radialOptions", "direction", ["clockwise", "mirrored"]],
     ["radialOptions", "variant", ["outward", "inward", "both"]],
-    ["blobOptions", "detail", ["low", "medium", "high"]],
-    ["blobOptions", "idleMotion", ["off", "subtle", "active"]],
     ["terrainOptions", "density", ["low", "medium", "high"]],
     ["terrainOptions", "perspective", ["low", "medium", "high"]],
   ]) {
@@ -145,27 +135,22 @@ test("option schema accepts exact documented bounds and rejects out-of-range and
 test("missing and partial style option groups receive property defaults in old settings and projects", async () => {
   const oldSettings = input();
   delete oldSettings.radialOptions;
-  delete oldSettings.blobOptions;
   delete oldSettings.terrainOptions;
   const parsedOld = settingsSchema.parse(oldSettings);
   assert.deepEqual(parsedOld.radialOptions, DEFAULT_RADIAL_OPTIONS);
-  assert.deepEqual(parsedOld.blobOptions, DEFAULT_BLOB_OPTIONS);
   assert.deepEqual(parsedOld.terrainOptions, DEFAULT_TERRAIN_OPTIONS);
 
   const partial = settingsSchema.parse(
     input({
       radialOptions: { barCount: 32 },
-      blobOptions: { idleMotion: "off" },
       terrainOptions: { surfaceFill: 99 },
     }),
   );
   assert.deepEqual(partial.radialOptions, { ...DEFAULT_RADIAL_OPTIONS, barCount: 32 });
-  assert.deepEqual(partial.blobOptions, { ...DEFAULT_BLOB_OPTIONS, idleMotion: "off" });
   assert.deepEqual(partial.terrainOptions, { ...DEFAULT_TERRAIN_OPTIONS, surfaceFill: 99 });
 
   const { opened } = await openProject(oldSettings, "old-style-settings.pulseframe");
   assert.deepEqual(opened.settings.radialOptions, DEFAULT_RADIAL_OPTIONS);
-  assert.deepEqual(opened.settings.blobOptions, DEFAULT_BLOB_OPTIONS);
   assert.deepEqual(opened.settings.terrainOptions, DEFAULT_TERRAIN_OPTIONS);
 });
 
@@ -178,14 +163,6 @@ test("new styles roundtrip through version 2 projects with their settings, logo 
         rotationSpeed: -35,
         direction: "mirrored",
         variant: "both",
-      },
-    },
-    blob: {
-      blobOptions: {
-        ...DEFAULT_BLOB_OPTIONS,
-        deformation: 82,
-        detail: "high",
-        idleMotion: "active",
       },
     },
     terrain: {
@@ -225,16 +202,23 @@ test("retired project IDs migrate to their historical supported styles and retai
     ["bloom", "ring"],
     ["wave", "spectrum"],
     ["aurora", "spectrum"],
+    ["blob", "ring"],
   ]) {
     const layout = { x: 37, y: 41, size: 22 };
     const settings = input({
       mode: oldMode,
+      [`${oldMode}Options`]: { detail: "high" },
       logoPlacements: { ...DEFAULT_LOGO_PLACEMENTS, [oldMode]: layout },
       logoAutoFit: { ...DEFAULT_LOGO_AUTO_FIT, [oldMode]: false },
       logoFitScale: { ...DEFAULT_LOGO_FIT_SCALE, [oldMode]: 75 },
     });
     const { opened } = await openProject(settings, `${oldMode}.pulseframe`);
     assert.equal(opened.settings.mode, target);
+    assert.equal(`${oldMode}Options` in opened.settings, false);
+    const importedPreset = presetStyle(settings);
+    assert.equal(importedPreset.mode, target);
+    assert.equal(`${oldMode}Options` in importedPreset, false);
+    assert.deepEqual(importedPreset.logoPlacements[target], layout);
     assert.equal(opened.migratedStyle, oldMode);
     assert.deepEqual(opened.settings.logoPlacements[target], layout);
     assert.equal(opened.settings.logoAutoFit[target], false);
@@ -256,7 +240,6 @@ test("new option groups persist in version 1 local presets and survive apply", a
   const firstStore = new PresetStore(() => storage);
   const requested = [
     ["radial", { radialOptions: { ...DEFAULT_RADIAL_OPTIONS, barCount: 144, variant: "inward" } }],
-    ["blob", { blobOptions: { ...DEFAULT_BLOB_OPTIONS, fluidity: 91, idleMotion: "active" } }],
     [
       "terrain",
       { terrainOptions: { ...DEFAULT_TERRAIN_OPTIONS, historySeconds: 8, surfaceFill: 44 } },
@@ -291,7 +274,7 @@ test("new option groups persist in version 1 local presets and survive apply", a
 });
 
 test("new style settings reset with the Visual section and built-in looks carry valid snapshots", () => {
-  for (const group of ["radialOptions", "blobOptions", "terrainOptions"])
+  for (const group of ["radialOptions", "terrainOptions"])
     assert.ok(SECTION_KEYS.visual.includes(group), `${group} must reset with Visual settings`);
 
   const expected = [
@@ -299,10 +282,9 @@ test("new style settings reset with the Visual section and built-in looks carry 
     ["after-hours", "After Hours", "spectrum"],
     ["counterflow", "Counterflow", "edges"],
     ["orbit", "Orbit", "radial"],
-    ["fluid-dreams", "Fluid Dreams", "blob"],
     ["neon-horizon", "Neon Horizon", "terrain"],
   ];
-  assert.equal(BUILTIN_LOOKS.length, 6);
+  assert.equal(BUILTIN_LOOKS.length, 5);
   assert.deepEqual(
     BUILTIN_LOOKS.map((look) => look.settings.mode).sort(),
     [...VISUAL_MODES].sort(),
@@ -315,8 +297,6 @@ test("new style settings reset with the Visual section and built-in looks carry 
     assert.equal(look.settings.particles, true, `${name} should include particles by default`);
     assert.ok(look.settings.particleCount >= 24 && look.settings.particleCount <= 40);
     assert.deepEqual(presetStyle(look.settings), look.settings);
-    assert.ok(
-      look.settings.radialOptions && look.settings.blobOptions && look.settings.terrainOptions,
-    );
+    assert.ok(look.settings.radialOptions && look.settings.terrainOptions);
   }
 });

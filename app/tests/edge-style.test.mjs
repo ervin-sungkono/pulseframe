@@ -65,9 +65,12 @@ test("edge gradients span each visible bar and expose the accent at quiet and lo
     assert.deepEqual(coordinates, [0, 0, 0, 1]);
     assert.deepEqual(stops, [
       [0, DEFAULT_SETTINGS.primary],
-      [0.55, DEFAULT_SETTINGS.secondary],
+      [0.65, DEFAULT_SETTINGS.primary],
+      [0.85, DEFAULT_SETTINGS.secondary],
       [1, DEFAULT_SETTINGS.secondary],
     ]);
+    const accentCoverage = 1 - stops[2][0] + (stops[2][0] - stops[1][0]) / 2;
+    assert.ok(Math.abs(accentCoverage - 0.25) < 1e-8, "smooth blend retains 75:25 color coverage");
     for (let i = 0; i < bars.length; i++) {
       const top = i < bars.length / 2;
       assert.equal(bars[i].y, top ? 0 : 720 - bars[i].height);

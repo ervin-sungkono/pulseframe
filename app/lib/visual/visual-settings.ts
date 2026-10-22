@@ -7,13 +7,9 @@ import {
   type VisualSettings,
   type VisualMode,
 } from "./visual-settings-model";
-import {
-  DEFAULT_BLOB_OPTIONS,
-  DEFAULT_RADIAL_OPTIONS,
-  DEFAULT_TERRAIN_OPTIONS,
-} from "./style-options";
+import { DEFAULT_RADIAL_OPTIONS, DEFAULT_TERRAIN_OPTIONS } from "./style-options";
 
-const retiredVisualModes = ["halo", "wave", "tunnel", "aurora", "bloom"] as const;
+const retiredVisualModes = ["halo", "wave", "tunnel", "aurora", "bloom", "blob"] as const;
 const visualModes = [...VISUAL_MODES, ...retiredVisualModes] as const;
 
 const percent = z.number().finite();
@@ -37,17 +33,6 @@ export const settingsSchema = z.object({
       direction: z.enum(["clockwise", "mirrored"]).default(DEFAULT_RADIAL_OPTIONS.direction),
       rotationSpeed: percent.min(-100).max(100).default(DEFAULT_RADIAL_OPTIONS.rotationSpeed),
       variant: z.enum(["outward", "inward", "both"]).default(DEFAULT_RADIAL_OPTIONS.variant),
-    })
-    .default({}),
-  blobOptions: z
-    .object({
-      size: percent.min(50).max(150).default(DEFAULT_BLOB_OPTIONS.size),
-      deformation: percent.min(0).max(100).default(DEFAULT_BLOB_OPTIONS.deformation),
-      fluidity: percent.min(0).max(100).default(DEFAULT_BLOB_OPTIONS.fluidity),
-      detail: z.enum(["low", "medium", "high"]).default(DEFAULT_BLOB_OPTIONS.detail),
-      bassExpansion: percent.min(0).max(100).default(DEFAULT_BLOB_OPTIONS.bassExpansion),
-      internalGlow: percent.min(0).max(100).default(DEFAULT_BLOB_OPTIONS.internalGlow),
-      idleMotion: z.enum(["off", "subtle", "active"]).default(DEFAULT_BLOB_OPTIONS.idleMotion),
     })
     .default({}),
   terrainOptions: z
@@ -121,6 +106,7 @@ export function migrateSettings(settings: z.infer<typeof settingsSchema>): Visua
     halo: "ring",
     tunnel: "ring",
     bloom: "ring",
+    blob: "ring",
     wave: "spectrum",
     aurora: "spectrum",
   } as const satisfies Record<(typeof retiredVisualModes)[number], VisualMode>;

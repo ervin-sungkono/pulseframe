@@ -6,11 +6,7 @@ import {
   VISUAL_MODES,
   type VisualSettings,
 } from "./visual-settings-model";
-import {
-  DEFAULT_BLOB_OPTIONS,
-  DEFAULT_RADIAL_OPTIONS,
-  DEFAULT_TERRAIN_OPTIONS,
-} from "./style-options";
+import { DEFAULT_RADIAL_OPTIONS, DEFAULT_TERRAIN_OPTIONS } from "./style-options";
 
 export type CustomizerSection = "visual" | "colors" | "motion" | "audio" | "logo" | "track";
 
@@ -24,7 +20,6 @@ export const SECTION_KEYS: Record<CustomizerSection, readonly (keyof VisualSetti
     "ringMirror",
     "ringFocus",
     "radialOptions",
-    "blobOptions",
     "terrainOptions",
     "visualScale",
   ],
@@ -86,7 +81,6 @@ export const palettes = [
 export const DEFAULT_SETTINGS: VisualSettings = {
   mode: "ring",
   radialOptions: DEFAULT_RADIAL_OPTIONS,
-  blobOptions: DEFAULT_BLOB_OPTIONS,
   terrainOptions: DEFAULT_TERRAIN_OPTIONS,
   spectrumRoundness: 100,
   spectrumReflection: 45,
@@ -149,7 +143,6 @@ function makeStyle(changes: Partial<VisualSettings>): PresetStyle {
     ...DEFAULT_SETTINGS,
     ...changes,
     radialOptions: { ...DEFAULT_SETTINGS.radialOptions, ...changes.radialOptions },
-    blobOptions: { ...DEFAULT_SETTINGS.blobOptions, ...changes.blobOptions },
     terrainOptions: { ...DEFAULT_SETTINGS.terrainOptions, ...changes.terrainOptions },
     logoAutoFit: { ...DEFAULT_SETTINGS.logoAutoFit, ...changes.logoAutoFit },
     logoFitScale: { ...DEFAULT_SETTINGS.logoFitScale, ...changes.logoFitScale },
@@ -251,37 +244,6 @@ const lookDefinitions: Array<Omit<BuiltinLook, "settings"> & { changes: Partial<
         trails: true,
         beatRays: false,
         glow: 1.25,
-      },
-    },
-    {
-      id: "fluid-dreams",
-      name: "Fluid Dreams",
-      caption: "Flowing audio-reactive fluid",
-      changes: {
-        mode: "blob",
-        primary: palettes[0].primary,
-        secondary: palettes[2].primary,
-        background: palettes[0].background,
-        backdrop: "nebula",
-        blobOptions: {
-          ...DEFAULT_BLOB_OPTIONS,
-          size: 100,
-          deformation: 85,
-          fluidity: 72,
-          detail: "medium",
-          bassExpansion: 62,
-          internalGlow: 65,
-          idleMotion: "subtle",
-        },
-        particles: true,
-        particleMode: "stardust",
-        particleCount: 24,
-        trails: false,
-        beatLighting: "aura",
-        beatLightingIntensity: 18,
-        beatRays: false,
-        dropEffects: false,
-        glow: 0.95,
       },
     },
     {
