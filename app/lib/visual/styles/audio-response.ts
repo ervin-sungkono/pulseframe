@@ -54,7 +54,6 @@ class MusicalResponseHistory implements FrequencyHistory {
     if (index < 0) return undefined;
     const cached = this.measured.get(index);
     if (cached) return retain(this.measured, index, cached);
-    this.measurementScratch.fill(0);
     if (!this.source.read(index / ANALYSIS_FPS, this.measurementScratch, this.threshold))
       return undefined;
     for (let band = 0; band < BAND_COUNT; band++)
@@ -75,7 +74,6 @@ class MusicalResponseHistory implements FrequencyHistory {
       this.sourceRevision = this.revision;
     }
     // Check availability even on a cache hit: live history may have expired.
-    this.current.fill(0);
     if (!this.source.read(time, this.current, threshold)) return false;
     let response = this.responses.get(time);
     if (response) {

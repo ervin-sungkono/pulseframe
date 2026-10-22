@@ -19,7 +19,6 @@ import base64
 import csv
 import hashlib
 import json
-import math
 import time
 from pathlib import Path
 
@@ -36,7 +35,7 @@ SETUP_JS = r"""async () => {
     { drawVisualization, makeParticles, createAudioReactiveState, ringBandAmplitude },
     { DEFAULT_SETTINGS, BUILTIN_LOOKS },
     { PcmFeatures },
-    { PreparedFrequencyHistory, RollingFrequencyHistory, bandEnergy },
+    { PreparedFrequencyHistory, RollingFrequencyHistory },
     { buildRadialSpectrumGeometry },
     { styleResponseHistory },
     { createTerrainSampleBuffer, terrainResolution, sampleTerrain, projectTerrain },
@@ -93,7 +92,6 @@ SETUP_JS = r"""async () => {
   const audio = {};
   const prep = {};
   const featureCheck = {};
-  const histories = {};
   const oneFrame = (frame) => ({
     rms: frame.rms,
     rmsDb: frame.rmsDb,
@@ -117,7 +115,6 @@ SETUP_JS = r"""async () => {
     const backendMode = pcm.backendMode;
     pcm.dispose();
     audio[name] = frames;
-    histories[name] = new PreparedFrequencyHistory(frames);
     prep[name] = { synthesisMs, analysisMs, backendMode, frameCount: frames.length };
     const probe = frames[30] ?? frames[frames.length - 1];
     const averagedBands = probe.bands[0].map((value, index) => (value + (probe.bands[1][index] ?? 0)) / 2);
@@ -186,12 +183,6 @@ SETUP_JS = r"""async () => {
     }
     return { ...stats(samples), historyCacheFramesAfterRun: history.cachedFrames };
   };
-  const hashCanvasPixels = (ctx, width, height) => {
-    const pixels = ctx.getImageData(0, 0, width, height).data;
-    let hash = 2166136261;
-    for (let index = 0; index < pixels.length; index++) hash = Math.imul(hash ^ pixels[index], 16777619);
-    return (hash >>> 0).toString(16).padStart(8, '0');
-  };
   const signature8 = (ctx, width, height) => {
     const pixels = ctx.getImageData(0, 0, width, height).data;
     const bytes = new Uint8Array(8 * 8 * 3);
@@ -242,7 +233,6 @@ SETUP_JS = r"""async () => {
     const signature = signature8(ctx, width, height);
     return {
       dataUrl: canvas.toDataURL('image/png'), width, height,
-      pixelFnv1a32: hashCanvasPixels(ctx, width, height),
       rgb8: signature.rgb8, bounds8: signature.bounds8,
       aspectName, mode, caseName, screenshotEnvelopeIndex: screenshotIndex,
       screenshotEnvelopeTimeSeconds: time, settingsProfile: 'DEFAULT_SETTINGS with selected mode',
@@ -285,39 +275,25 @@ SETUP_JS = r"""async () => {
     drawOne(ctx, settings, particles, audioState, history, frequency, wave, caseName, 150);
     return {
       dataUrl: canvas.toDataURL('image/png'), width, height, aspectName, mode, kind, builtinId,
-      caseName, pixelFnv1a32: hashCanvasPixels(ctx, width, height),
+      caseName,
       screenshotEnvelopeIndex: 150, screenshotEnvelopeTimeSeconds: 151 / 30,
       controls: mode === 'radial' ? settings.radialOptions : settings.terrainOptions,
       visualScale: settings.visualScale, glow: settings.glow,
     };
   };
-  const geometryFrame = (mode, caseName, index, history, settings, width, height) => {
-    const env = audio[caseName][index];
+  const geometryFrame = (index, history, quietThreshold) => {
     const time = (index + 1) / 30;
-    const current = new Float32Array(96);
-    const previous = new Float32Array(96);
-    history.read(time, current, settings.quietThreshold);
-    history.read(time - 0.15, previous, settings.quietThreshold);
-    const bass = bandEnergy(current, 0, 0.27, settings.sensitivity * settings.bassBoost);
-    const mid = bandEnergy(current, 0.27, 0.7, settings.sensitivity);
-    const treble = bandEnergy(current, 0.7, 1, settings.sensitivity);
-    const priorBass = bandEnergy(previous, 0, 0.27, settings.sensitivity * settings.bassBoost);
-    const energy = Math.max(bass, mid, treble);
+    const bands = new Float32Array(96);
+    history.read(time, bands, quietThreshold);
     return {
-      width, height, time, sampleRate, settings, reducedMotion: false, fittedLogo: false,
-      captionHeight: 0,
-      audio: {
-        activity: Math.max(0, Math.min(1, (env.rms - settings.quietThreshold) / 0.018)),
-        bass, mid, treble, energy, impact: Math.max(0, Math.min(1, (bass - priorBass) * 2)),
-        bands: [current], bandLayers: [[current]], ringMix: 1,
-      },
-      history,
+      time,
+      bands: [bands],
     };
   };
   const geometryRun = (mode, caseName, width, height) => {
     const settings = makeSettings(mode, true);
     const history = new PreparedFrequencyHistory(audio[caseName]);
-    const frames = Array.from({ length: 150 }, (_, index) => geometryFrame(mode, caseName, index, history, settings, width, height));
+    const frames = Array.from({ length: 150 }, (_, index) => geometryFrame(index, history, settings.quietThreshold));
     const radialSamples = [], terrainSampleSamples = [], terrainProjectSamples = [];
     let terrainBuffer = null;
     let terrainPoints = null;
@@ -331,21 +307,21 @@ SETUP_JS = r"""async () => {
       const frame = frames[index];
       if (mode === 'radial') {
         const start = performance.now();
-        buildRadialSpectrumGeometry({ width, height, time: frame.time, reducedMotion: frame.reducedMotion,
-          bands: frame.audio.bands, sensitivity: settings.sensitivity, visualScale: settings.visualScale,
+        buildRadialSpectrumGeometry({ width, height, time: frame.time, reducedMotion: false,
+          bands: frame.bands, sensitivity: settings.sensitivity, visualScale: settings.visualScale,
           glow: settings.glow }, settings.radialOptions);
         if (index >= 30) radialSamples.push(performance.now() - start);
       } else {
         const { columns, rows } = terrainShape;
         const sampleStart = performance.now();
-        sampleTerrain(styleResponseHistory(frame.history), frame.audio.bands, frame.time, settings.terrainOptions.historySeconds,
+        sampleTerrain(styleResponseHistory(history), frame.bands, frame.time, settings.terrainOptions.historySeconds,
           columns, rows, settings.quietThreshold, terrainBuffer);
         const sampleMs = performance.now() - sampleStart;
         const projectStart = performance.now();
         projectTerrain(terrainBuffer.levels, columns, rows, width, height, {
           height: settings.terrainOptions.height, visualScale: settings.visualScale,
           sensitivity: settings.sensitivity, perspective: settings.terrainOptions.perspective,
-          captionHeight: frame.captionHeight,
+          captionHeight: 0,
         }, terrainPoints, terrainBuffer.depths);
         const projectMs = performance.now() - projectStart;
         if (index >= 30) {
@@ -487,11 +463,6 @@ def compare_references(actual: dict, references: dict) -> dict:
             **({'error': 'signature length mismatch'} if len(rgb) != len(expected) else {})})
     failures = [item for item in cases if not item['passed']]
     return {'passed': not failures, 'caseCount': len(cases), 'failedCount': len(failures), 'cases': cases}
-
-
-def percentile(values: list[float], q: float) -> float:
-    ordered = sorted(values)
-    return ordered[max(0, min(len(ordered) - 1, math.ceil(q * len(ordered)) - 1))]
 
 
 def write_timings(out: Path, metadata: dict) -> None:

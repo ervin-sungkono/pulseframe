@@ -38,14 +38,14 @@ def main():
         chromium_path = Path("/usr/bin/chromium")
         browser = playwright.chromium.launch(executable_path=str(chromium_path) if chromium_path.exists() else None, headless=True,
             args=["--no-sandbox", "--disable-dev-shm-usage"])
-        contexts, pages, sessions = {}, {}, {}
+        pages, sessions = {}, {}
         for version, url in [("before", args.before_url), ("after", args.after_url)]:
             context = browser.new_context(viewport={"width": 1280, "height": 720}, device_scale_factor=1)
             page = context.new_page()
             page.on("pageerror", lambda error, version=version: errors.append({"version": version, "error": str(error)}))
             page.goto(url, wait_until="networkidle", timeout=120000)
             setup = page.evaluate(harness.SETUP_JS)
-            contexts[version], pages[version] = context, page
+            pages[version] = page
             sessions[version] = context.new_cdp_session(page)
         # All five styles use default isolated and full compositing. Actual curated
         # looks are measured too, since enabling particles changes their cost.

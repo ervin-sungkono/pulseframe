@@ -1,4 +1,4 @@
-import { DEFAULT_TERRAIN_OPTIONS, type TerrainOptions } from "../style-options";
+import type { TerrainOptions } from "../style-options";
 import { styleResponseHistory } from "./audio-response";
 import { clamp, finite, rgba } from "./shared";
 import type { FrequencyHistory, VisualFrameContext, VisualStyleRenderer } from "./types";
@@ -259,7 +259,7 @@ function getBuffers(ctx: CanvasRenderingContext2D, columns: number, rows: number
   return buffers;
 }
 
-function vertex(points: Float32Array, columns: number, row: number, column: number) {
+function vertex(columns: number, row: number, column: number) {
   return (row * columns + column) * 2;
 }
 
@@ -279,7 +279,7 @@ function drawSurfaceFill(
     // a farther strip instead of having all overlapping strips merged at once.
     ctx.beginPath();
     addSurfaceRow(ctx, points, columns, row);
-    const farEdge = vertex(points, columns, row + 1, columns - 1);
+    const farEdge = vertex(columns, row + 1, columns - 1);
     ctx.lineTo(points[farEdge], points[farEdge + 1]);
     addSurfaceRow(ctx, points, columns, row + 1, true, false);
     ctx.closePath();
@@ -306,13 +306,13 @@ function addSurfaceRow(
 ) {
   const step = reverse ? -1 : 1;
   const firstColumn = reverse ? columns - 1 : 0;
-  const first = vertex(points, columns, row, firstColumn);
+  const first = vertex(columns, row, firstColumn);
   if (move) ctx.moveTo(points[first], points[first + 1]);
   for (let column = 0; column < columns - 1; column++) {
     const startColumn = firstColumn + step * column;
     const endColumn = startColumn + step;
-    const start = vertex(points, columns, row, startColumn);
-    const end = vertex(points, columns, row, endColumn);
+    const start = vertex(columns, row, startColumn);
+    const end = vertex(columns, row, endColumn);
     const x0 = points[start];
     const y0 = points[start + 1];
     const x1 = points[end];
@@ -352,17 +352,17 @@ function addSurfaceRow(
 }
 
 function contourTangent(points: Float32Array, columns: number, row: number, column: number) {
-  const current = vertex(points, columns, row, column);
+  const current = vertex(columns, row, column);
   if (column === 0) {
-    const next = vertex(points, columns, row, column + 1);
+    const next = vertex(columns, row, column + 1);
     return (points[next + 1] - points[current + 1]) / (points[next] - points[current]);
   }
   if (column === columns - 1) {
-    const previous = vertex(points, columns, row, column - 1);
+    const previous = vertex(columns, row, column - 1);
     return (points[current + 1] - points[previous + 1]) / (points[current] - points[previous]);
   }
-  const previous = vertex(points, columns, row, column - 1);
-  const next = vertex(points, columns, row, column + 1);
+  const previous = vertex(columns, row, column - 1);
+  const next = vertex(columns, row, column + 1);
   const before =
     (points[current + 1] - points[previous + 1]) / (points[current] - points[previous]);
   const after = (points[next + 1] - points[current + 1]) / (points[next] - points[current]);
@@ -414,14 +414,14 @@ function addDepthLines(
   ctx.beginPath();
   for (let column = 0; column < columns; column += stride) {
     for (let row = 0; row < rows; row++) {
-      const index = vertex(points, columns, row, column);
+      const index = vertex(columns, row, column);
       if (row === 0) ctx.moveTo(points[index], points[index + 1]);
       else ctx.lineTo(points[index], points[index + 1]);
     }
   }
   const last = columns - 1;
   for (let row = 0; row < rows; row++) {
-    const index = vertex(points, columns, row, last);
+    const index = vertex(columns, row, last);
     if (row === 0) ctx.moveTo(points[index], points[index + 1]);
     else ctx.lineTo(points[index], points[index + 1]);
   }
@@ -447,8 +447,8 @@ function drawTravelContour(
   const span = depths[row + 1] - depths[row];
   const mix = span > 0 ? clamp((depth - depths[row]) / span) : 0;
   for (let column = 0; column < columns; column++) {
-    const a = vertex(points, columns, row, column);
-    const b = vertex(points, columns, row + 1, column);
+    const a = vertex(columns, row, column);
+    const b = vertex(columns, row + 1, column);
     const offset = column * 2;
     travelPoints[offset] = points[a] + (points[b] - points[a]) * mix;
     travelPoints[offset + 1] = points[a + 1] + (points[b + 1] - points[a + 1]) * mix;
@@ -467,11 +467,10 @@ export const spectralTerrain: VisualStyleRenderer<TerrainOptions> = {
   draw(ctx, frame: VisualFrameContext, options) {
     const { width, height } = frame;
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
-    const normalized = { ...DEFAULT_TERRAIN_OPTIONS, ...options };
-    const { columns, rows } = terrainResolution(normalized.density);
+    const { columns, rows } = terrainResolution(options.density);
     const buffers = getBuffers(ctx, columns, rows);
     const time = finite(frame.time, 0);
-    const historySeconds = clamp(normalized.historySeconds, 2, 10);
+    const historySeconds = clamp(options.historySeconds, 2, 10);
     const responseHistory = frame.history ? styleResponseHistory(frame.history) : undefined;
     sampleTerrain(
       responseHistory,
@@ -490,10 +489,10 @@ export const spectralTerrain: VisualStyleRenderer<TerrainOptions> = {
       width,
       height,
       {
-        height: normalized.height,
+        height: options.height,
         visualScale: frame.settings.visualScale,
         sensitivity: frame.settings.sensitivity,
-        perspective: normalized.perspective,
+        perspective: options.perspective,
         captionHeight: frame.captionHeight,
       },
       buffers.points,
@@ -501,8 +500,8 @@ export const spectralTerrain: VisualStyleRenderer<TerrainOptions> = {
     );
 
     const short = Math.min(width, height);
-    const wireOpacity = clamp(normalized.wireOpacity / 100);
-    const fillOpacity = clamp(normalized.surfaceFill / 100) * 0.32;
+    const wireOpacity = clamp(options.wireOpacity / 100);
+    const fillOpacity = clamp(options.surfaceFill / 100) * 0.32;
     const glow = clamp(frame.settings.glow, 0, 2.5);
     ctx.save();
     ctx.lineJoin = "round";
@@ -549,14 +548,14 @@ export const spectralTerrain: VisualStyleRenderer<TerrainOptions> = {
       ctx.globalAlpha = 1;
     }
 
-    if (wireOpacity > 0 && !frame.reducedMotion && normalized.travelSpeed > 0) {
+    if (wireOpacity > 0 && !frame.reducedMotion && options.travelSpeed > 0) {
       drawTravelContour(
         ctx,
         buffers.points,
         buffers.travelPoints,
         columns,
         rows,
-        terrainTravelPosition(time, historySeconds, normalized.travelSpeed),
+        terrainTravelPosition(time, historySeconds, options.travelSpeed),
         buffers.depths,
         frame.settings.secondary,
         wireOpacity * 0.48,

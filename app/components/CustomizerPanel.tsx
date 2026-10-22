@@ -435,7 +435,7 @@ export function CustomizerPanel({
                 </div>
               </div>
             )}
-            {settings.mode === "spectrum" && (
+            {(settings.mode === "spectrum" || settings.mode === "edges") && (
               <div className="style-options">
                 <SettingSlider
                   label="Bar roundness"
@@ -446,31 +446,21 @@ export function CustomizerPanel({
                   step={5}
                   onChange={(value) => change("spectrumRoundness", value)}
                 />
-                <SettingSlider
-                  label="Reflection opacity"
-                  value={settings.spectrumReflection}
-                  display={`${settings.spectrumReflection}%`}
-                  min={0}
-                  max={100}
-                  step={5}
-                  onChange={(value) => change("spectrumReflection", value)}
-                />
-              </div>
-            )}
-            {settings.mode === "edges" && (
-              <div className="style-options">
-                <SettingSlider
-                  label="Bar roundness"
-                  value={settings.spectrumRoundness}
-                  display={`${settings.spectrumRoundness}%`}
-                  min={0}
-                  max={100}
-                  step={5}
-                  onChange={(value) => change("spectrumRoundness", value)}
-                />
-                <p className="setting-hint">
-                  Top bars move from bass to treble; bottom bars reverse the order.
-                </p>
+                {settings.mode === "spectrum" ? (
+                  <SettingSlider
+                    label="Reflection opacity"
+                    value={settings.spectrumReflection}
+                    display={`${settings.spectrumReflection}%`}
+                    min={0}
+                    max={100}
+                    step={5}
+                    onChange={(value) => change("spectrumReflection", value)}
+                  />
+                ) : (
+                  <p className="setting-hint">
+                    Top bars move from bass to treble; bottom bars reverse the order.
+                  </p>
+                )}
               </div>
             )}
             {settings.mode === "radial" && (

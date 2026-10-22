@@ -18,10 +18,6 @@ export type VisualFrameContext = {
   fittedLogo: boolean;
   captionHeight: number;
   audio: {
-    activity: number;
-    bass: number;
-    mid: number;
-    treble: number;
     energy: number;
     impact: number;
     bands: readonly Float32Array[];

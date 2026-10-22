@@ -1,4 +1,5 @@
 import { ANALYSIS_FPS } from "../audio/audio-analysis-config";
+import { DSP_BAND_COUNT } from "../dsp/contracts";
 import type { ResponseStyle, VisualSettings } from "./visual-settings-model";
 import { activeSubtitles, type SubtitleCue } from "../subtitles/model";
 import type { SoundEnvelope } from "../audio/audio-features";
@@ -12,17 +13,13 @@ import type { FrequencyHistory } from "./styles/types";
 import { bandEnergy } from "./styles/frequency-history";
 import { sampleBands } from "./styles/shared";
 import { radialSpectrumAperture } from "./styles/radial-spectrum";
-import { DEFAULT_RADIAL_OPTIONS } from "./style-options";
 export { ringBandAmplitude } from "./styles/legacy-common";
 export { ringMagnitude } from "./styles/pulse-ring";
 export { spectrumLayout } from "./styles/spectrum";
 export { sampleBarBand } from "./styles/frequency-mapping";
 export { edgeBarLayout, edgeBarResponse } from "./styles/edge-bars";
 
-const styleBandBuffers = new WeakMap<
-  CanvasRenderingContext2D,
-  { current: Float32Array; prior: Float32Array }
->();
+const styleBandBuffers = new WeakMap<CanvasRenderingContext2D, Float32Array>();
 
 export type Particle = {
   x: number;
@@ -431,7 +428,7 @@ function drawLogo(
               visualScale: s.visualScale,
               glow: s.glow,
             },
-            s.radialOptions ?? DEFAULT_RADIAL_OPTIONS,
+            s.radialOptions,
           ) * 1.9
         : 0;
     const width =
@@ -758,11 +755,8 @@ export function drawVisualization(
   const bands = extras.sound
     ? (state.ringBands[0] ?? [])
     : fallbackBands(frequency, sampleRate, activity);
-  let styleAudio = {
-    activity,
-    bass: bassPulse,
-    mid: energy,
-    treble: energy,
+  let styleActivity = activity;
+  const styleAudio = {
     energy,
     impact: ringPulse,
     bands,
@@ -770,33 +764,20 @@ export function drawVisualization(
     ringMix: extras.sound ? state.ringMix : 1,
   };
   if (settings.mode === "radial" || settings.mode === "terrain") {
-    let buffers = styleBandBuffers.get(ctx);
-    if (!buffers) {
-      buffers = { current: new Float32Array(96), prior: new Float32Array(96) };
-      styleBandBuffers.set(ctx, buffers);
+    let current = styleBandBuffers.get(ctx);
+    if (!current) {
+      current = new Float32Array(DSP_BAND_COUNT);
+      styleBandBuffers.set(ctx, current);
     }
-    const measured = extras.history?.read(time, buffers.current, settings.quietThreshold);
+    const measured = extras.history?.read(time, current, settings.quietThreshold);
     if (!measured)
-      for (let i = 0; i < buffers.current.length; i++)
-        buffers.current[i] = sampleBands(bands, i / (buffers.current.length - 1));
-    const previous = extras.history?.read(time - 0.15, buffers.prior, settings.quietThreshold);
-    const bass = bandEnergy(buffers.current, 0, 0.27, settings.sensitivity * settings.bassBoost);
-    const mid = bandEnergy(buffers.current, 0.27, 0.7, settings.sensitivity);
-    const treble = bandEnergy(buffers.current, 0.7, 1, settings.sensitivity);
-    const priorBass = previous
-      ? bandEnergy(buffers.prior, 0, 0.27, settings.sensitivity * settings.bassBoost)
-      : 0;
-    const energy = Math.max(bass, mid, treble);
-    styleAudio = {
-      ...styleAudio,
-      activity: energy,
-      bass,
-      mid,
-      treble,
-      energy,
-      impact: Math.max(0, Math.min(1, (bass - priorBass) * 2)),
-      bands: [buffers.current],
-    };
+      for (let i = 0; i < current.length; i++)
+        current[i] = sampleBands(bands, i / (current.length - 1));
+    const bass = bandEnergy(current, 0, 0.27, settings.sensitivity * settings.bassBoost);
+    const mid = bandEnergy(current, 0.27, 0.7, settings.sensitivity);
+    const treble = bandEnergy(current, 0.7, 1, settings.sensitivity);
+    styleActivity = Math.max(bass, mid, treble);
+    styleAudio.bands = [current];
   }
   ctx.clearRect(0, 0, w, h);
   const drop = settings.dropEffects && !extras.reducedMotion ? (extras.drop ?? 0) : 0;
@@ -825,7 +806,7 @@ export function drawVisualization(
     ctx.restore();
   }
   ctx.save();
-  ctx.globalAlpha = 0.7 + styleAudio.activity * 0.3;
+  ctx.globalAlpha = 0.7 + styleActivity * 0.3;
   if (settings.mode === "ring") {
     ctx.translate(w / 2, h / 2);
     ctx.scale(settings.visualScale, settings.visualScale);

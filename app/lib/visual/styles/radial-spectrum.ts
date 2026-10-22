@@ -1,4 +1,4 @@
-import { DEFAULT_RADIAL_OPTIONS, type RadialOptions } from "../style-options";
+import type { RadialOptions } from "../style-options";
 import { clamp, finite, sampleBands, TAU } from "./shared";
 import type { VisualStyleRenderer } from "./types";
 
@@ -217,7 +217,6 @@ export function buildRadialSpectrumGeometry(
 export const radialSpectrum: VisualStyleRenderer<RadialOptions> = {
   id: "radial",
   draw(ctx, frame, options) {
-    const resolvedOptions = { ...DEFAULT_RADIAL_OPTIONS, ...options };
     const geometry = buildRadialSpectrumGeometry(
       {
         width: frame.width,
@@ -229,7 +228,7 @@ export const radialSpectrum: VisualStyleRenderer<RadialOptions> = {
         visualScale: frame.settings.visualScale,
         glow: frame.settings.glow,
       },
-      resolvedOptions,
+      options,
     );
     if (!geometry.shortEdge || !geometry.bars.length) return;
 

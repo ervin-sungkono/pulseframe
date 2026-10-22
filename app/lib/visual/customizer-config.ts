@@ -258,10 +258,6 @@ const lookDefinitions: Array<Omit<BuiltinLook, "settings"> & { changes: Partial<
         backdrop: "clean",
         terrainOptions: {
           ...DEFAULT_TERRAIN_OPTIONS,
-          height: 60,
-          historySeconds: 5,
-          density: "medium",
-          perspective: "medium",
           wireOpacity: 82,
           surfaceFill: 32,
         },

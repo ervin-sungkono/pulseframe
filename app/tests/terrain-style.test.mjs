@@ -104,10 +104,6 @@ function frameAt(time, history, reducedMotion = false) {
     fittedLogo: false,
     captionHeight: 0,
     audio: {
-      activity: 0,
-      bass: 0,
-      mid: 0,
-      treble: 0,
       energy: 0,
       impact: 0,
       bands: [Float32Array.from({ length: 32 }, (_, i) => i / 64)],
