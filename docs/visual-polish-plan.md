@@ -40,29 +40,39 @@ Acceptance: prompt rising response, slower bass than treble release, no negative
 or nonfinite amplitudes, continuous window boundaries, silence/unknown handling,
 bounded caches across five-minute input, live reset, and full-vs-clipped equality.
 
-## 2. Coherent Liquid Blob
+## 2. Connected Liquid Blob
 
-Files: `app/lib/visual/styles/liquid-blob.ts`, `app/tests/blob-style.test.mjs`.
+Files: `app/lib/visual/styles/liquid-blob.ts`, `fluid-geometry.ts`,
+`app/tests/blob-style.test.mjs`.
 
-- Replace the isolated delayed-history blend with shared musical response.
-  Fluidity blends the measured current response with settled response and
-  controls spatial softness. Do not reapply sensitivity to normalized features.
-- Keep broad bass expansion, midrange asymmetry, finer treble detail and bounded
-  beat expansion separate. Couple neighboring angular samples into broad lobes
-  instead of allowing high-frequency measurements to create isolated spikes.
-- Retain a fixed center, positive radii, closed smooth contour and uniform fit
-  inside the existing 43%-of-short-edge limit. Active shape changes must come
-  from audio, with no rotating time phase. Optional idle motion remains subtle
-  and respects reduced motion.
-- Shade inside the actual silhouette: soft directional volume, gentle edge/rim
-  lighting and a small number of inset contours that follow deformation.
-  Internal Glow controls the extra treatment. Avoid opaque white patches,
-  detached highlights, a large bloom halo or a separate pixel simulation.
-- Reuse geometry/scratch buffers and a small, fixed number of drawing passes.
+- Use a 2D implicit field built from a core and three overlapping anisotropic
+  masses. Allow concavity, necks, elongation and independent lobe directions;
+  avoid a circular-radius constraint or a rigid rotating three-arm template.
+- Drive mass placement/size from current relative regional power, centroids,
+  spread and contrast, with shared response settling and at most 180 ms of raw
+  measured lookback. Bass/impact provide bounded expansion. Do not introduce
+  autonomous active clock motion, another FFT or previous-frame-only simulation.
+- Keep a bounded reusable 48/64/80-cell grid, deterministic marching-squares
+  ambiguity resolution and center-connected outer contour. Fit the field bounds
+  around the actual masses so minimum-size/low-detail necks remain resolved.
+  Keep each mass overlapping the core, including single-tone extremes.
+- Resample by arc length into the existing 96/128/160-point contract and use the
+  shared closed curve. Normalize the whole silhouette inside a 43% short-edge
+  radius with bounded center movement. Silence and zero deformation are circles;
+  quiet asymmetric audio must join that limit continuously. Idle motion only
+  breathes the circle and respects reduced motion.
+- Preserve all existing controls. Use a safe expressive deformation mapping so
+  the shipped default responds to broad music, rather than only high-control
+  narrow tones. Shade and highlight inside the actual contour; Internal Glow
+  controls the optional wash/rim. Avoid detached highlights and opaque patches.
+- Reuse geometry/field/edge buffers. Do not add a physical fluid solver, graphics
+  dependency, camera controller or separate export rendering path.
 
-Acceptance: distinct frequencies reshape the contour without a beat change;
-impulses expand and relax; silence settles; fixed input holds its active pose;
-high intensity stays smooth and bounded; all existing controls remain meaningful.
+Acceptance: broad and narrow spectra reshape the connected mass with beat held
+constant; sustained music produces visibly different forms; silence settles;
+fixed input holds its active pose. Test finite/nonintersecting bounds, independent
+contour-distance descriptors, near-zero continuity, the reproduced low-detail
+frequency sweep, source-time/FPS equality and preview/clipped-export agreement.
 
 ## 3. Atmospheric Spectral Terrain
 
@@ -92,14 +102,17 @@ transparent backgrounds and portrait/square framing remain usable.
 
 Files: `app/lib/visual/customizer-config.ts`, existing Customizer hints if needed.
 
-- Tune only Fluid Dreams and Neon Horizon. Keep stable preset IDs and six total
-  built-in looks so saved workflows do not break.
-- For Fluid Dreams, balance size/deformation, generous surface detail and low
-  distraction around the silhouette. For Neon Horizon, let depth cues carry the
-  scene and avoid a competing background grid or aggressive beat lighting.
-- Preserve the current option ranges and reset/undo/serialization contracts.
-  Reuse Fluidity, Internal Glow, Surface Fill, Wireframe Opacity and Glow rather
-  than adding new low-level mathematical controls.
+- Keep six stable built-in IDs, one per style. Tune Fluid Dreams for expressive
+  deformation, clipped shading and restrained lighting; keep Neon Horizon's
+  clean background and readable depth.
+- Enable particles in every built-in look, using deliberate counts of 24–40.
+  Preserve personal-look snapshots and existing reset/undo/serialization rules.
+- Fit Edge Bars gradients to each visible bar with the accent at 55% of its
+  length, preserving audio/layout calculations. Reuse one unit-height gradient
+  per frame through the paint transform, keeping path geometry in canvas units.
+  Verify quiet/loud colors, rounded corners and performance rather than adding
+  per-bar gradient allocation or an image cache.
+- Reuse the existing controls; add no low-level mathematical settings.
 
 ## 5. Verification and release gates
 
@@ -107,7 +120,7 @@ Files: `app/lib/visual/customizer-config.ts`, existing Customizer hints if neede
    geometry bounds/closure, control behavior, source-time equality across
    24/30/60 FPS, source seeks and maximum-history clipped-export warmup.
 2. Native Canvas: silence, bass, mids, treble, transients, low/high intensity in
-   16:9, 9:16 and 1:1. Review intended Blob/Terrain changes before updating their
+   16:9, 9:16 and 1:1. Review intended Blob/Edge Bars changes before updating their
    signatures. Preserve exact pixel hashes for the other 84 reference cases.
 3. Full supplied Amnesia track: inspect quiet intro, vocals, dense passages and
    later sections. Also use synthetic held tones and impulses to separate
@@ -118,10 +131,14 @@ Files: `app/lib/visual/customizer-config.ts`, existing Customizer hints if neede
 5. Export: full short test track and selected real-song range; compare logical
    geometry at equivalent source times, verify actual WASM use and decode files.
    Check cancellation/fallback where the shared history integration changes them.
-6. Performance: compare geometry/history work and Canvas submission separately,
-   record desktop 720p p95 and 4× CPU-throttled simulation, plus bounded memory.
-   Aim for ≤6 ms desktop and ≤12 ms simulated mobile style drawing; these are
-   workload targets, not universal GPU/FPS or physical-device guarantees.
+6. Performance: compare the exact previous tree and candidate on one idle host,
+   using three alternating rounds, explicit grouping/GC and all six styles.
+   Separate isolated drawing, default compositing, actual Quick Looks, geometry,
+   history, analysis and encoding. Screen seven audio cases and confirm noisy
+   controls in shorter paired runs. Retain every regression flag; aim for ≤6 ms
+   desktop / ≤12 ms throttled isolated styles, with full-frame costs reported
+   separately. Measure maximum controls and bounded memory. These are CPU/Canvas
+   submission targets, rather than GPU/FPS or physical-device guarantees.
 7. Run the full Node suite, TypeScript, ESLint, Prettier, production build and
    diff checks. Independently review delegated work, commit conventionally,
    update PR #18/report, and verify the exact Vercel preview commit and exports.
@@ -132,7 +149,7 @@ occlusion and physical-device verification limits rather than introduce WebGL.
 
 ## Implementation record
 
-Implemented with two Luna 6 max-effort renderer tasks and independent parent
-review. Shared response, export integration and lifecycle checks remain in
-UI-independent models/controllers. The engineering report records measured
-results, validation scope and remaining physical-device/Canvas limitations.
+Delegated renderer implementation and independent numerical review use Luna 6
+at max effort. Parent review covers code, native real-song frames, performance,
+UI/persistence, exports and exact-commit hosted verification. The engineering
+report records measured regressions, validation scope and remaining limits.

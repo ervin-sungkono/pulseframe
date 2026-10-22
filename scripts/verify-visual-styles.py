@@ -169,9 +169,12 @@ SETUP_JS = r"""async () => {
       (index + 1) / 30, 1000 / 30, null, null, audioState, sampleRate,
       durationSeconds, [], { sound: frames[index % frames.length], history, drop: 0 });
   };
-  const renderRun = (mode, caseName, compositing, width, height) => {
+  const renderRun = (mode, caseName, compositing, width, height, profile = 'default') => {
     const { ctx } = makeCanvas(width, height);
-    const settings = makeSettings(mode, compositing);
+    const overrides = profile === 'builtin'
+      ? BUILTIN_LOOKS.find((look) => look.settings.mode === mode)?.settings ?? {}
+      : profile === 'maximum' ? maxChanges[mode] ?? {} : {};
+    const settings = makeSettings(mode, compositing, overrides);
     const particles = makeParticles(settings.particleCount);
     const audioState = createAudioReactiveState();
     const history = new PreparedFrequencyHistory(audio[caseName]);
