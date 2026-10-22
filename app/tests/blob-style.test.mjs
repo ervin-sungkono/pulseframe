@@ -3,16 +3,13 @@ import test from "node:test";
 
 import { loadSources } from "./load-source.mjs";
 
-const { "liquid-blob": blob } = await loadSources();
-const DEFAULT_OPTIONS = {
-  size: 100,
-  deformation: 35,
-  fluidity: 60,
-  detail: "medium",
-  bassExpansion: 70,
-  internalGlow: 45,
-  idleMotion: "subtle",
-};
+const {
+  "frequency-history": frequencyHistory,
+  "liquid-blob": blob,
+  "style-options": styleOptions,
+} = await loadSources();
+const DEFAULT_OPTIONS = styleOptions.DEFAULT_BLOB_OPTIONS;
+const FLUID_OPTIONS = { ...DEFAULT_OPTIONS, deformation: 85 };
 
 function makeFrame(changes = {}) {
   const bands = changes.bands ?? [new Float32Array(256)];
@@ -48,26 +45,47 @@ function makeFrame(changes = {}) {
   };
 }
 
-function geometry(frame, options = DEFAULT_OPTIONS) {
-  const points = new Float32Array(320);
-  const count = blob.writeLiquidBlobGeometry(points, frame, options);
-  return { points, count };
+function toneBands(position, length = 256, level = 0.82, width = 0.045) {
+  const bands = new Float32Array(length);
+  for (let index = 0; index < bands.length; index++) {
+    const distance = (index / (bands.length - 1) - position) / width;
+    bands[index] = level * Math.exp(-0.5 * distance * distance);
+  }
+  return bands;
 }
 
-function makeToneFrame(position, field) {
-  const spectrum = new Float32Array(256);
-  for (let index = 0; index < spectrum.length; index += 1) {
-    const distance = (index / (spectrum.length - 1) - position) / 0.045;
-    spectrum[index] = 0.82 * Math.exp(-0.5 * distance * distance);
-  }
+function makeToneFrame(position, field = "mid", changes = {}) {
+  const spectrum = toneBands(position);
+  const audio = {
+    activity: 0.7,
+    bass: field === "bass" ? 0.7 : 0,
+    mid: field === "mid" ? 0.7 : 0,
+    treble: field === "treble" ? 0.7 : 0,
+    energy: 0.7,
+    impact: 0,
+    bands: [spectrum],
+    bandLayers: [],
+    ringMix: 0,
+  };
   return makeFrame({
+    ...changes,
+    audio: changes.audio ?? audio,
+    bands: changes.bands ?? [spectrum],
+  });
+}
+
+function makeLevelFrame(level, changes = {}) {
+  const spectrum = new Float32Array(96).fill(level);
+  const broad = level > 0 ? 1 - Math.exp(-level * 1.3 * 8) : 0;
+  return makeFrame({
+    ...changes,
     bands: [spectrum],
     audio: {
-      activity: 0.7,
-      bass: field === "bass" ? 0.7 : 0,
-      mid: field === "mid" ? 0.7 : 0,
-      treble: field === "treble" ? 0.7 : 0,
-      energy: 0.7,
+      activity: broad,
+      bass: broad,
+      mid: broad,
+      treble: broad,
+      energy: broad,
       impact: 0,
       bands: [spectrum],
       bandLayers: [],
@@ -76,25 +94,153 @@ function makeToneFrame(position, field) {
   });
 }
 
-function center(frame) {
-  return [frame.width / 2, frame.height / 2];
+function makeQuietToneFrame(level, changes = {}) {
+  const spectrum = toneBands(0.18, 256, level);
+  const broad = level > 0 ? 1 - Math.exp(-level * 1.3 * 8) : 0;
+  return makeFrame({
+    ...changes,
+    bands: [spectrum],
+    audio: {
+      activity: broad,
+      bass: broad,
+      mid: broad,
+      treble: broad,
+      energy: broad,
+      impact: 0,
+      bands: [spectrum],
+      bandLayers: [],
+      ringMix: 0,
+    },
+  });
 }
 
-function radii(points, count, frame) {
-  const [cx, cy] = center(frame);
-  return Array.from({ length: count }, (_, index) =>
-    Math.hypot(points[index * 2] - cx, points[index * 2 + 1] - cy),
+function makeBroadMusicFrame(changes = {}) {
+  const spectrum = new Float32Array(256);
+  for (let index = 0; index < spectrum.length; index++) {
+    const position = index / (spectrum.length - 1);
+    const bump = (center, width, amplitude) => {
+      const distance = (position - center) / width;
+      return amplitude * Math.exp(-0.5 * distance * distance);
+    };
+    spectrum[index] =
+      0.035 + bump(0.14, 0.085, 0.38) + bump(0.47, 0.14, 0.66) + bump(0.82, 0.095, 0.34);
+  }
+  return makeFrame({
+    ...changes,
+    bands: [spectrum],
+    audio: {
+      activity: 0.82,
+      bass: 0.68,
+      mid: 0.82,
+      treble: 0.57,
+      energy: 0.82,
+      impact: 0.12,
+      bands: [spectrum],
+      bandLayers: [],
+      ringMix: 0,
+    },
+  });
+}
+
+function geometry(frame, options = DEFAULT_OPTIONS) {
+  const points = new Float32Array(320);
+  const count = blob.writeLiquidBlobGeometry(points, frame, options);
+  return { points, count };
+}
+
+function directedContourMetrics(source, target, count) {
+  let total = 0;
+  let maximum = 0;
+  for (let point = 0; point < count; point++) {
+    const x = source[point * 2];
+    const y = source[point * 2 + 1];
+    let nearest = Infinity;
+    for (let edge = 0; edge < count; edge++) {
+      const next = (edge + 1) % count;
+      const ax = target[edge * 2];
+      const ay = target[edge * 2 + 1];
+      const dx = target[next * 2] - ax;
+      const dy = target[next * 2 + 1] - ay;
+      const lengthSquared = dx * dx + dy * dy;
+      const mix =
+        lengthSquared > 0
+          ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / lengthSquared))
+          : 0;
+      nearest = Math.min(nearest, Math.hypot(x - (ax + dx * mix), y - (ay + dy * mix)));
+    }
+    total += nearest;
+    maximum = Math.max(maximum, nearest);
+  }
+  return { mean: total / count, maximum };
+}
+
+function directedContourDistance(source, target, count) {
+  return directedContourMetrics(source, target, count).mean;
+}
+
+function contourDistance(a, b, count) {
+  return (directedContourDistance(a, b, count) + directedContourDistance(b, a, count)) / 2;
+}
+
+function contourMaxDistance(a, b, count) {
+  return Math.max(
+    directedContourMetrics(a, b, count).maximum,
+    directedContourMetrics(b, a, count).maximum,
   );
 }
 
-function contourDifference(a, b, count) {
-  let total = 0;
-  for (let index = 0; index < count; index += 1) {
-    const dx = a[index * 2] - b[index * 2];
-    const dy = a[index * 2 + 1] - b[index * 2 + 1];
-    total += Math.hypot(dx, dy);
+function polygonMetrics(points, count, frame) {
+  let twiceArea = 0;
+  let centroidX = 0;
+  let centroidY = 0;
+  let maxRadius = 0;
+  let meanRadius = 0;
+  let minRadius = Infinity;
+  let positiveTurns = 0;
+  let negativeTurns = 0;
+  const centerX = frame.width / 2;
+  const centerY = frame.height / 2;
+
+  for (let index = 0; index < count; index++) {
+    const next = (index + 1) % count;
+    const x = points[index * 2];
+    const y = points[index * 2 + 1];
+    const nextX = points[next * 2];
+    const nextY = points[next * 2 + 1];
+    const cross = x * nextY - nextX * y;
+    twiceArea += cross;
+    centroidX += (x + nextX) * cross;
+    centroidY += (y + nextY) * cross;
+    const radius = Math.hypot(x - centerX, y - centerY);
+    meanRadius += radius;
+    minRadius = Math.min(minRadius, radius);
+    maxRadius = Math.max(maxRadius, radius);
+
+    const after = (index + 2) % count;
+    const turn =
+      (nextX - x) * (points[after * 2 + 1] - nextY) - (nextY - y) * (points[after * 2] - nextX);
+    if (turn > 1e-4) positiveTurns++;
+    if (turn < -1e-4) negativeTurns++;
   }
-  return total / count;
+
+  const area = twiceArea / 2;
+  if (Math.abs(twiceArea) > 1e-5) {
+    centroidX /= 3 * twiceArea;
+    centroidY /= 3 * twiceArea;
+  } else {
+    centroidX = centerX;
+    centroidY = centerY;
+  }
+  return {
+    area: Math.abs(area),
+    areaCentroidX: centroidX,
+    areaCentroidY: centroidY,
+    maxRadius,
+    minRadius,
+    meanRadius: meanRadius / count,
+    positiveTurns,
+    negativeTurns,
+  };
 }
 
 function orientation(ax, ay, bx, by, cx, cy) {
@@ -107,6 +253,30 @@ function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
   const cdA = orientation(cx, cy, dx, dy, ax, ay);
   const cdB = orientation(cx, cy, dx, dy, bx, by);
   return abC * abD < 0 && cdA * cdB < 0;
+}
+
+function assertSimpleContour(points, count) {
+  for (let first = 0; first < count; first++) {
+    const firstNext = (first + 1) % count;
+    for (let second = first + 2; second < count; second++) {
+      const secondNext = (second + 1) % count;
+      if (first === 0 && secondNext === 0) continue;
+      assert.equal(
+        segmentsIntersect(
+          points[first * 2],
+          points[first * 2 + 1],
+          points[firstNext * 2],
+          points[firstNext * 2 + 1],
+          points[second * 2],
+          points[second * 2 + 1],
+          points[secondNext * 2],
+          points[secondNext * 2 + 1],
+        ),
+        false,
+        "the connected outer contour has no self-intersections",
+      );
+    }
+  }
 }
 
 function fakeContext() {
@@ -129,16 +299,16 @@ function fakeContext() {
     moveTo() {},
     quadraticCurveTo() {},
     closePath() {
-      calls.closePath += 1;
+      calls.closePath++;
     },
     clip() {
-      calls.clip += 1;
+      calls.clip++;
     },
     fill() {
-      calls.fill += 1;
+      calls.fill++;
     },
     stroke() {
-      calls.stroke += 1;
+      calls.stroke++;
     },
     createRadialGradient() {
       return makeGradient("radial");
@@ -156,61 +326,30 @@ function fakeContext() {
   return { ctx, calls };
 }
 
-test("writes a bounded, angularly ordered contour and draws it as a closed smooth curve", () => {
-  const frame = makeToneFrame(0.22, "bass");
-  const { points, count } = geometry(frame, { ...DEFAULT_OPTIONS, detail: "high" });
+test("active sound produces one bounded, concave fluid contour and a clipped gel surface", () => {
+  const frame = makeToneFrame(0.24, "mid");
+  const { points, count } = geometry(frame, { ...FLUID_OPTIONS, detail: "high" });
   assert.equal(count, 160);
+  assert.ok(points.every(Number.isFinite));
 
-  const [cx, cy] = center(frame);
-  const angleStep = (Math.PI * 2) / count;
-  const angleAt = (index) => {
-    const raw = Math.atan2(points[index * 2 + 1] - cy, points[index * 2] - cx);
-    return (raw + Math.PI * 2) % (Math.PI * 2);
-  };
-  const contourRadii = radii(points, count, frame);
-  assert.ok(Math.min(...contourRadii) > 0, "the contour stays away from the center");
-  assert.ok(Math.max(...contourRadii) <= Math.min(frame.width, frame.height) * 0.43 + 1e-4);
-
-  for (let index = 0; index < count; index += 1) {
-    const next = (index + 1) % count;
-    const delta = (angleAt(next) - angleAt(index) + Math.PI * 2) % (Math.PI * 2);
-    assert.ok(delta > 0, "polar angle advances positively");
-    assert.ok(
-      Math.abs(delta - angleStep) < angleStep * 0.08,
-      "angular samples remain evenly spaced",
-    );
-  }
-
-  for (let first = 0; first < count; first += 1) {
-    const firstNext = (first + 1) % count;
-    for (let second = first + 2; second < count; second += 1) {
-      const secondNext = (second + 1) % count;
-      if (first === 0 && secondNext === 0) continue;
-      assert.equal(
-        segmentsIntersect(
-          points[first * 2],
-          points[first * 2 + 1],
-          points[firstNext * 2],
-          points[firstNext * 2 + 1],
-          points[second * 2],
-          points[second * 2 + 1],
-          points[secondNext * 2],
-          points[secondNext * 2 + 1],
-        ),
-        false,
-        "non-neighboring contour edges do not cross",
-      );
-    }
-  }
+  const metrics = polygonMetrics(points, count, frame);
+  assert.ok(metrics.maxRadius <= Math.min(frame.width, frame.height) * 0.43 + 1e-4);
+  assert.ok(metrics.maxRadius > Math.min(frame.width, frame.height) * 0.25);
+  assert.ok(
+    metrics.positiveTurns > 8 && metrics.negativeTurns > 8,
+    "the outline has real concavities",
+  );
+  assert.ok(metrics.area > 0);
+  assert.ok(
+    Math.hypot(metrics.areaCentroidX - frame.width / 2, metrics.areaCentroidY - frame.height / 2) <
+      Math.min(frame.width, frame.height) * 0.075 + 1e-4,
+  );
+  assertSimpleContour(points, count);
 
   const { ctx, calls } = fakeContext();
-  blob.liquidBlob.draw(ctx, frame, DEFAULT_OPTIONS);
-  assert.equal(
-    calls.closePath,
-    3,
-    "surface, clipping contour and the optional rim use the shared smooth spline",
-  );
-  assert.equal(calls.clip, 1, "soft shading is constrained to the deformed contour");
+  blob.liquidBlob.draw(ctx, frame, { ...FLUID_OPTIONS, detail: "high" });
+  assert.equal(calls.closePath, 3);
+  assert.equal(calls.clip, 1);
   assert.equal(calls.fill, 5);
   assert.equal(calls.stroke, 1);
   assert.ok(
@@ -218,76 +357,344 @@ test("writes a bounded, angularly ordered contour and draws it as a closed smoot
   );
 });
 
-test("silence stays circular when idle motion is off", () => {
-  const frame = makeFrame();
-  const { points, count } = geometry(frame, { ...DEFAULT_OPTIONS, idleMotion: "off" });
-  const contourRadii = radii(points, count, frame);
-  const average = contourRadii.reduce((sum, radius) => sum + radius, 0) / count;
-  assert.ok(contourRadii.every((radius) => Math.abs(radius - average) < 1e-4));
-});
-
-test("bass, mid and treble tones produce distinct contours", () => {
-  const tones = [
-    geometry(makeToneFrame(0.12, "bass")),
-    geometry(makeToneFrame(0.51, "mid")),
-    geometry(makeToneFrame(0.89, "treble")),
-  ];
-  assert.equal(new Set(tones.map(({ count }) => count)).size, 1);
-  assert.ok(contourDifference(tones[0].points, tones[1].points, tones[0].count) > 0.25);
-  assert.ok(contourDifference(tones[0].points, tones[2].points, tones[0].count) > 0.25);
-  assert.ok(contourDifference(tones[1].points, tones[2].points, tones[1].count) > 0.25);
-});
-
-test("reduced motion removes idle animation while preserving audio response", () => {
-  const silentAtOne = makeFrame({ time: 1, reducedMotion: true });
-  const silentAtNine = makeFrame({ time: 9, reducedMotion: true });
-  const first = geometry(silentAtOne);
-  const later = geometry(silentAtNine);
-  assert.deepEqual([...first.points], [...later.points]);
-
-  const active = makeToneFrame(0.2, "bass");
-  active.reducedMotion = true;
-  const activeShape = geometry(active);
-  const silentShape = geometry({ ...active, audio: makeFrame().audio });
-  assert.ok(contourDifference(activeShape.points, silentShape.points, activeShape.count) > 0.25);
-});
-
-test("size, deformation, fluidity, expansion and detail controls affect output", () => {
-  const frame = makeToneFrame(0.23, "bass");
-  const small = geometry(frame, { ...DEFAULT_OPTIONS, size: 50 });
-  const large = geometry(frame, { ...DEFAULT_OPTIONS, size: 150 });
+test("the production default keeps a broad multi-peak signal visibly fluid", () => {
+  const frame = makeBroadMusicFrame();
+  const shape = geometry(frame, DEFAULT_OPTIONS);
+  const metrics = polygonMetrics(shape.points, shape.count, frame);
   assert.ok(
-    radii(large.points, large.count, frame).reduce((sum, value) => sum + value, 0) >
-      radii(small.points, small.count, frame).reduce((sum, value) => sum + value, 0),
+    (metrics.maxRadius - metrics.minRadius) / metrics.meanRadius > 0.2,
+    "the shipped deformation default should show mass movement on broad music",
   );
-
-  const crisp = geometry({ ...frame, time: 4 }, { ...DEFAULT_OPTIONS, fluidity: 0 });
-  const soft = geometry({ ...frame, time: 4 }, { ...DEFAULT_OPTIONS, fluidity: 100 });
-  assert.ok(contourDifference(crisp.points, soft.points, crisp.count) > 0.1);
-
-  const undeformed = geometry(frame, { ...DEFAULT_OPTIONS, deformation: 0 });
-  const deformed = geometry(frame, { ...DEFAULT_OPTIONS, deformation: 100 });
-  assert.ok(contourDifference(undeformed.points, deformed.points, undeformed.count) > 0.1);
-
-  const noExpansion = radii(
-    geometry(frame, { ...DEFAULT_OPTIONS, bassExpansion: 0 }).points,
-    small.count,
-    frame,
-  );
-  const expanded = radii(
-    geometry(frame, { ...DEFAULT_OPTIONS, bassExpansion: 100 }).points,
-    small.count,
-    frame,
-  );
-  assert.ok(
-    expanded.reduce((sum, value) => sum + value, 0) >
-      noExpansion.reduce((sum, value) => sum + value, 0),
-  );
-  assert.equal(geometry(frame, { ...DEFAULT_OPTIONS, detail: "low" }).count, 96);
-  assert.equal(geometry(frame, { ...DEFAULT_OPTIONS, detail: "high" }).count, 160);
+  assert.ok(metrics.positiveTurns > 4 && metrics.negativeTurns > 4);
+  assertSimpleContour(shape.points, shape.count);
 });
 
-test("NaN frame data is contained and same source time matches at 24, 30 and 60 FPS", () => {
+test("silence and zero deformation are circles; near-silence joins the fluid continuously", () => {
+  const silent = makeFrame({ time: 4 });
+  const quiet = geometry(silent, { ...DEFAULT_OPTIONS, idleMotion: "off" });
+  const quietMetrics = polygonMetrics(quiet.points, quiet.count, silent);
+  assert.ok(quietMetrics.maxRadius - quietMetrics.minRadius < 1e-4);
+
+  const active = makeToneFrame(0.31, "mid");
+  const undeformed = geometry(active, { ...DEFAULT_OPTIONS, deformation: 0 });
+  const undeformedMetrics = polygonMetrics(undeformed.points, undeformed.count, active);
+  assert.ok(undeformedMetrics.maxRadius - undeformedMetrics.minRadius < 1e-4);
+
+  const quietLevels = [0, 1e-8, 1e-6, 1e-4, 1e-3, 1e-2];
+  const quietShapes = quietLevels.map((level) =>
+    geometry(makeQuietToneFrame(level), { ...FLUID_OPTIONS, idleMotion: "off" }),
+  );
+  for (let index = 1; index < quietShapes.length; index++) {
+    assert.ok(
+      contourDistance(
+        quietShapes[index - 1].points,
+        quietShapes[index].points,
+        quietShapes[index].count,
+      ) < 2.5,
+      "quiet asymmetric spectra blend into the circle without a centroid jump",
+    );
+  }
+
+  const subtleA = geometry({ ...silent, time: 1 }, { ...DEFAULT_OPTIONS, idleMotion: "subtle" });
+  const subtleB = geometry({ ...silent, time: 3 }, { ...DEFAULT_OPTIONS, idleMotion: "subtle" });
+  const reducedA = geometry({ ...silent, time: 1, reducedMotion: true });
+  const reducedB = geometry({ ...silent, time: 9, reducedMotion: true });
+  assert.ok(contourDistance(subtleA.points, subtleB.points, subtleA.count) > 0.1);
+  assert.deepEqual(reducedA.points, reducedB.points);
+});
+
+test("spectral redistribution changes the shape while the beat and broad levels stay fixed", () => {
+  const bass = geometry(makeToneFrame(0.12, "mid"), FLUID_OPTIONS);
+  const lowerMid = geometry(makeToneFrame(0.28, "mid"), FLUID_OPTIONS);
+  const upperMid = geometry(makeToneFrame(0.62, "mid"), FLUID_OPTIONS);
+  const treble = geometry(makeToneFrame(0.88, "mid"), FLUID_OPTIONS);
+  for (const other of [lowerMid, upperMid, treble]) {
+    assert.ok(contourDistance(bass.points, other.points, bass.count) > 3);
+  }
+  assert.ok(contourDistance(lowerMid.points, upperMid.points, lowerMid.count) > 3);
+  assert.deepEqual(
+    lowerMid.points,
+    geometry({ ...makeToneFrame(0.28, "mid"), time: 80 }, FLUID_OPTIONS).points,
+  );
+});
+
+test("size, deformation, expansion, detail and sensitivity remain useful controls", () => {
+  const frame = makeToneFrame(0.28, "bass");
+  const small = geometry(frame, { ...FLUID_OPTIONS, size: 50 });
+  const large = geometry(frame, { ...FLUID_OPTIONS, size: 150 });
+  assert.ok(
+    polygonMetrics(large.points, large.count, frame).area >
+      polygonMetrics(small.points, small.count, frame).area,
+  );
+
+  const lowDeformation = geometry(frame, { ...FLUID_OPTIONS, deformation: 15 });
+  const highDeformation = geometry(frame, { ...FLUID_OPTIONS, deformation: 100 });
+  assert.ok(
+    contourDistance(lowDeformation.points, highDeformation.points, lowDeformation.count) > 3,
+  );
+
+  const noBassExpansion = geometry(frame, { ...FLUID_OPTIONS, bassExpansion: 0 });
+  const expanded = geometry(frame, { ...FLUID_OPTIONS, bassExpansion: 100 });
+  assert.ok(
+    polygonMetrics(expanded.points, expanded.count, frame).area >
+      polygonMetrics(noBassExpansion.points, noBassExpansion.count, frame).area,
+  );
+
+  const lowSensitivity = geometry({ ...frame, settings: { ...frame.settings, sensitivity: 0.2 } });
+  const highSensitivity = geometry({ ...frame, settings: { ...frame.settings, sensitivity: 3 } });
+  assert.ok(
+    contourDistance(lowSensitivity.points, highSensitivity.points, lowSensitivity.count) > 0.5,
+  );
+  assert.equal(geometry(frame, { ...FLUID_OPTIONS, detail: "low" }).count, 96);
+  assert.equal(geometry(frame, { ...FLUID_OPTIONS, detail: "high" }).count, 160);
+});
+
+test("absolute source time is deterministic across FPS, seeks and query order", () => {
+  const outputs = [24, 30, 60].map((fps) => {
+    const sourceFrame = Math.round(5 * fps);
+    return geometry({ ...makeToneFrame(0.36, "mid"), time: sourceFrame / fps }, FLUID_OPTIONS)
+      .points;
+  });
+  assert.deepEqual(outputs[0], outputs[1]);
+  assert.deepEqual(outputs[1], outputs[2]);
+
+  const frame = makeToneFrame(0.51, "mid");
+  geometry({ ...frame, time: 8 }, FLUID_OPTIONS);
+  const afterSeek = geometry({ ...frame, time: 5 }, FLUID_OPTIONS).points;
+  assert.deepEqual(afterSeek, geometry({ ...frame, time: 5 }, FLUID_OPTIONS).points);
+
+  const staticActive = geometry(frame, FLUID_OPTIONS).points;
+  assert.deepEqual(staticActive, geometry({ ...frame, time: 25 }, FLUID_OPTIONS).points);
+});
+
+test("frequency changes form a smooth, source-timed musical trajectory", () => {
+  const centerAt = (time) => 0.22 + Math.min(1, Math.max(0, (time - 1) / 2)) * 0.48;
+  const history = {
+    revision: 1,
+    read(time, target) {
+      const center = centerAt(time);
+      const length = target.length;
+      for (let index = 0; index < length; index++) {
+        const distance = (index / (length - 1) - center) / 0.06;
+        target[index] = 0.78 * Math.exp(-0.5 * distance * distance);
+      }
+      return true;
+    },
+  };
+  const descriptors = [];
+  for (let step = 0; step <= 8; step++) {
+    const time = 1 + step * 0.25;
+    const frame = makeToneFrame(centerAt(time), "mid", { time, history });
+    const result = geometry(frame, FLUID_OPTIONS);
+    const metrics = polygonMetrics(result.points, result.count, frame);
+    descriptors.push([
+      metrics.areaCentroidX,
+      metrics.areaCentroidY,
+      metrics.area,
+      metrics.maxRadius,
+    ]);
+  }
+
+  let totalMovement = 0;
+  for (let index = 1; index < descriptors.length; index++) {
+    const previous = descriptors[index - 1];
+    const current = descriptors[index];
+    const distance = Math.hypot(current[0] - previous[0], current[1] - previous[1]);
+    assert.ok(distance < 12, "mass moves without frame-to-frame jumps");
+    totalMovement += distance;
+  }
+  assert.ok(totalMovement > 8, "the spectrum steers visible mass across the frame");
+  const atEnd = geometry(
+    makeToneFrame(centerAt(3), "mid", { time: 3, history }),
+    FLUID_OPTIONS,
+  ).points;
+  geometry(makeToneFrame(0.3, "mid", { time: 20, history }), FLUID_OPTIONS);
+  assert.deepEqual(
+    atEnd,
+    geometry(makeToneFrame(centerAt(3), "mid", { time: 3, history }), FLUID_OPTIONS).points,
+  );
+});
+
+test("low-detail small blobs keep a smooth contour as a narrow peak moves", () => {
+  const centerAt = (time) => 0.22 + Math.min(1, Math.max(0, (time - 1) / 2)) * 0.48;
+  const history = {
+    revision: 1,
+    read(time, target) {
+      const center = centerAt(time);
+      for (let index = 0; index < target.length; index++) {
+        const distance = (index / (target.length - 1) - center) / 0.06;
+        target[index] = 0.78 * Math.exp(-0.5 * distance * distance);
+      }
+      return true;
+    },
+  };
+  const options = {
+    ...FLUID_OPTIONS,
+    size: 50,
+    detail: "low",
+    fluidity: 100,
+    deformation: 85,
+  };
+  const frameAt = (time) => {
+    const spectrum = toneBands(centerAt(time), 96, 0.78, 0.06);
+    const sensitivity = 1.3;
+    const bass = frequencyHistory.bandEnergy(spectrum, 0, 0.27, sensitivity);
+    const mid = frequencyHistory.bandEnergy(spectrum, 0.27, 0.7, sensitivity);
+    const treble = frequencyHistory.bandEnergy(spectrum, 0.7, 1, sensitivity);
+    const activity = Math.max(bass, mid, treble);
+    return makeFrame({
+      time,
+      width: 320,
+      height: 240,
+      settings: { ...makeFrame().settings, visualScale: 0.5 },
+      history,
+      bands: [spectrum],
+      audio: {
+        activity,
+        bass,
+        mid,
+        treble,
+        energy: activity,
+        impact: 0,
+        bands: [spectrum],
+        bandLayers: [],
+        ringMix: 0,
+      },
+    });
+  };
+
+  let previous = null;
+  let largestAreaStep = 0;
+  let largestCentroidStep = 0;
+  let largestContourStep = 0;
+  for (let frameIndex = 0; frameIndex <= 120; frameIndex++) {
+    const frame = frameAt(1 + frameIndex / 60);
+    const shape = geometry(frame, options);
+    const metrics = polygonMetrics(shape.points, shape.count, frame);
+    assert.ok(shape.points.every(Number.isFinite));
+    assert.ok(metrics.maxRadius <= Math.min(frame.width, frame.height) * 0.43 + 1e-4);
+    if (previous) {
+      largestAreaStep = Math.max(largestAreaStep, Math.abs(metrics.area - previous.metrics.area));
+      largestCentroidStep = Math.max(
+        largestCentroidStep,
+        Math.hypot(
+          metrics.areaCentroidX - previous.metrics.areaCentroidX,
+          metrics.areaCentroidY - previous.metrics.areaCentroidY,
+        ),
+      );
+      largestContourStep = Math.max(
+        largestContourStep,
+        contourMaxDistance(shape.points, previous.points, shape.count),
+      );
+    }
+    previous = { points: shape.points.slice(0, shape.count * 2), metrics };
+  }
+
+  assert.ok(largestAreaStep < 100, `one-frame area change was ${largestAreaStep.toFixed(1)} px²`);
+  assert.ok(
+    largestCentroidStep < 4,
+    `one-frame centroid move was ${largestCentroidStep.toFixed(1)} px`,
+  );
+  assert.ok(
+    largestContourStep < 12,
+    `one-frame contour move was ${largestContourStep.toFixed(1)} px`,
+  );
+});
+
+test("response retains fast attacks and settling while unavailable history uses current audio", () => {
+  const readTimes = [];
+  const levelAt = (time) => (time >= 0.97 && time < 1.03 ? 0.78 : 0);
+  const history = {
+    revision: 1,
+    read(time, target) {
+      readTimes.push(time);
+      target.fill(levelAt(time));
+      return true;
+    },
+  };
+  const frameAt = (time, level, historySource) => {
+    const frame = makeLevelFrame(level, { time, history: historySource, reducedMotion: true });
+    return frame;
+  };
+  const options = { ...FLUID_OPTIONS, idleMotion: "off" };
+  const quiet = geometry(frameAt(0.8, 0, undefined), options);
+  const attack = geometry(frameAt(1, 0.78, history), options);
+  const releaseDry = geometry(frameAt(1.1, 0, history), { ...options, fluidity: 0 });
+  readTimes.length = 0;
+  const releaseWet = geometry(frameAt(1.1, 0, history), { ...options, fluidity: 100 });
+  const quietMean = polygonMetrics(quiet.points, quiet.count, frameAt(0.8, 0)).meanRadius;
+  const attackMean = polygonMetrics(attack.points, attack.count, frameAt(1, 0.78)).meanRadius;
+  const dryMean = polygonMetrics(releaseDry.points, releaseDry.count, frameAt(1.1, 0)).meanRadius;
+  const wetMean = polygonMetrics(releaseWet.points, releaseWet.count, frameAt(1.1, 0)).meanRadius;
+  const attackChange = contourDistance(attack.points, quiet.points, attack.count);
+  const releaseChange = contourDistance(releaseWet.points, releaseDry.points, releaseWet.count);
+
+  assert.ok(attackMean > quietMean + 4, "current audio appears on the attack frame");
+  assert.ok(Math.abs(dryMean - quietMean) < 0.1, "zero fluidity uses current measurements only");
+  assert.ok(wetMean > dryMean + 1, "fluidity blends the measured release envelope");
+  assert.ok(
+    releaseChange > 1 && releaseChange < attackChange,
+    "the release responds, then settles",
+  );
+  assert.ok(readTimes.includes(1.1 - 0.18), "shape velocity reads a short raw source-time lag");
+  assert.ok(readTimes.every((time) => time <= 1.1 && time >= 1.1 - 0.9 - 1e-6));
+
+  const unavailable = geometry({ ...frameAt(1.1, 0), history: { read: () => false } }, options);
+  assert.deepEqual(unavailable.points, releaseDry.points);
+});
+
+test("high settings keep the whole single contour finite and inside the frame bound", () => {
+  for (const [width, height] of [
+    [1280, 720],
+    [720, 1280],
+    [960, 960],
+  ]) {
+    const frame = makeToneFrame(0.23, "bass", { width, height });
+    frame.settings.visualScale = 1.5;
+    frame.audio = { ...frame.audio, bass: 1, mid: 1, treble: 1, impact: 1 };
+    const shape = geometry(frame, {
+      ...FLUID_OPTIONS,
+      size: 150,
+      deformation: 100,
+      bassExpansion: 100,
+      detail: "high",
+    });
+    assert.ok(shape.points.every(Number.isFinite));
+    const metrics = polygonMetrics(shape.points, shape.count, frame);
+    assert.ok(metrics.maxRadius <= Math.min(width, height) * 0.43 + 1e-4);
+    assert.ok(metrics.area > Math.PI * Math.min(width, height) ** 2 * 0.01);
+    assertSimpleContour(shape.points, shape.count);
+  }
+});
+
+test("the gel material has soft volume without a hard white patch or optional rim at glow zero", () => {
+  const frame = makeToneFrame(0.36, "mid");
+  const { ctx, calls } = fakeContext();
+  blob.liquidBlob.draw(ctx, frame, { ...FLUID_OPTIONS, internalGlow: 0 });
+
+  assert.equal(calls.clip, 1);
+  assert.equal(calls.stroke, 0);
+  assert.equal(calls.fill, 4);
+  assert.equal(calls.closePath, 2);
+  const highlight = calls.gradients.find((gradient) =>
+    gradient.stops.some(([, color]) => color.includes("255,255,255")),
+  );
+  assert.ok(highlight);
+  const alpha = highlight.stops.map(([, color]) => Number(color.match(/,([\d.]+)\)$/)?.[1] ?? 0));
+  assert.ok(Math.max(...alpha) <= 0.18);
+  assert.ok(highlight.stops.some(([, color]) => color.includes("97,229,255")));
+
+  const darkGradients = calls.gradients.filter((gradient) =>
+    gradient.stops.some(([, color]) => color.includes("0,0,0")),
+  );
+  assert.equal(darkGradients.length, 2);
+  const glowing = fakeContext();
+  blob.liquidBlob.draw(glowing.ctx, frame, { ...FLUID_OPTIONS, internalGlow: 70 });
+  assert.equal(glowing.calls.stroke, 1);
+  assert.equal(glowing.calls.fill, 5);
+});
+
+test("non-finite inputs stay bounded without contaminating reusable geometry", () => {
   const brokenSpectrum = new Float32Array([Number.NaN, Number.POSITIVE_INFINITY, -0.5]);
   const broken = makeFrame({
     time: Number.NaN,
@@ -299,291 +706,8 @@ test("NaN frame data is contained and same source time matches at 24, 30 and 60 
       bands: [brokenSpectrum],
     },
   });
-  const { points: safe, count } = geometry(broken, { ...DEFAULT_OPTIONS, size: Number.NaN });
-  for (let index = 0; index < count * 2; index += 1) assert.ok(Number.isFinite(safe[index]));
-
-  const outputs = [24, 30, 60].map((fps) => {
-    const sourceFrame = Math.round(5 * fps);
-    return geometry({ ...makeToneFrame(0.36, "mid"), time: sourceFrame / fps }).points;
-  });
-  assert.deepEqual([...outputs[0]], [...outputs[1]]);
-  assert.deepEqual([...outputs[1]], [...outputs[2]]);
-
-  const outOfOrderFrame = makeToneFrame(0.36, "mid");
-  geometry({ ...outOfOrderFrame, time: 8 });
-  const atFiveAfterEight = geometry({ ...outOfOrderFrame, time: 5 }).points;
-  const atFiveDirectly = geometry({ ...outOfOrderFrame, time: 5 }).points;
-  assert.deepEqual([...atFiveAfterEight], [...atFiveDirectly]);
-});
-
-test("sustained music holds its shape until the measured audio changes", () => {
-  // Representative already-normalized levels from the shared analysis pipeline.
-  // The previous second gain/limiter made loud music almost static and circular.
-  const frame = makeFrame({ width: 1280, height: 720, time: 60 });
-  frame.audio = {
-    ...frame.audio,
-    activity: 0.92,
-    energy: 0.92,
-    bass: 0.92,
-    mid: 0.8,
-    treble: 0.28,
-    bands: [new Float32Array(96).fill(0.16)],
-  };
-  const first = geometry(frame);
-  const later = geometry({ ...frame, time: 60.5 });
-  const radius = radii(first.points, first.count, frame);
-  const average = radius.reduce((sum, value) => sum + value, 0) / first.count;
-  assert.ok((Math.max(...radius) - Math.min(...radius)) / average > 0.13);
-  assert.deepEqual(first.points, later.points, "the clock alone must not rotate an active contour");
-
-  const quieter = geometry({ ...frame, audio: { ...frame.audio, bass: 0.55 } });
-  const quieterRadius = radii(quieter.points, quieter.count, frame);
-  const quieterMean = quieterRadius.reduce((sum, value) => sum + value, 0) / quieter.count;
-  assert.ok(average - quieterMean > 720 * 0.008, "bass changes remain visible at high levels");
-});
-
-test("maximum controls fit the whole silhouette without clipping its lobes into a circle", () => {
-  for (const [width, height] of [
-    [1280, 720],
-    [720, 1280],
-    [960, 960],
-  ]) {
-    const frame = makeToneFrame(0.23, "bass");
-    frame.width = width;
-    frame.height = height;
-    frame.settings.visualScale = 1.5;
-    frame.audio = { ...frame.audio, bass: 1, mid: 1, treble: 1, impact: 1 };
-    const options = {
-      ...DEFAULT_OPTIONS,
-      size: 150,
-      deformation: 100,
-      bassExpansion: 100,
-      detail: "high",
-    };
-    const shape = geometry(frame, options);
-    const radius = radii(shape.points, shape.count, frame);
-    const average = radius.reduce((sum, value) => sum + value, 0) / shape.count;
-    const maximum = Math.max(...radius);
-    assert.ok(maximum <= Math.min(width, height) * 0.43 + 1e-4);
-    assert.ok(Math.min(...radius) > Math.min(width, height) * 0.025);
-    assert.ok((maximum - Math.min(...radius)) / average > 0.2);
-    assert.ok(radius.filter((value) => maximum - value < 0.01).length < shape.count * 0.1);
-  }
-});
-
-test("idle flow stays finite and continuous while active geometry stays independent of the clock", () => {
-  const frame = makeToneFrame(0.51, "mid");
-  const extreme = geometry({ ...frame, time: Number.MAX_VALUE });
-  assert.ok(extreme.points.every(Number.isFinite));
-  const silent = makeFrame();
-  const period = (Math.PI * 2 * 20) / 0.6;
-  const before = geometry({ ...silent, time: period - 1e-6 });
-  const after = geometry({ ...silent, time: period + 1e-6 });
-  assert.ok(contourDifference(before.points, after.points, before.count) < 0.001);
-});
-
-test("frequency distribution drives local bulges even with unchanged beat and broad-band levels", () => {
-  const first = makeToneFrame(0.25, "mid");
-  first.width = 1280;
-  first.height = 720;
-  const shifted = makeToneFrame(0.62, "mid");
-  shifted.width = 1280;
-  shifted.height = 720;
-  const atFirstPitch = geometry(first);
-  const atSecondPitch = geometry(shifted);
-  assert.equal(first.audio.impact, shifted.audio.impact);
-  assert.equal(first.audio.mid, shifted.audio.mid);
-  assert.ok(contourDifference(atFirstPitch.points, atSecondPitch.points, atFirstPitch.count) > 8);
-  assert.deepEqual(atFirstPitch.points, geometry({ ...first, time: 120 }).points);
-});
-
-test("fluidity uses measured source-time response, with current data as the fallback", () => {
-  const frame = makeToneFrame(0.62, "mid");
-  const pastBands = makeToneFrame(0.25, "mid").audio.bands[0];
-  const readTimes = [];
-  frame.history = {
-    read(time, target) {
-      readTimes.push(time);
-      if (time < 0) return false;
-      for (let i = 0; i < target.length; i++) {
-        const position = (i * (pastBands.length - 1)) / (target.length - 1);
-        const first = Math.floor(position);
-        const fraction = position - first;
-        target[i] =
-          pastBands[first] * (1 - fraction) +
-          pastBands[Math.min(first + 1, pastBands.length - 1)] * fraction;
-      }
-      return true;
-    },
-  };
-  const first = geometry(frame);
-  assert.ok(readTimes.length > 1, "the response adapter samples a bounded measured history window");
-  assert.ok(readTimes.every((time) => time <= frame.time && time >= frame.time - 0.9 - 1e-6));
-  assert.ok(
-    readTimes.includes(frame.time),
-    "the response begins at the requested absolute source time",
-  );
-  const currentOnly = geometry({ ...frame, history: undefined });
-  assert.ok(contourDifference(first.points, currentOnly.points, first.count) > 0.1);
-  geometry({ ...frame, time: frame.time + 0.5 });
-  assert.deepEqual(
-    first.points,
-    geometry(frame).points,
-    "query order cannot advance hidden blob state",
-  );
-  const unavailable = geometry({ ...frame, history: { read: () => false } });
-  assert.deepEqual(unavailable.points, currentOnly.points);
-});
-
-test("fast attacks stay visible while a measured release settles by fluidity", () => {
-  const attackTime = 1;
-  const sourceLevelAt = (time) => (time >= 0.97 && time < 1.03 ? 0.78 : 0);
-  const history = {
-    read(time, target) {
-      if (time < 0) return false;
-      target.fill(sourceLevelAt(time));
-      return true;
-    },
-  };
-  const frameAt = (time, level, historySource) => {
-    const bands = new Float32Array(96).fill(level);
-    return makeFrame({
-      time,
-      history: historySource,
-      bands: [bands],
-      reducedMotion: true,
-      audio: {
-        activity: 1 - Math.exp(-level * 1.3 * 8),
-        bass: 1 - Math.exp(-level * 1.3 * 8),
-        mid: 1 - Math.exp(-level * 1.3 * 8),
-        treble: 1 - Math.exp(-level * 1.3 * 8),
-        energy: 1 - Math.exp(-level * 1.3 * 8),
-        impact: 0,
-        bands: [bands],
-        bandLayers: [],
-        ringMix: 0,
-      },
-    });
-  };
-  const quietOptions = { ...DEFAULT_OPTIONS, idleMotion: "off" };
-  const quietFrame = frameAt(0.8, 0, undefined);
-  const attackFrame = frameAt(attackTime, 0.78, history);
-  const releaseFrame = frameAt(1.1, 0, history);
-  const quiet = geometry(quietFrame, quietOptions);
-  const attack = geometry(attackFrame, quietOptions);
-  const releaseDry = geometry(releaseFrame, { ...quietOptions, fluidity: 0 });
-  const releaseWet = geometry(releaseFrame, { ...quietOptions, fluidity: 100 });
-  const quietRadius =
-    radii(quiet.points, quiet.count, quietFrame).reduce((sum, value) => sum + value, 0) /
-    quiet.count;
-  const attackRadius =
-    radii(attack.points, attack.count, attackFrame).reduce((sum, value) => sum + value, 0) /
-    attack.count;
-  const releaseDryRadius =
-    radii(releaseDry.points, releaseDry.count, releaseFrame).reduce(
-      (sum, value) => sum + value,
-      0,
-    ) / releaseDry.count;
-  const releaseWetRadius =
-    radii(releaseWet.points, releaseWet.count, releaseFrame).reduce(
-      (sum, value) => sum + value,
-      0,
-    ) / releaseWet.count;
-
-  assert.ok(
-    attackRadius > quietRadius + 2,
-    "current measurements produce an immediate visible attack",
-  );
-  assert.ok(
-    releaseDryRadius <= quietRadius + 0.001,
-    "fluidity zero uses the current measured frame",
-  );
-  assert.ok(
-    releaseWetRadius > releaseDryRadius + 0.5,
-    "fluidity blends the measured release tail back into the current frame",
-  );
-  assert.ok(releaseWetRadius < attackRadius, "the source-time response settles after the attack");
-});
-
-test("the clipped gel surface keeps soft color shading when internal glow is disabled", () => {
-  const frame = makeToneFrame(0.36, "mid");
-  const { ctx, calls } = fakeContext();
-  blob.liquidBlob.draw(ctx, frame, { ...DEFAULT_OPTIONS, internalGlow: 0 });
-
-  assert.equal(calls.clip, 1);
-  assert.equal(calls.stroke, 0, "internal contours are controlled by internalGlow");
-  assert.equal(calls.fill, 4, "base fill and three clipped shading passes remain visible");
-  assert.equal(calls.closePath, 2, "disabling internalGlow removes its inset contour");
-  const highlight = calls.gradients.find((gradient) =>
-    gradient.stops.some(([, color]) => color.includes("255,255,255")),
-  );
-  assert.ok(highlight, "the surface contains an off-center soft highlight");
-  const alpha = highlight.stops.map(([, color]) => Number(color.match(/,([\d.]+)\)$/)?.[1] ?? 0));
-  assert.ok(
-    Math.max(...alpha) <= 0.18,
-    "the highlight stays restrained instead of flattening to white",
-  );
-  assert.ok(highlight.stops.some(([, color]) => color.includes("97,229,255")));
-  assert.ok(
-    highlight.stops.some(([, color]) => color.includes("255,255,255,0.12")),
-    "the small highlight mixes a low-opacity white center with the secondary color",
-  );
-
-  const darkGradients = calls.gradients.filter((gradient) =>
-    gradient.stops.some(([, color]) => color.includes("0,0,0")),
-  );
-  assert.equal(darkGradients.length, 2, "directional and edge shading use neutral dark tint");
-  const maxDarkAlpha = Math.max(
-    ...darkGradients.flatMap((gradient) =>
-      gradient.stops.map(([, color]) => Number(color.match(/,([\d.]+)\)$/)?.[1] ?? 0)),
-    ),
-  );
-  assert.ok(maxDarkAlpha >= 0.16 && maxDarkAlpha <= 0.17);
-
-  const withGlow = fakeContext();
-  blob.liquidBlob.draw(withGlow.ctx, frame, { ...DEFAULT_OPTIONS, internalGlow: 70 });
-  assert.equal(
-    withGlow.calls.stroke,
-    1,
-    "internalGlow adds one subtle deformation-following directional rim",
-  );
-  assert.equal(withGlow.calls.fill, 5);
-  assert.equal(withGlow.calls.closePath, 3);
-});
-
-test("idle motion fades smoothly across the quiet threshold", () => {
-  const frame = makeFrame({ time: 5 });
-  const atLevel = (level) =>
-    geometry(
-      {
-        ...frame,
-        audio: {
-          ...frame.audio,
-          bass: level,
-          mid: level,
-          treble: level,
-          impact: 0,
-          bands: [new Float32Array(96).fill(level)],
-        },
-      },
-      { ...DEFAULT_OPTIONS, idleMotion: "subtle" },
-    );
-  const before = atLevel(frame.settings.quietThreshold - 1e-6);
-  const after = atLevel(frame.settings.quietThreshold + 1e-6);
-  assert.ok(
-    contourDifference(before.points, after.points, before.count) < 0.01,
-    "nearly equal quiet measurements must not switch on a different idle contour",
-  );
-});
-
-test("audio sensitivity scales local frequency deformation without changing supplied broad features", () => {
-  const frame = makeToneFrame(0.4, "mid");
-  const before = { bass: frame.audio.bass, mid: frame.audio.mid, treble: frame.audio.treble };
-  const low = geometry({ ...frame, settings: { ...frame.settings, sensitivity: 0.2 } });
-  const high = geometry({ ...frame, settings: { ...frame.settings, sensitivity: 3 } });
-  assert.ok(contourDifference(low.points, high.points, low.count) > 0.5);
-  assert.deepEqual(
-    { bass: frame.audio.bass, mid: frame.audio.mid, treble: frame.audio.treble },
-    before,
-  );
+  const safe = geometry(broken, { ...FLUID_OPTIONS, size: Number.NaN });
+  assert.ok(safe.points.every(Number.isFinite));
+  const next = geometry(makeToneFrame(0.36, "mid"));
+  assert.ok(next.points.every(Number.isFinite));
 });

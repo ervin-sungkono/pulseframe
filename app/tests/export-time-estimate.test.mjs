@@ -293,7 +293,7 @@ test("new style workload profiles distinguish costly geometry without changing e
   settings.mode = "blob";
   const blob = workload();
   assert.ok(
-    blob.styleComplexity.startsWith("response2-"),
+    blob.styleComplexity.startsWith("fluid3-"),
     "new render costs do not reuse older blob timings",
   );
   settings.blobOptions.detail = "high";

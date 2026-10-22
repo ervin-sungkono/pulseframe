@@ -1,32 +1,43 @@
 import { DSP_BAND_COUNT as BAND_COUNT } from "../../dsp/contracts";
 import { DEFAULT_BLOB_OPTIONS, type BlobOptions } from "../style-options";
 import { bandEnergy } from "./frequency-history";
-import { sampleBarBand } from "./frequency-mapping";
 import { styleResponseHistory } from "./audio-response";
+import { writeMetaballContour, type FluidEllipse } from "./fluid-geometry";
 import { clamp, closedCurve, finite, rgba, sampleBands, TAU } from "./shared";
 import type { VisualFrameContext, VisualStyleRenderer } from "./types";
 
 const SAMPLE_COUNTS = { low: 96, medium: 128, high: 160 } as const;
 const MAX_RADIUS_RATIO = 0.43;
-const SMOOTH_OFFSETS = [-2, -1, 0, 1, 2] as const;
-const SMOOTH_WEIGHTS = [1 / 16, 4 / 16, 6 / 16, 4 / 16, 1 / 16] as const;
+const LOBE_ANGLE_OFFSETS = [-1.98, 0.08, 2.04] as const;
 const geometryBuffer = new Float32Array(SAMPLE_COUNTS.high * 2);
-const insetGeometryBuffer = new Float32Array(SAMPLE_COUNTS.high * 2);
-const radiusBuffer = new Float32Array(SAMPLE_COUNTS.high);
-const spectrumBuffer = new Float32Array(SAMPLE_COUNTS.high);
 const currentBands = new Float32Array(BAND_COUNT);
 const responseBands = new Float32Array(BAND_COUNT);
+const lagBands = new Float32Array(BAND_COUNT);
 
-/** Sample count is deliberately bounded so detail never turns into a sharp-edged spectrum. */
-export function liquidBlobSampleCount(detail: BlobOptions["detail"]): number {
-  return detail === "low" || detail === "high" ? SAMPLE_COUNTS[detail] : SAMPLE_COUNTS.medium;
-}
+type SpectrumFeatures = {
+  total: number;
+  centroid: number;
+  spread: number;
+  peak: number;
+  contrast: number;
+  bassPower: number;
+  midPower: number;
+  treblePower: number;
+  bassCentroid: number;
+  midCentroid: number;
+  trebleCentroid: number;
+};
 
-/**
- * Writes a closed, smoothed polar contour into a caller-owned reusable XY array.
- * Active lobes follow source-time frequency energy at fixed angular positions.
- * Only the explicit silence/idle option uses an absolute source-time phase.
- */
+const currentFeatures: SpectrumFeatures = makeSpectrumFeatures();
+const lagFeatures: SpectrumFeatures = makeSpectrumFeatures();
+const core: FluidEllipse = { x: 0, y: 0, radiusX: 0.1, radiusY: 0.1, angle: 0 };
+const lobes: FluidEllipse[] = [
+  { x: 0, y: 0, radiusX: 0.08, radiusY: 0.07, angle: 0 },
+  { x: 0, y: 0, radiusX: 0.08, radiusY: 0.07, angle: 0 },
+  { x: 0, y: 0, radiusX: 0.08, radiusY: 0.07, angle: 0 },
+];
+
+/** Writes a bounded, source-time-driven fluid contour into a reusable XY array. */
 export function writeLiquidBlobGeometry(
   target: Float32Array,
   frame: VisualFrameContext,
@@ -54,12 +65,10 @@ export function writeLiquidBlobGeometry(
   const quietThreshold = clamp(settings.quietThreshold, 0, 0.1);
   const visualScale = clamp(settings.visualScale, 0.5, 1.5);
   const baseRadius = short * clamp(0.24 * (size / 100) * visualScale, 0.055, 0.38);
-  const centerX = width / 2;
-  const centerY = height / 2;
   const time = finite(frame.time);
 
-  // These values have already received the live/export sensitivity and bass
-  // boost. Keep their quick measured attack and apply no second gain stage.
+  // Current broad values already include the user sensitivity and bass gain.
+  // Keep their quick attack intact; only history-derived levels receive gain.
   const currentBass = clamp(frame.audio.bass);
   const currentMid = clamp(frame.audio.mid);
   const currentTreble = clamp(frame.audio.treble);
@@ -68,11 +77,7 @@ export function writeLiquidBlobGeometry(
     fluidity > 0 &&
     frame.history !== undefined &&
     styleResponseHistory(frame.history).read(time, responseBands, quietThreshold);
-
-  // The response adapter smooths calibrated, measured history. Derive the
-  // matching broad bands with the same gain used by the current frame exactly
-  // once, then blend a bounded amount so attacks remain clear at all settings.
-  const responseBlend = responseReady ? fluidity * 0.55 : 0;
+  const responseBlend = responseReady ? fluidity * 0.48 : 0;
   const responseBass = responseReady
     ? bandEnergy(responseBands, 0, 0.27, sensitivity * bassGain)
     : currentBass;
@@ -86,106 +91,307 @@ export function writeLiquidBlobGeometry(
   const mid = currentMid + (responseMid - currentMid) * responseBlend;
   const treble = currentTreble + (responseTreble - currentTreble) * responseBlend;
 
-  for (let i = 0; i < BAND_COUNT; i++) {
-    const position = i / (BAND_COUNT - 1);
-    const current = sampleBands(frame.audio.bands, position);
-    const response = responseReady ? responseBands[i] : current;
-    currentBands[i] = current + (response - current) * responseBlend;
+  for (let index = 0; index < BAND_COUNT; index++) {
+    const position = index / (BAND_COUNT - 1);
+    const measured = sampleBands(frame.audio.bands, position);
+    const response = responseReady ? responseBands[index] : measured;
+    currentBands[index] = clamp(measured + (response - measured) * responseBlend);
   }
+  readSpectrum(currentBands, currentFeatures, sensitivity);
 
-  const currentPeak = peakBandAmplitude(frame.audio.bands);
+  // A short raw lookback steers shape velocity without adding another release
+  // tail. It stays inside measured source time and falls back to current data.
+  let hasLag = false;
+  if (fluidity > 0 && frame.history) {
+    const lag = Math.min(0.18, fluidity * 0.18);
+    if (lag > 0 && frame.history.read(time - lag, lagBands, quietThreshold)) {
+      readSpectrum(lagBands, lagFeatures, sensitivity);
+      hasLag = true;
+    }
+  }
+  if (!hasLag) copySpectrumFeatures(currentFeatures, lagFeatures);
+
+  const currentPeak = currentFeatures.peak;
   const activity = Math.max(bass, mid, treble, impact, currentPeak);
+  const activityDrive = smoothstep(clamp((activity * 0.58 + currentFeatures.peak * 0.42) / 0.72));
+  const shapeDrive = Math.pow(deformation, 0.25) * activityDrive;
   const quietBlend = clamp(1 - activity / Math.max(quietThreshold * 4, 0.04));
-  // Ease into idle near silence instead of switching lobes on at a threshold.
   const idleLevel = frame.reducedMotion
     ? 0
     : idleMotionLevel(options?.idleMotion) * quietBlend * quietBlend * (3 - 2 * quietBlend);
-  // Idle motion is absolute-time based; active frequency lobes never rotate.
   const idlePhase = idleLevel ? (time % ((TAU * 20) / 0.6)) * 0.6 : 0;
-  const radiusLift = baseRadius * (bass * bassExpansion * 0.18 + impact * 0.055);
+  const radiusLift = baseRadius * (bass * bassExpansion * 0.3 + impact * 0.08);
   const maximumRadius = short * MAX_RADIUS_RATIO;
+  const breathing = Math.sin(idlePhase) * idleLevel;
+  const targetAreaRadius = Math.max(
+    short * 0.025,
+    baseRadius + radiusLift + baseRadius * breathing,
+  );
 
-  let spectrumMean = 0;
-  const spectrumWidth = 0.13 + fluidity * 0.15;
-  for (let i = 0; i < count; i++) {
-    // Mirror a broad, filtered frequency profile around the contour. Its fixed
-    // angular mapping gives pitches stable locations without needle-like peaks.
-    const position = 1 - Math.abs(1 - (2 * i) / count);
-    spectrumBuffer[i] = Math.sqrt(
-      clamp(sampleBarBand(currentBands, position, spectrumWidth) * sensitivity),
-    );
-    spectrumMean += spectrumBuffer[i];
+  // User-selected zero deformation remains a plain circular form. Idle motion
+  // only breathes that circle and never adds autonomous surface lobes.
+  if (shapeDrive <= 1e-6) {
+    writeCircle(target, count, width, height, Math.min(maximumRadius, targetAreaRadius));
+    return count;
   }
-  spectrumMean /= count;
 
-  const rawRadiusAt = (sample: number) => {
-    const angle = (sample / count) * TAU - Math.PI / 2;
-    const lowWave = 0.68 * Math.sin(2 * angle) + 0.32 * Math.sin(3 * angle);
-    const midWave = 0.72 * Math.sin(3 * angle + 0.7) + 0.28 * Math.sin(4 * angle - 0.4);
-    const highWave = 0.68 * Math.sin(4 * angle + 0.3) + 0.32 * Math.sin(5 * angle - 0.5);
-    const bandContour = bass * lowWave * 0.17 + mid * midWave * 0.3 + treble * highWave * 0.11;
-    const spectralContour = (spectrumBuffer[sample] - spectrumMean) * 0.78;
-    const idleContour =
-      idleLevel *
-      (0.68 * Math.sin(2 * angle + idlePhase * 0.45) +
-        0.32 * Math.sin(3 * angle - idlePhase * 0.35));
-    const surfaceOffset = 0.32 * Math.tanh((deformation * (bandContour + spectralContour)) / 0.32);
-    return Math.max(
-      short * 0.025,
-      baseRadius + radiusLift + baseRadius * (surfaceOffset + idleContour),
-    );
-  };
+  const centroid = currentFeatures.centroid;
+  const lowShare = currentFeatures.bassPower / Math.max(1e-8, currentFeatures.total);
+  const midShare = currentFeatures.midPower / Math.max(1e-8, currentFeatures.total);
+  const highShare = currentFeatures.treblePower / Math.max(1e-8, currentFeatures.total);
+  const centroidVelocity = hasLag ? currentFeatures.centroid - lagFeatures.centroid : 0;
+  const lowVelocity = hasLag
+    ? lowShare - lagFeatures.bassPower / Math.max(1e-8, lagFeatures.total)
+    : 0;
+  const highVelocity = hasLag
+    ? highShare - lagFeatures.treblePower / Math.max(1e-8, lagFeatures.total)
+    : 0;
+  const shiftX =
+    clamp((centroid - 0.5) * 0.07 + centroidVelocity * fluidity * 0.18, -0.065, 0.065) * shapeDrive;
+  const shiftY =
+    clamp(
+      (lowShare - highShare) * 0.028 + (lowVelocity - highVelocity) * fluidity * 0.06,
+      -0.045,
+      0.045,
+    ) * shapeDrive;
+  const spread = currentFeatures.spread;
+  const contrast = currentFeatures.contrast;
+  // Keep a stable general orientation. Pitch moves the center of mass and
+  // reshapes individual frequency lobes instead of rotating a rigid clover.
+  const orientation = -Math.PI / 2 + (centroid - 0.5) * 0.72 + (highShare - lowShare) * 0.28;
+  const axisShear = (highShare - lowShare) * 2.2 + (midShare - 1 / 3) * 1.25;
+  const normalizedRadius = baseRadius / short;
+  const elongation = shapeDrive * (0.08 + contrast * 0.31 + spread * 0.11);
+  const coreRadius = normalizedRadius * (1 - shapeDrive * (0.7 + contrast * 0.05));
+  core.x = shiftX;
+  core.y = shiftY;
+  core.radiusX = coreRadius + normalizedRadius * elongation * 0.22;
+  core.radiusY = Math.max(
+    normalizedRadius * 0.17,
+    coreRadius - normalizedRadius * elongation * 0.2,
+  );
+  core.angle = orientation;
 
-  let outerRadius = 0;
-  for (let index = 0; index < count; index++) {
-    radiusBuffer[index] = rawRadiusAt(index);
-    outerRadius = Math.max(outerRadius, radiusBuffer[index]);
+  for (let index = 0; index < lobes.length; index++) {
+    const lobe = lobes[index];
+    const share = index === 0 ? lowShare : index === 1 ? midShare : highShare;
+    const regionalCentroid =
+      index === 0
+        ? currentFeatures.bassCentroid
+        : index === 1
+          ? currentFeatures.midCentroid
+          : currentFeatures.trebleCentroid;
+    const dominance = clamp(share);
+    const regionalCenter = index === 0 ? 0.135 : index === 1 ? 0.485 : 0.85;
+    const expectedShare = index === 0 ? 0.27 : index === 1 ? 0.43 : 0.3;
+    const centroidOffset = clamp((regionalCentroid - regionalCenter) * 5.2, -1.2, 1.2);
+    const shareOffset = clamp((dominance - expectedShare) * 1.8, -0.62, 0.62);
+    const localOffset = centroidOffset + shareOffset;
+    const slotShear = (index - 1) * axisShear * 0.72;
+    const angle = orientation * 0.36 + LOBE_ANGLE_OFFSETS[index] + slotShear + localOffset;
+    const radiusX = normalizedRadius * (0.035 + shapeDrive * (0.03 + dominance * 0.3));
+    lobe.angle = angle + (regionalCentroid - regionalCenter) * 0.45;
+    lobe.radiusX = radiusX;
+    lobe.radiusY = radiusX * (0.58 + 0.24 * (1 - dominance));
+
+    // Keep each fluid lobe joined to the core even at a single-band extreme.
+    // A small overlap survives the field smoothing and avoids topology pops.
+    const coreOffset = angle - core.angle;
+    const coreCosine = Math.cos(coreOffset);
+    const coreSine = Math.sin(coreOffset);
+    const coreSupport =
+      1 / Math.sqrt((coreCosine / core.radiusX) ** 2 + (coreSine / core.radiusY) ** 2);
+    const lobeOffset = angle - lobe.angle;
+    const lobeCosine = Math.cos(lobeOffset);
+    const lobeSine = Math.sin(lobeOffset);
+    const lobeSupport =
+      1 / Math.sqrt((lobeCosine / lobe.radiusX) ** 2 + (lobeSine / lobe.radiusY) ** 2);
+    const desiredDistance = normalizedRadius * (0.12 + shapeDrive * (0.2 + dominance * 0.5));
+    const joinedDistance = coreSupport + lobeSupport - normalizedRadius * 0.035;
+    const distance = Math.max(normalizedRadius * 0.02, Math.min(desiredDistance, joinedDistance));
+    lobe.x = shiftX + Math.cos(angle) * distance;
+    lobe.y = shiftY + Math.sin(angle) * distance;
   }
-  // Fit the complete silhouette uniformly. Point clipping would flatten its
-  // broad lobes when size, sensitivity and bass expansion are all high.
-  const fit = outerRadius > maximumRadius ? maximumRadius / outerRadius : 1;
 
-  for (let index = 0; index < count; index += 1) {
-    let radius = 0;
-    for (let tap = 0; tap < SMOOTH_OFFSETS.length; tap += 1) {
-      let neighbor = index + SMOOTH_OFFSETS[tap];
-      if (neighbor < 0) neighbor += count;
-      else if (neighbor >= count) neighbor -= count;
-      radius += radiusBuffer[neighbor] * SMOOTH_WEIGHTS[tap];
-    }
-    radius *= fit;
-    const angle = (index / count) * TAU - Math.PI / 2;
-    target[index * 2] = centerX + Math.cos(angle) * radius;
-    target[index * 2 + 1] = centerY + Math.sin(angle) * radius;
+  const gridSize = detail === "low" ? 48 : detail === "high" ? 80 : 64;
+  const written = writeMetaballContour(
+    target,
+    count,
+    width,
+    height,
+    short,
+    gridSize,
+    core,
+    lobes,
+    normalizedRadius * (0.045 + shapeDrive * 0.015),
+  );
+  if (!written) {
+    writeCircle(target, count, width, height, Math.min(maximumRadius, targetAreaRadius));
+    return count;
   }
+
+  normalizeContour(target, count, width, height, short, targetAreaRadius, maximumRadius);
   return count;
 }
 
-function peakBandAmplitude(bands: readonly Float32Array[]): number {
+function makeSpectrumFeatures(): SpectrumFeatures {
+  return {
+    total: 0,
+    centroid: 0.5,
+    spread: 0,
+    peak: 0,
+    contrast: 0,
+    bassPower: 0,
+    midPower: 0,
+    treblePower: 0,
+    bassCentroid: 0.14,
+    midCentroid: 0.485,
+    trebleCentroid: 0.85,
+  };
+}
+
+function readSpectrum(bands: Float32Array, target: SpectrumFeatures, sensitivity: number) {
+  let total = 0;
+  let weighted = 0;
+  let weightedSquare = 0;
+  let bassPower = 0;
+  let midPower = 0;
+  let treblePower = 0;
+  let bassWeighted = 0;
+  let midWeighted = 0;
+  let trebleWeighted = 0;
   let peak = 0;
-  for (const channel of bands) {
-    for (let index = 0; index < channel.length; index += 1)
-      peak = Math.max(peak, clamp(channel[index]));
+  let meanPower = 0;
+
+  for (let index = 0; index < bands.length; index++) {
+    const position = bands.length > 1 ? index / (bands.length - 1) : 0.5;
+    const amplitude = Math.sqrt(clamp(bands[index] * sensitivity));
+    const power = amplitude * amplitude;
+    total += power;
+    weighted += power * position;
+    weightedSquare += power * position * position;
+    meanPower += power;
+    peak = Math.max(peak, amplitude);
+    if (position < 0.27) {
+      bassPower += power;
+      bassWeighted += power * position;
+    } else if (position < 0.7) {
+      midPower += power;
+      midWeighted += power * position;
+    } else {
+      treblePower += power;
+      trebleWeighted += power * position;
+    }
   }
-  return peak;
+
+  target.total = total;
+  target.centroid = total > 1e-8 ? weighted / total : 0.5;
+  const variance =
+    total > 1e-8 ? Math.max(0, weightedSquare / total - target.centroid * target.centroid) : 0;
+  target.spread = clamp(Math.sqrt(variance) * 2);
+  target.peak = peak;
+  target.contrast =
+    peak > 1e-5 && bands.length ? clamp(1 - Math.sqrt(meanPower / bands.length) / peak) : 0;
+  target.bassPower = bassPower;
+  target.midPower = midPower;
+  target.treblePower = treblePower;
+  target.bassCentroid = bassPower > 1e-8 ? bassWeighted / bassPower : 0.14;
+  target.midCentroid = midPower > 1e-8 ? midWeighted / midPower : 0.485;
+  target.trebleCentroid = treblePower > 1e-8 ? trebleWeighted / treblePower : 0.85;
+}
+
+function copySpectrumFeatures(source: SpectrumFeatures, target: SpectrumFeatures) {
+  target.total = source.total;
+  target.centroid = source.centroid;
+  target.spread = source.spread;
+  target.peak = source.peak;
+  target.contrast = source.contrast;
+  target.bassPower = source.bassPower;
+  target.midPower = source.midPower;
+  target.treblePower = source.treblePower;
+  target.bassCentroid = source.bassCentroid;
+  target.midCentroid = source.midCentroid;
+  target.trebleCentroid = source.trebleCentroid;
+}
+
+function normalizeContour(
+  points: Float32Array,
+  count: number,
+  width: number,
+  height: number,
+  short: number,
+  targetRadius: number,
+  maximumRadius: number,
+) {
+  let twiceArea = 0;
+  let centroidX = 0;
+  let centroidY = 0;
+  const centerX = width / 2;
+  const centerY = height / 2;
+  for (let index = 0; index < count; index++) {
+    const next = (index + 1) % count;
+    const x = points[index * 2];
+    const y = points[index * 2 + 1];
+    const nextX = points[next * 2];
+    const nextY = points[next * 2 + 1];
+    const cross = x * nextY - nextX * y;
+    twiceArea += cross;
+    centroidX += (x + nextX) * cross;
+    centroidY += (y + nextY) * cross;
+  }
+  if (Math.abs(twiceArea) > 1e-6) {
+    centroidX /= 3 * twiceArea;
+    centroidY /= 3 * twiceArea;
+  } else {
+    centroidX = centerX;
+    centroidY = centerY;
+  }
+
+  const desiredArea = Math.PI * targetRadius * targetRadius;
+  const actualArea = Math.abs(twiceArea) * 0.5;
+  const areaScale = actualArea > 1e-6 ? clamp(Math.sqrt(desiredArea / actualArea), 0.82, 3.2) : 1;
+  const targetCentroidX = centerX + clamp(centroidX - centerX, -short * 0.075, short * 0.075);
+  const targetCentroidY = centerY + clamp(centroidY - centerY, -short * 0.075, short * 0.075);
+  let farthest = 0;
+  for (let index = 0; index < count; index++) {
+    const x = targetCentroidX + (points[index * 2] - centroidX) * areaScale;
+    const y = targetCentroidY + (points[index * 2 + 1] - centroidY) * areaScale;
+    points[index * 2] = x;
+    points[index * 2 + 1] = y;
+    farthest = Math.max(farthest, Math.hypot(x - centerX, y - centerY));
+  }
+
+  if (farthest > maximumRadius) {
+    const fit = maximumRadius / farthest;
+    for (let index = 0; index < count; index++) {
+      points[index * 2] = centerX + (points[index * 2] - centerX) * fit;
+      points[index * 2 + 1] = centerY + (points[index * 2 + 1] - centerY) * fit;
+    }
+  }
+}
+
+function writeCircle(
+  points: Float32Array,
+  count: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  const centerX = width / 2;
+  const centerY = height / 2;
+  for (let index = 0; index < count; index++) {
+    const angle = (index / count) * TAU - Math.PI / 2;
+    points[index * 2] = centerX + Math.cos(angle) * radius;
+    points[index * 2 + 1] = centerY + Math.sin(angle) * radius;
+  }
+}
+
+function smoothstep(value: number) {
+  return value * value * (3 - 2 * value);
 }
 
 function idleMotionLevel(mode: BlobOptions["idleMotion"]): number {
   return mode === "active" ? 0.045 : mode === "subtle" ? 0.018 : 0;
-}
-
-function writeInsetGeometry(
-  points: Float32Array,
-  target: Float32Array,
-  count: number,
-  centerX: number,
-  centerY: number,
-  scale: number,
-) {
-  for (let index = 0; index < count; index++) {
-    target[index * 2] = centerX + (points[index * 2] - centerX) * scale;
-    target[index * 2 + 1] = centerY + (points[index * 2 + 1] - centerY) * scale;
-  }
 }
 
 function drawBlob(ctx: CanvasRenderingContext2D, frame: VisualFrameContext, options: BlobOptions) {
@@ -193,25 +399,32 @@ function drawBlob(ctx: CanvasRenderingContext2D, frame: VisualFrameContext, opti
   if (!count) return;
 
   const short = Math.min(frame.width, frame.height);
-  const centerX = frame.width / 2;
-  const centerY = frame.height / 2;
+  let centroidX = 0;
+  let centroidY = 0;
+  let maxRadius = 0;
+  for (let index = 0; index < count; index++) {
+    centroidX += geometryBuffer[index * 2];
+    centroidY += geometryBuffer[index * 2 + 1];
+  }
+  centroidX /= count;
+  centroidY /= count;
+  for (let index = 0; index < count; index++) {
+    maxRadius = Math.max(
+      maxRadius,
+      Math.hypot(geometryBuffer[index * 2] - centroidX, geometryBuffer[index * 2 + 1] - centroidY),
+    );
+  }
+
   const glow = clamp(frame.settings.glow, 0, 2.5);
   const internalGlow =
     clamp(options.internalGlow ?? DEFAULT_BLOB_OPTIONS.internalGlow, 0, 100) / 100;
-  let maxRadius = 0;
-  for (let index = 0; index < count; index += 1) {
-    const dx = geometryBuffer[index * 2] - centerX;
-    const dy = geometryBuffer[index * 2 + 1] - centerY;
-    maxRadius = Math.max(maxRadius, Math.hypot(dx, dy));
-  }
-
   ctx.save();
   closedCurve(ctx, geometryBuffer, count);
   const surface = ctx.createLinearGradient(
-    centerX - maxRadius * 0.72,
-    centerY - maxRadius * 0.78,
-    centerX + maxRadius * 0.8,
-    centerY + maxRadius * 0.76,
+    centroidX - maxRadius * 0.72,
+    centroidY - maxRadius * 0.78,
+    centroidX + maxRadius * 0.8,
+    centroidY + maxRadius * 0.76,
   );
   surface.addColorStop(0, rgba(frame.settings.secondary, 0.92));
   surface.addColorStop(0.28, rgba(frame.settings.primary, 0.97));
@@ -219,7 +432,6 @@ function drawBlob(ctx: CanvasRenderingContext2D, frame: VisualFrameContext, opti
   surface.addColorStop(1, rgba(frame.settings.secondary, 0.84));
   ctx.fillStyle = surface;
   ctx.shadowColor = rgba(frame.settings.primary, 0.46);
-  // A narrow halo gives the contour lift without washing out the edge.
   ctx.shadowBlur = Math.min(short * 0.006, glow * short * 0.003);
   ctx.fill();
 
@@ -229,10 +441,10 @@ function drawBlob(ctx: CanvasRenderingContext2D, frame: VisualFrameContext, opti
   ctx.shadowBlur = 0;
 
   const lowerRightShade = ctx.createLinearGradient(
-    centerX - maxRadius * 0.24,
-    centerY - maxRadius * 0.3,
-    centerX + maxRadius * 0.66,
-    centerY + maxRadius * 0.76,
+    centroidX - maxRadius * 0.24,
+    centroidY - maxRadius * 0.3,
+    centroidX + maxRadius * 0.66,
+    centroidY + maxRadius * 0.76,
   );
   lowerRightShade.addColorStop(0, rgba("#000000", 0));
   lowerRightShade.addColorStop(0.44, rgba("#000000", 0.025));
@@ -242,11 +454,11 @@ function drawBlob(ctx: CanvasRenderingContext2D, frame: VisualFrameContext, opti
   ctx.fill();
 
   const edgeShade = ctx.createRadialGradient(
-    centerX - maxRadius * 0.06,
-    centerY - maxRadius * 0.08,
+    centroidX - maxRadius * 0.06,
+    centroidY - maxRadius * 0.08,
     maxRadius * 0.16,
-    centerX,
-    centerY,
+    centroidX,
+    centroidY,
     maxRadius * 1.04,
   );
   edgeShade.addColorStop(0, rgba("#000000", 0));
@@ -257,11 +469,11 @@ function drawBlob(ctx: CanvasRenderingContext2D, frame: VisualFrameContext, opti
   ctx.fill();
 
   const highlight = ctx.createRadialGradient(
-    centerX - maxRadius * 0.36,
-    centerY - maxRadius * 0.38,
+    centroidX - maxRadius * 0.36,
+    centroidY - maxRadius * 0.38,
     maxRadius * 0.015,
-    centerX - maxRadius * 0.34,
-    centerY - maxRadius * 0.34,
+    centroidX - maxRadius * 0.34,
+    centroidY - maxRadius * 0.34,
     maxRadius * 0.58,
   );
   highlight.addColorStop(0, rgba("#ffffff", 0.12));
@@ -273,11 +485,11 @@ function drawBlob(ctx: CanvasRenderingContext2D, frame: VisualFrameContext, opti
 
   if (internalGlow > 0) {
     const interior = ctx.createRadialGradient(
-      centerX - maxRadius * 0.08,
-      centerY - maxRadius * 0.12,
+      centroidX - maxRadius * 0.08,
+      centroidY - maxRadius * 0.12,
       maxRadius * 0.04,
-      centerX,
-      centerY,
+      centroidX,
+      centroidY,
       maxRadius * 0.92,
     );
     interior.addColorStop(0, rgba(frame.settings.secondary, internalGlow * 0.1));
@@ -289,18 +501,19 @@ function drawBlob(ctx: CanvasRenderingContext2D, frame: VisualFrameContext, opti
     ctx.lineWidth = Math.max(1, short * 0.0022);
     ctx.shadowBlur = 0;
     const rim = ctx.createLinearGradient(
-      centerX - maxRadius * 0.8,
-      centerY - maxRadius * 0.8,
-      centerX + maxRadius * 0.8,
-      centerY + maxRadius * 0.8,
+      centroidX - maxRadius * 0.8,
+      centroidY - maxRadius * 0.8,
+      centroidX + maxRadius * 0.8,
+      centroidY + maxRadius * 0.8,
     );
     rim.addColorStop(0, rgba(frame.settings.secondary, 0.14 * internalGlow));
     rim.addColorStop(0.34, rgba(frame.settings.secondary, 0.055 * internalGlow));
     rim.addColorStop(0.68, rgba(frame.settings.primary, 0.012 * internalGlow));
     rim.addColorStop(1, rgba(frame.settings.primary, 0.055 * internalGlow));
     ctx.strokeStyle = rim;
-    writeInsetGeometry(geometryBuffer, insetGeometryBuffer, count, centerX, centerY, 0.86);
-    closedCurve(ctx, insetGeometryBuffer, count);
+    // A contour-following, clipped fill adds depth without an inset spline,
+    // which would self-intersect at the narrow necks of a fluid silhouette.
+    closedCurve(ctx, geometryBuffer, count);
     ctx.stroke();
   }
 

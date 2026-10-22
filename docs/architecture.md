@@ -107,8 +107,9 @@ The static registry chooses one primary renderer. Background/video, atmosphere,
 lighting, particles, logo fitting, titles and subtitles remain in the shared
 `drawVisualization` pipeline used by preview, PNG capture and video export.
 The original three drawing algorithms live in separate modules with their
-existing calculations preserved; their public geometry helpers remain exported
-from `visualizer.ts` for compatibility.
+existing audio calculations preserved; their public geometry helpers remain
+exported from `visualizer.ts` for compatibility. Edge Bars maps its gradient to
+each visible bar, with the accent reaching full strength at 55% of its length.
 
 New style settings are typed groups (`radialOptions`, `blobOptions`,
 `terrainOptions`), with per-property validation/defaults. Existing flat options
@@ -152,22 +153,22 @@ The renderer owns no media elements, worker, encoder or React state.
   a percentage of its angular step, roundness a percentage of half its width,
   and 100% rotation speed is one revolution per minute. Inward variants preserve
   the central logo aperture.
-- **Liquid Blob:** 96/128/160 polar samples form broad bass/mid/treble lobes,
-  smoothed across angular neighbors and connected by a closed quadratic spline.
-  Normalized shared audio features are consumed without a second gain/limiter,
-  so sustained music retains visible response. Angular radii are computed once
-  in a reusable buffer; the complete silhouette fits uniformly into the bounds
-  instead of clipping individual lobes. Radius stays positive and below 43% of
-  the short edge. Size scales a nominal
-  24% radius; deformation and bass expansion remain bounded. Fluidity controls
-  angular frequency smoothing and up to 55% of the shared release response.
-  Current normalized features are retained without another gain stage; raw
-  frequency amplitudes receive sensitivity once. Active lobes use fixed angles and follow measured
-  frequency distribution rather than clock-driven rotation. Only optional idle
-  motion uses an absolute-time phase and fades in near silence; reduced motion
-  disables it. Clipped directional shading, edge shading and a soft highlight
-  provide volume. Internal Glow adds an interior wash and directional inset rim,
-  using the same closed-curve helper and a reusable inset buffer.
+- **Liquid Blob:** a central core and three overlapping anisotropic lobes form a
+  connected 2D implicit field. Unlike an angle-to-radius contour, the field can
+  form necks, concavities and elongated masses. Relative spectral power and
+  centroids distribute the lobes; bass and impact add bounded expansion. Current
+  features, the shared release response and at most 180 ms of raw measured
+  history determine each pose, without forward simulation or a clock-driven
+  active rotation. Fluidity controls settling and softness. A reusable bounded
+  grid (48/64/80 cells per side) fits the actual field bounds, preserving small
+  necks at minimum size. Deterministic marching squares extract the
+  center-connected contour; arc-length resampling retains the existing
+  96/128/160-point contract. The shared closed quadratic curve paints its smooth
+  silhouette. Whole-shape normalization bounds size and drift inside 43% of the
+  short edge. Silence returns to a circle; optional idle motion only breathes
+  its radius and respects reduced motion. Directional shading and soft highlights
+  are clipped to the actual contour; Internal Glow controls its wash and rim.
+  This is a deterministic fluid-like surface, rather than a physical simulator.
 - **Spectral Terrain:** a 32×24, 48×40 or 64×64 frequency/history mesh samples a
   two-to-ten-second source-time window. Interior rows retain fixed source
   timestamps while their projected depths advance; boundary rows follow the
@@ -195,7 +196,8 @@ resolution and FPS behavior are unchanged.
 
 The built-in Quick Looks contain exactly one look per visual style: Contour
 (Ring), After Hours (Spectrum), Counterflow (Edges), Orbit (Radial), Fluid Dreams
-(Blob), and Neon Horizon (Terrain). Personal Quick Looks remain unchanged, with
+(Blob), and Neon Horizon (Terrain). Each enables 24–40 particles by default;
+reapplying a built-in look picks up these defaults. Personal Quick Looks remain unchanged, with
 the same save/apply/reset workflows. Advanced controls remain collapsed initially. See [the engineering report](visual-styles-engineering-report.md)
 for verification, measurements and limits.
 

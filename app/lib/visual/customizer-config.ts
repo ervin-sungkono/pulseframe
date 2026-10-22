@@ -256,7 +256,7 @@ const lookDefinitions: Array<Omit<BuiltinLook, "settings"> & { changes: Partial<
     {
       id: "fluid-dreams",
       name: "Fluid Dreams",
-      caption: "Soft living waveform",
+      caption: "Flowing audio-reactive fluid",
       changes: {
         mode: "blob",
         primary: palettes[0].primary,
@@ -266,7 +266,7 @@ const lookDefinitions: Array<Omit<BuiltinLook, "settings"> & { changes: Partial<
         blobOptions: {
           ...DEFAULT_BLOB_OPTIONS,
           size: 100,
-          deformation: 52,
+          deformation: 85,
           fluidity: 72,
           detail: "medium",
           bassExpansion: 62,
