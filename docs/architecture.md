@@ -140,7 +140,7 @@ It preserves current causal attacks, then lets bass/mids/treble settle at about
 180/125/75 ms respectively. The finite exponential kernel fades to zero at its
 900 ms lookback limit. Only measured past audio contributes, so no frame-clock
 simulation or FFT is needed. Two 384-frame caches add at most about 288 KiB of
-float payload per source, shared by the two styles. Live-history revisions and
+float payload per source for Terrain. Live-history revisions and
 quiet-threshold changes invalidate caches; source ownership remains weak.
 
 The renderer owns no media elements, worker, encoder or React state.
