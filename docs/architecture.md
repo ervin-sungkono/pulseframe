@@ -91,10 +91,10 @@ not imply the same speedup for a complete export.
 
 ## Visualizer, projects and Quick Looks
 
-The editor has six first-class canvas modes: Pulse Ring, Spectrum, Edge Bars,
-Radial Spectrum, Liquid Blob and Spectral Terrain.
+The editor has five first-class canvas modes: Pulse Ring, Spectrum, Edge Bars,
+Radial Spectrum and Spectral Terrain.
 Pulse Ring defaults to Full sound and also offers Bass waves (35–450 Hz) and
-Auto focus. All six styles use the shared audio analysis. Customization covers color
+Auto focus. All five styles use the shared audio analysis. Customization covers color
 and backdrop, particles, motion, trails, beat lighting, glitch and drop accents,
 logo fitting/placement, track text and the timer. Reduced-motion preferences
 suppress decorative motion effects. The waveform, playback and range controls
@@ -109,14 +109,14 @@ lighting, particles, logo fitting, titles and subtitles remain in the shared
 The original three drawing algorithms live in separate modules with their
 existing audio calculations preserved; their public geometry helpers remain
 exported from `visualizer.ts` for compatibility. Edge Bars maps its gradient to
-each visible bar, with the accent reaching full strength at 55% of its length.
+each visible bar, with a 75%/25% primary/accent balance and a soft transition
+from 65% to 85% of its length.
 
-New style settings are typed groups (`radialOptions`, `blobOptions`,
-`terrainOptions`), with per-property validation/defaults. Existing flat options
+New style settings are typed groups (`radialOptions`, `terrainOptions`), with per-property validation/defaults. Existing flat options
 are retained. Missing groups in older projects and Quick Looks receive defaults;
 the project format remains version 2 and preset storage remains version 1.
 Retired IDs still migrate explicitly to Ring or Spectrum and are not new styles.
-All six modes retain separate logo layouts. Nested controls have separate undo
+All five modes retain separate logo layouts. Nested controls have separate undo
 groups, and Visual section reset restores the active look's option groups.
 
 Prepared frequency history references the existing 30 Hz WASM/JavaScript
@@ -135,7 +135,7 @@ offline export supplies the same history adapter with its absolute decode
 offset. New-style export preroll is aligned to the source analysis grid and includes
 an extra 1.15 seconds at the maximum history depth (900 ms response lookback
 plus 250 ms of analysis-filter warm-up).
-Blob and Terrain share a source-time peak-release adapter in `audio-response.ts`.
+Terrain uses a source-time peak-release adapter in `audio-response.ts`.
 It preserves current causal attacks, then lets bass/mids/treble settle at about
 180/125/75 ms respectively. The finite exponential kernel fades to zero at its
 900 ms lookback limit. Only measured past audio contributes, so no frame-clock
@@ -153,22 +153,6 @@ The renderer owns no media elements, worker, encoder or React state.
   a percentage of its angular step, roundness a percentage of half its width,
   and 100% rotation speed is one revolution per minute. Inward variants preserve
   the central logo aperture.
-- **Liquid Blob:** a central core and three overlapping anisotropic lobes form a
-  connected 2D implicit field. Unlike an angle-to-radius contour, the field can
-  form necks, concavities and elongated masses. Relative spectral power and
-  centroids distribute the lobes; bass and impact add bounded expansion. Current
-  features, the shared release response and at most 180 ms of raw measured
-  history determine each pose, without forward simulation or a clock-driven
-  active rotation. Fluidity controls settling and softness. A reusable bounded
-  grid (48/64/80 cells per side) fits the actual field bounds, preserving small
-  necks at minimum size. Deterministic marching squares extract the
-  center-connected contour; arc-length resampling retains the existing
-  96/128/160-point contract. The shared closed quadratic curve paints its smooth
-  silhouette. Whole-shape normalization bounds size and drift inside 43% of the
-  short edge. Silence returns to a circle; optional idle motion only breathes
-  its radius and respects reduced motion. Directional shading and soft highlights
-  are clipped to the actual contour; Internal Glow controls its wash and rim.
-  This is a deterministic fluid-like surface, rather than a physical simulator.
 - **Spectral Terrain:** a 32×24, 48×40 or 64×64 frequency/history mesh samples a
   two-to-ten-second source-time window. Interior rows retain fixed source
   timestamps while their projected depths advance; boundary rows follow the
@@ -189,14 +173,18 @@ The renderer owns no media elements, worker, encoder or React state.
 
 Geometry buffers are bounded and reused where useful. Canvas contexts and
 prepared envelopes key weak caches, so releasing their owners permits cleanup.
-Export timing history separates the new modes and coarse bar-count/detail/grid
-workloads. Blob/Terrain use revised workload signatures so their previous render
+Export timing history separates the new modes and coarse bar-count/grid
+workloads. Terrain uses a revised workload signature so its previous render
 timings cannot bias estimates; other mode keys remain unchanged. Encoding, compression,
 resolution and FPS behavior are unchanged.
 
+Retired identifiers are accepted only during import and map to a supported
+style. The retired `blob` identifier maps to Pulse Ring; obsolete options and logo
+keys are stripped after migration. Project and preset versions stay unchanged.
+
 The built-in Quick Looks contain exactly one look per visual style: Contour
-(Ring), After Hours (Spectrum), Counterflow (Edges), Orbit (Radial), Fluid Dreams
-(Blob), and Neon Horizon (Terrain). Each enables 24–40 particles by default;
+(Ring), After Hours (Spectrum), Counterflow (Edges), Orbit (Radial), and Neon
+Horizon (Terrain). Each enables 24–40 particles by default;
 reapplying a built-in look picks up these defaults. Personal Quick Looks remain unchanged, with
 the same save/apply/reset workflows. Advanced controls remain collapsed initially. See [the engineering report](visual-styles-engineering-report.md)
 for verification, measurements and limits.
