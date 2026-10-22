@@ -47,22 +47,17 @@ function drawEdgeBars(
   const { x, count, gap, barWidth, maxHeight } = edgeBarLayout(w, h, s.visualScale, s.glow, clear),
     idle = Math.min(3, maxHeight);
   ctx.save();
+  // Scale one unit-height gradient to every visible bar without allocating per bar.
+  const gradient = ctx.createLinearGradient(0, 0, 0, 1);
+  gradient.addColorStop(0, s.primary);
+  gradient.addColorStop(0.55, s.secondary);
+  gradient.addColorStop(1, s.secondary);
+  ctx.fillStyle = gradient;
   ctx.shadowColor = s.primary;
   ctx.shadowBlur = s.glow * Math.min(w, h) * 0.009;
   for (const edge of ["top", "bottom"] as const) {
     for (let i = 0; i < count; i++) {
       const amp = idle + edgeBarResponse(bands, i, count, edge, s.sensitivity) * (maxHeight - idle);
-      // Map both colors to the visible bar, so quiet frequencies retain the accent too.
-      const gradient = ctx.createLinearGradient(
-        0,
-        edge === "top" ? 0 : h,
-        0,
-        edge === "top" ? amp : h - amp,
-      );
-      gradient.addColorStop(0, s.primary);
-      gradient.addColorStop(0.55, s.secondary);
-      gradient.addColorStop(1, s.secondary);
-      ctx.fillStyle = gradient;
       ctx.beginPath();
       ctx.roundRect(
         x + i * (barWidth + gap),
@@ -71,7 +66,11 @@ function drawEdgeBars(
         amp,
         Math.min(barWidth / 2, amp / 2) * clamp((s.spectrumRoundness ?? 100) / 100),
       );
+      // Paths retain their canvas coordinates; this transform scales only the paint.
+      ctx.save();
+      ctx.transform(1, 0, 0, edge === "top" ? amp : -amp, 0, edge === "top" ? 0 : h);
       ctx.fill();
+      ctx.restore();
     }
   }
   ctx.restore();

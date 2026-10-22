@@ -360,6 +360,7 @@ function fakeCanvas(width, height) {
     "lineTo",
     "quadraticCurveTo",
     "translate",
+    "transform",
     "rotate",
     "scale",
     "clip",
