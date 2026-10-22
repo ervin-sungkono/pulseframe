@@ -65,8 +65,7 @@ test("edge gradients span each visible bar and expose the accent at quiet and lo
     assert.deepEqual(coordinates, [0, 0, 0, 1]);
     assert.deepEqual(stops, [
       [0, DEFAULT_SETTINGS.primary],
-      [0.65, DEFAULT_SETTINGS.primary],
-      [0.85, DEFAULT_SETTINGS.secondary],
+      [0.5, DEFAULT_SETTINGS.primary],
       [1, DEFAULT_SETTINGS.secondary],
     ]);
     const accentCoverage = 1 - stops[2][0] + (stops[2][0] - stops[1][0]) / 2;

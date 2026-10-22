@@ -110,7 +110,7 @@ The original three drawing algorithms live in separate modules with their
 existing audio calculations preserved; their public geometry helpers remain
 exported from `visualizer.ts` for compatibility. Edge Bars maps its gradient to
 each visible bar, with a 75%/25% primary/accent balance and a soft transition
-from 65% to 85% of its length.
+across the latter half of its length.
 
 New style settings are typed groups (`radialOptions`, `terrainOptions`), with per-property validation/defaults. Existing flat options
 are retained. Missing groups in older projects and Quick Looks receive defaults;

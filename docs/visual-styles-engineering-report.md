@@ -9,7 +9,7 @@ Contour, After Hours, Counterflow, Orbit and Neon Horizon. Each enables 24–40
 particles. Personal Quick Looks remain intact.
 
 Edge Bars retains its smooth per-bar gradient and uses a 3:1 primary/accent
-balance. A soft transition spans 65–85% of each bar, centered at the 75% split;
+balance. A broader smooth transition spans the latter half of each bar, centered at the 75% split;
 the integrated primary/accent color coverage is 75%/25%. One normalized gradient is reused per frame, preserving rounded path
 geometry and keeping the color range independent of loudness.
 

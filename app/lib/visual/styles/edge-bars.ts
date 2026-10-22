@@ -50,9 +50,8 @@ function drawEdgeBars(
   // Scale one unit-height gradient to every visible bar without allocating per bar.
   const gradient = ctx.createLinearGradient(0, 0, 0, 1);
   gradient.addColorStop(0, s.primary);
-  // A soft transition centered at 75% keeps a 3:1 primary/accent balance.
-  gradient.addColorStop(0.65, s.primary);
-  gradient.addColorStop(0.85, s.secondary);
+  // Blend across the latter half while preserving 3:1 integrated color coverage.
+  gradient.addColorStop(0.5, s.primary);
   gradient.addColorStop(1, s.secondary);
   ctx.fillStyle = gradient;
   ctx.shadowColor = s.primary;
