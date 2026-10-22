@@ -47,21 +47,22 @@ function drawEdgeBars(
   const { x, count, gap, barWidth, maxHeight } = edgeBarLayout(w, h, s.visualScale, s.glow, clear),
     idle = Math.min(3, maxHeight);
   ctx.save();
+  ctx.shadowColor = s.primary;
+  ctx.shadowBlur = s.glow * Math.min(w, h) * 0.009;
   for (const edge of ["top", "bottom"] as const) {
-    const gradient = ctx.createLinearGradient(
-      0,
-      edge === "top" ? 0 : h,
-      0,
-      edge === "top" ? maxHeight : h - maxHeight,
-    );
-    gradient.addColorStop(0, s.primary);
-    gradient.addColorStop(0.65, s.primary);
-    gradient.addColorStop(1, s.secondary);
-    ctx.fillStyle = gradient;
-    ctx.shadowColor = s.primary;
-    ctx.shadowBlur = s.glow * Math.min(w, h) * 0.009;
     for (let i = 0; i < count; i++) {
       const amp = idle + edgeBarResponse(bands, i, count, edge, s.sensitivity) * (maxHeight - idle);
+      // Map both colors to the visible bar, so quiet frequencies retain the accent too.
+      const gradient = ctx.createLinearGradient(
+        0,
+        edge === "top" ? 0 : h,
+        0,
+        edge === "top" ? amp : h - amp,
+      );
+      gradient.addColorStop(0, s.primary);
+      gradient.addColorStop(0.55, s.secondary);
+      gradient.addColorStop(1, s.secondary);
+      ctx.fillStyle = gradient;
       ctx.beginPath();
       ctx.roundRect(
         x + i * (barWidth + gap),

@@ -312,6 +312,8 @@ test("new style settings reset with the Visual section and built-in looks carry 
     assert.ok(look, `missing ${name} built-in look`);
     assert.equal(look.name, name);
     assert.equal(look.settings.mode, mode);
+    assert.equal(look.settings.particles, true, `${name} should include particles by default`);
+    assert.ok(look.settings.particleCount >= 24 && look.settings.particleCount <= 40);
     assert.deepEqual(presetStyle(look.settings), look.settings);
     assert.ok(
       look.settings.radialOptions && look.settings.blobOptions && look.settings.terrainOptions,
