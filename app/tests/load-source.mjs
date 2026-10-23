@@ -10,6 +10,7 @@ const modules = {
   "style-options": "visual/style-options",
   "audio-analysis-config": "audio/audio-analysis-config",
   "visual-settings-model": "visual/visual-settings-model",
+  motion: "visual/motion",
   "export-settings": "export/export-settings",
   "export-timeline": "export/export-timeline",
   "audio-features": "audio/audio-features",

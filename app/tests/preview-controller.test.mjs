@@ -93,6 +93,11 @@ test("preview warmer matches full five-minute response replay and final analysis
       yieldCount++;
     },
   });
+  Object.assign(settings, {
+    motionPreset: "orbit",
+    motionBehavior: "audio-reactive",
+    motionAmount: 100,
+  });
 
   const result = await warmer.warm(300, 1);
 
@@ -111,12 +116,25 @@ test("preview warmer matches full five-minute response replay and final analysis
     (300 - reference.lastTime) * 1000,
   );
   assert.deepEqual(result.state, reference.state);
+  assert.ok(
+    result.state.motionPulse > 0,
+    "warmed motion response should be active at the seek time",
+  );
+  assert.deepEqual(
+    modules.motion.ringMotion(300, 1280, 720, settings, result.state.motionPulse),
+    modules.motion.ringMotion(300, 1280, 720, settings, reference.state.motionPulse),
+  );
 });
 
 test("a seek warm catches up every analysis frame elapsed during playback", async () => {
   const bands = [new Float32Array(96).fill(0.2), new Float32Array(96).fill(0.1)];
   const envelopes = Array.from({ length: 180 }, (_, i) => makeEnvelope(i, bands));
   const { settings, snapshot, warmer } = makeHarness({ envelopes });
+  Object.assign(settings, {
+    motionPreset: "orbit",
+    motionBehavior: "audio-reactive",
+    motionAmount: 100,
+  });
 
   const result = await warmer.warm(4, 1);
   assert.ok(result);
@@ -132,6 +150,11 @@ test("a seek warm catches up every analysis frame elapsed during playback", asyn
     (5 - reference.lastTime) * 1000,
   );
   assert.deepEqual(result.state, reference.state);
+  assert.ok(result.state.motionPulse > 0);
+  assert.deepEqual(
+    modules.motion.ringMotion(5, 1280, 720, settings, result.state.motionPulse),
+    modules.motion.ringMotion(5, 1280, 720, settings, reference.state.motionPulse),
+  );
 });
 
 for (const scenario of ["cancel", "settings", "generation"]) {

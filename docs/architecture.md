@@ -189,6 +189,53 @@ reapplying a built-in look picks up these defaults. Personal Quick Looks remain 
 the same save/apply/reset workflows. Advanced controls remain collapsed initially. See [the engineering report](visual-styles-engineering-report.md)
 for verification, measurements and limits.
 
+### Motion and camera effects
+
+In **Motion & effects**, Pulse Ring offers Orbit, Bounce, Drift, Rotate, Zoom
+and Beat jump. Motion intensity controls travel, rotation or zoom; the existing
+Motion speed controls repeating movement. The ring, orbit accents and uploaded
+logo move together. Switching visual styles retains the ring settings.
+Choose **Continuous** for looping motion through silent sections or
+**Audio-reactive** to ease movement with a slower envelope derived from bass
+hits and return toward rest during silence. This prevents individual transients
+from snapping the ring's position. The motion response advances with source
+audio time and is replayed when seeking; ring/logo pulses, Beat jump and camera
+shake retain their faster beat response. Continuous is the default
+for new and older saved settings. Beat jump always follows the bass envelope;
+its behavior selector is disabled to avoid applying that response twice.
+Reactive Rotate rocks within 15 degrees of its original angle at full intensity
+and response, avoiding wraparound jumps when the envelope changes.
+**Camera shake** works with all five styles and moves the background and
+artwork in response to the existing bass-hit envelope. Beat jump uses that same
+measured response. Titles, timer and subtitles remain steady for readability.
+Both effects start off, including when loading older projects or Quick Looks,
+and respect reduced motion in preview, PNG capture and video export.
+
+`app/lib/visual/motion.ts` computes pure transforms from absolute media time,
+dimensions, settings and the existing audio response. The shared canvas renderer
+applies camera and object transforms, then restores screen coordinates before
+drawing text. The logo receives matching transforms while retaining its layer
+order. Pause holds the pose, seeking evaluates the destination time, and exports
+evaluate the absolute source time. Camera noise is deterministic; transforms
+do not accumulate frame state or require another animation loop or DSP path.
+Settings participate in project and Quick Look persistence, undo/redo, Motion
+section reset and export snapshots.
+
+The [reference demonstration](https://chatgpt.com/s/t_6ad77fcef05c8191bceb28b7d6af9d63)
+informs the movement choices; Pulseframe uses measured audio and its media clock.
+Ring translation is bounded to a circle around the original position with a
+maximum radius of 8% of the short canvas edge, reduced by Motion intensity.
+This limit includes diagonal travel and applies to both behaviors. Each pose is
+computed from the original composition, so long tracks and repeated seeks
+cannot accumulate drift. Zoom remains bounded to 12% above the original scale.
+The travel limit constrains the group center; large artwork can still crop.
+Camera overscan covers the whole backdrop and slightly crops the artwork during a shake.
+High ring scale or logos near an edge can still crop during object motion; use
+the preview to compose them. These effects reuse the existing audio envelope
+rather than inferring another beat grid.
+
+### Projects and Quick Looks
+
 A project file is portable: it contains a validated manifest, the source media,
 and optional logo/background image bytes, plus appearance settings, subtitles
 and export settings. Saving writes the current format; reading supports older

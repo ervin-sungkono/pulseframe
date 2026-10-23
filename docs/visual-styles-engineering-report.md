@@ -110,3 +110,21 @@ compositing and encoding can dominate device costs; short JS heap probes cannot
 establish GPU memory behavior or exclude every leak. Terrain uses projected
 Canvas geometry with ridge occlusion. A graphics backend or automatic quality
 scaling should be added only after device measurements justify it.
+
+## Post-PR #17 merge check — 2026-10-23
+
+PR #18 merges main at `3784ffa` after PR #17 landed. The conflict resolution
+keeps the registered style renderers and calibrated style opacity, then applies
+the merged camera/object transforms in the shared preview/PNG/export pipeline.
+Both architecture sections are retained. A renderer regression exercises camera
+shake across all five modes; existing bounded-motion and persistence tests remain.
+
+The one-time local check passed all 33 Node test files, TypeScript, ESLint,
+Prettier and the production build. A Chromium pass with the 32-second sample
+confirmed the default WASM backend, all five styles playing, stable paused and
+repeat-seek frames, project reopening with Terrain/camera settings, and layouts
+at 390, 768, 1024 and 1440 pixels. A one-second Terrain clip fully decoded; its
+first frame differed from the equivalent PNG by mean RGB error 1.80/255.
+Cancellation produced no late download and released the lock; the next export
+with the JavaScript fallback completed and decoded. This is functional regression
+coverage, not a new performance benchmark or physical-device certification.

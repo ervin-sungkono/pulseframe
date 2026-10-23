@@ -67,6 +67,13 @@ export const settingsSchema = z.object({
   glow: percent.min(0).max(2.5),
   visualScale: percent.min(0.5).max(1.5),
   motionSpeed: percent.min(0.1).max(3),
+  motionPreset: z
+    .enum(["none", "orbit", "bounce", "drift", "rotate", "zoom", "beat"])
+    .default("none"),
+  motionAmount: percent.min(0).max(100).default(50),
+  motionBehavior: z.enum(["continuous", "audio-reactive"]).default("continuous"),
+  cameraShake: z.boolean().default(false),
+  cameraShakeAmount: percent.min(0).max(100).default(35),
   particleSize: percent.min(0.25).max(3),
   beatRays: z.boolean(),
   beatLighting: z.enum(["rays", "aura", "beams", "edges"]).default("rays"),

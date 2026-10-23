@@ -2136,6 +2136,14 @@ h2 {
 .lighting-mode-group button {
   min-height: 44px;
 }
+.motion-preset-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.motion-preset-group button {
+  min-height: 44px;
+}
 
 /* Personal preset library shares the editor's compact, touch-friendly dialogs. */
 .preset-dialog,
