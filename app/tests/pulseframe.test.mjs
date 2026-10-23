@@ -421,7 +421,9 @@ function fakeCanvas(width, height) {
     "moveTo",
     "lineTo",
     "quadraticCurveTo",
+    "bezierCurveTo",
     "translate",
+    "transform",
     "rotate",
     "scale",
     "clip",
@@ -480,6 +482,54 @@ test("audio-reactive rendering applies motionPulse rather than the faster hit co
   assert.ok(Math.abs(firstTranslate.args[1] - (h / 2 + expected.y)) < 1e-9);
   assert.ok(Math.hypot(expected.x - hitPose.x, expected.y - hitPose.y) > 10);
 });
+test("camera shake reaches all five registered styles after motion integration", () => {
+  const sound = new PcmFeatures([tone(48000, 80, 0.4, 1)], 48000, 0, "js").at(0.8);
+  for (const mode of ["ring", "spectrum", "edges", "radial", "terrain"]) {
+    const active = {
+      ...DEFAULT_SETTINGS,
+      mode,
+      cameraShake: true,
+      cameraShakeAmount: 100,
+      motionPreset: "orbit",
+      particles: false,
+      trails: false,
+      beatRays: false,
+    };
+    const state = createAudioReactiveState();
+    const { ctx, operations, coords } = fakeCanvas(1280, 720);
+    drawVisualization(
+      ctx,
+      active,
+      sound.frequency,
+      sound.wave,
+      [],
+      2,
+      1000,
+      null,
+      null,
+      state,
+      48000,
+      1,
+      [],
+      { sound },
+    );
+    const camera = modules.motion.cameraMotion(
+      2,
+      1280,
+      720,
+      active,
+      state.ringPulse,
+      state.activity,
+    );
+    const firstTranslate = operations.find((operation) => operation.name === "translate");
+    assert.ok(camera.scale > 1, `${mode}: audible bass should activate the camera`);
+    close(firstTranslate.args[0], 640 + camera.x);
+    close(firstTranslate.args[1], 360 + camera.y);
+    assert.ok(coords.every(Number.isFinite), mode);
+    assert.equal(ctx.globalAlpha, 1, `${mode}: canvas state is restored`);
+  }
+});
+
 test("all three styles remain visible in silence across every export ratio", () => {
   const sound = new PcmFeatures([new Float32Array(48000)], 48000).at(0.8);
   for (const mode of ["ring", "spectrum", "edges"])
@@ -1143,8 +1193,10 @@ test("all retired project modes migrate to supported styles and retain the selec
     assert.deepEqual(opened.settings.logoPlacements[target], layout);
     assert.deepEqual(Object.keys(opened.settings.logoPlacements).sort(), [
       "edges",
+      "radial",
       "ring",
       "spectrum",
+      "terrain",
     ]);
   }
 });

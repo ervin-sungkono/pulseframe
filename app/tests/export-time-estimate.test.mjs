@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
+import { loadSources } from "./load-source.mjs";
 
 const testDirectory = mkdtempSync(join(tmpdir(), "pulseframe-export-time-"));
 const settingsPath = join(testDirectory, "export-settings.mjs");
@@ -31,6 +32,7 @@ writeFileSync(
 );
 const estimate = await import(pathToFileURL(modulePath).href);
 const { COMPRESSED_VIDEO_QUALITY } = await import(pathToFileURL(settingsPath).href);
+const { DEFAULT_SETTINGS } = (await loadSources())["customizer-config"];
 after(() => rmSync(testDirectory, { recursive: true, force: true }));
 
 class MemoryStorage {
@@ -267,4 +269,40 @@ test("successful timing history stays bounded and stores no track or appearance 
   const serialized = JSON.stringify(stored);
   assert.doesNotMatch(serialized, /trackTitle|trackArtist|fileName|pcm|Artist Name/i);
   assert.ok(estimate.getHistoricalProfileEstimate(current.full, 600, storage, 1022));
+});
+
+test("new style workload profiles distinguish costly geometry without changing existing style profiles", () => {
+  const settings = structuredClone(DEFAULT_SETTINGS);
+  const workload = () =>
+    estimate.makeExportWorkloadForExport({
+      durationSeconds: 180,
+      analysisSeconds: 180,
+      preparedAudio: true,
+      settings,
+      subtitles: false,
+      logo: false,
+      background: false,
+      videoOverlay: false,
+      reducedMotion: false,
+    });
+  assert.equal(Object.hasOwn(workload(), "styleComplexity"), false);
+  settings.mode = "radial";
+  const radial = workload();
+  settings.radialOptions.barCount = 160;
+  assert.notEqual(workload().styleComplexity, radial.styleComplexity);
+  settings.mode = "terrain";
+  const terrain = workload();
+  assert.ok(
+    terrain.styleComplexity.startsWith("response2-"),
+    "new render costs do not reuse older terrain timings",
+  );
+  settings.terrainOptions.density = "high";
+  assert.notEqual(workload().styleComplexity, terrain.styleComplexity);
+  const highDensity = workload();
+  settings.terrainOptions.historySeconds = 10;
+  assert.notEqual(workload().styleComplexity, highDensity.styleComplexity);
+  const colored = workload();
+  settings.primary = "#ff0000";
+  assert.deepEqual(workload(), colored);
+  assert.equal(new Set([radial.mode, terrain.mode]).size, 2);
 });

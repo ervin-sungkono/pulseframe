@@ -11,6 +11,7 @@
 /build/
 /coverage/
 *.tsbuildinfo
+__pycache__/
 /crates/pulseframe-dsp/target/
 /app/public/.dsp-build/
 /app/outputs/

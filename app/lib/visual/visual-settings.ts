@@ -3,19 +3,14 @@ import {
   DEFAULT_LOGO_AUTO_FIT,
   DEFAULT_LOGO_FIT_SCALE,
   DEFAULT_LOGO_PLACEMENTS,
+  VISUAL_MODES,
   type VisualSettings,
+  type VisualMode,
 } from "./visual-settings-model";
+import { DEFAULT_RADIAL_OPTIONS, DEFAULT_TERRAIN_OPTIONS } from "./style-options";
 
-const visualModes = [
-  "halo",
-  "ring",
-  "spectrum",
-  "wave",
-  "tunnel",
-  "aurora",
-  "bloom",
-  "edges",
-] as const;
+const retiredVisualModes = ["halo", "wave", "tunnel", "aurora", "bloom", "blob"] as const;
+const visualModes = [...VISUAL_MODES, ...retiredVisualModes] as const;
 
 const percent = z.number().finite();
 const color = z.string().regex(/^#[\da-fA-F]{6}$/);
@@ -28,6 +23,29 @@ const placement = z.object({
 });
 export const settingsSchema = z.object({
   mode: z.enum(visualModes),
+  radialOptions: z
+    .object({
+      barCount: z.number().int().min(32).max(160).default(DEFAULT_RADIAL_OPTIONS.barCount),
+      innerRadius: percent.min(10).max(40).default(DEFAULT_RADIAL_OPTIONS.innerRadius),
+      maxBarLength: percent.min(5).max(35).default(DEFAULT_RADIAL_OPTIONS.maxBarLength),
+      barWidth: percent.min(20).max(100).default(DEFAULT_RADIAL_OPTIONS.barWidth),
+      roundness: percent.min(0).max(100).default(DEFAULT_RADIAL_OPTIONS.roundness),
+      direction: z.enum(["clockwise", "mirrored"]).default(DEFAULT_RADIAL_OPTIONS.direction),
+      rotationSpeed: percent.min(-100).max(100).default(DEFAULT_RADIAL_OPTIONS.rotationSpeed),
+      variant: z.enum(["outward", "inward", "both"]).default(DEFAULT_RADIAL_OPTIONS.variant),
+    })
+    .default({}),
+  terrainOptions: z
+    .object({
+      height: percent.min(0).max(100).default(DEFAULT_TERRAIN_OPTIONS.height),
+      historySeconds: percent.min(2).max(10).default(DEFAULT_TERRAIN_OPTIONS.historySeconds),
+      density: z.enum(["low", "medium", "high"]).default(DEFAULT_TERRAIN_OPTIONS.density),
+      perspective: z.enum(["low", "medium", "high"]).default(DEFAULT_TERRAIN_OPTIONS.perspective),
+      travelSpeed: percent.min(0).max(200).default(DEFAULT_TERRAIN_OPTIONS.travelSpeed),
+      wireOpacity: percent.min(0).max(100).default(DEFAULT_TERRAIN_OPTIONS.wireOpacity),
+      surfaceFill: percent.min(0).max(100).default(DEFAULT_TERRAIN_OPTIONS.surfaceFill),
+    })
+    .default({}),
   spectrumRoundness: percent.min(0).max(100).default(100),
   spectrumReflection: percent.min(0).max(100).default(45),
   ringLayers: z.number().int().min(1).max(4).default(3),
@@ -90,22 +108,28 @@ export const settingsSchema = z.object({
 });
 // Older projects keep their selected logo layout when a retired style is mapped.
 export function migrateSettings(settings: z.infer<typeof settingsSchema>): VisualSettings {
-  const mode =
-    settings.mode === "edges"
-      ? "edges"
-      : ["wave", "aurora", "spectrum"].includes(settings.mode)
-        ? "spectrum"
-        : "ring";
   const oldMode = settings.mode;
+  const legacyModeMap = {
+    halo: "ring",
+    tunnel: "ring",
+    bloom: "ring",
+    blob: "ring",
+    wave: "spectrum",
+    aurora: "spectrum",
+  } as const satisfies Record<(typeof retiredVisualModes)[number], VisualMode>;
+  const mode: VisualMode = VISUAL_MODES.includes(oldMode as VisualMode)
+    ? (oldMode as VisualMode)
+    : legacyModeMap[oldMode as keyof typeof legacyModeMap];
   const layouts = <T>(
     stored: Partial<Record<(typeof visualModes)[number], T>>,
-    defaults: Record<"ring" | "spectrum" | "edges", T>,
-  ) => ({
-    ring: stored.ring ?? defaults.ring,
-    spectrum: stored.spectrum ?? defaults.spectrum,
-    edges: stored.edges ?? defaults.edges,
-    [mode]: stored[oldMode] ?? stored[mode] ?? defaults[mode],
-  });
+    defaults: Record<VisualMode, T>,
+  ) => {
+    const result = Object.fromEntries(
+      VISUAL_MODES.map((visualMode) => [visualMode, stored[visualMode] ?? defaults[visualMode]]),
+    ) as Record<VisualMode, T>;
+    result[mode] = stored[oldMode] ?? result[mode] ?? defaults[mode];
+    return result;
+  };
   return {
     ...settings,
     mode,

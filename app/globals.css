@@ -702,6 +702,40 @@ h2 {
 .mode-glyph.spectrum i:nth-child(3) {
   height: 40%;
 }
+.mode-glyph.radial i {
+  position: absolute;
+  left: 14px;
+  top: 1px;
+  width: 3px;
+  height: 9px;
+  border-radius: 3px;
+  background: currentColor;
+  transform-origin: 1.5px 14px;
+}
+.mode-glyph.radial i:nth-child(1) {
+  transform: rotate(0deg) translateY(1px);
+}
+.mode-glyph.radial i:nth-child(2) {
+  transform: rotate(72deg) translateY(1px);
+}
+.mode-glyph.radial i:nth-child(3) {
+  transform: rotate(144deg) translateY(1px);
+}
+.mode-glyph.radial i:nth-child(4) {
+  transform: rotate(216deg) translateY(1px);
+}
+.mode-glyph.radial i:nth-child(5) {
+  transform: rotate(288deg) translateY(1px);
+}
+.mode-glyph.terrain {
+  overflow: hidden;
+  align-items: flex-end;
+  background: repeating-linear-gradient(0deg, transparent 0 5px, #9d80ef77 5px 6px);
+  clip-path: polygon(0 28%, 25% 40%, 50% 18%, 76% 40%, 100% 22%, 100% 100%, 0 100%);
+}
+.mode-glyph.terrain i {
+  display: none;
+}
 .setting-choice {
   margin-top: 20px;
 }
@@ -2363,6 +2397,27 @@ h2 {
 }
 .mode-card:last-child:nth-child(odd) {
   grid-column: 1 / -1;
+}
+.style-advanced-controls {
+  margin-top: 15px;
+  border: 1px solid #334158;
+  border-radius: 8px;
+  background: #121d2e70;
+}
+.style-advanced-controls > summary {
+  min-height: 42px;
+  padding: 12px 13px;
+  color: #b8c5db;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  list-style-position: inside;
+}
+.style-advanced-controls[open] > summary {
+  border-bottom: 1px solid #303d53;
+}
+.style-advanced-controls > div {
+  padding: 0 12px 12px;
 }
 .overlay-details .custom-colors label {
   font-size: 13px;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { audibleMediaTime, dropEnvelope, type SoundFrame } from "@/lib/audio/audio-features";
 import { ANALYSIS_FPS, ANALYSIS_SIZE } from "@/lib/audio/audio-analysis-config";
 import { exportDimensions, type ExportAspect } from "@/lib/export/export-settings";
@@ -25,6 +25,10 @@ import {
   type Particle,
 } from "@/lib/visual/visualizer";
 import type { VisualSettings } from "@/lib/visual/visual-settings-model";
+import {
+  preparedFrequencyHistory,
+  RollingFrequencyHistory,
+} from "@/lib/visual/styles/frequency-history";
 
 const previewDimensions = (format: ExportAspect) =>
   exportDimensions(format, format === "square" ? 1080 : 720);
@@ -62,6 +66,7 @@ export function useVisualizerPreview({
   onNotice,
 }: UseVisualizerPreviewOptions) {
   const settingsRef = useRef(settings);
+  const [liveHistory] = useState(() => new RollingFrequencyHistory());
   const subtitlesRef = useRef(subtitles);
   const formatRef = useRef(format);
   const onErrorRef = useRef(onError);
@@ -237,6 +242,9 @@ export function useVisualizerPreview({
         background: snapshot?.background?.image ?? null,
         drop: dropRef.current,
         reducedMotion: reducedMotionRef.current,
+        history: snapshot.sound?.envelopes.length
+          ? preparedFrequencyHistory(snapshot.sound.envelopes)
+          : liveHistory,
       },
     );
     imageCanvas.toBlob((blob) => {
@@ -252,7 +260,7 @@ export function useVisualizerPreview({
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
       onNoticeRef.current("Frame saved as PNG.");
     }, "image/png");
-  }, [session]);
+  }, [session, liveHistory]);
 
   useEffect(() => {
     const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -380,6 +388,8 @@ export function useVisualizerPreview({
           }
         }
         soundFrameRef.current = sound;
+        if (sound && !snapshot.sound?.envelopes.length && media && !media.paused)
+          liveHistory.record(analysisTime, sound);
         dropRef.current =
           media && !media.paused
             ? source === snapshot.live
@@ -408,6 +418,9 @@ export function useVisualizerPreview({
             background: snapshot.background?.image ?? null,
             drop: dropRef.current,
             reducedMotion: reducedMotionRef.current,
+            history: snapshot.sound?.envelopes.length
+              ? preparedFrequencyHistory(snapshot.sound.envelopes)
+              : liveHistory,
           },
         );
       }
@@ -419,6 +432,7 @@ export function useVisualizerPreview({
 
     const unsubscribe = session.subscribe((event: MediaSessionEvent) => {
       if (event.type === "commit") {
+        liveHistory.clear();
         analyzedSource = null;
         analyzedSound = null;
         analyzedTime = -1;
@@ -432,6 +446,7 @@ export function useVisualizerPreview({
         lastAudioRef.current = 0;
         frameTimeRef.current = 0;
       } else if (event.type === "seek") {
+        liveHistory.clear();
         analyzedTime = -1;
         event.snapshot.live?.reset();
         const media = event.snapshot.media;
@@ -462,8 +477,9 @@ export function useVisualizerPreview({
       cancelAnimationFrame(frame);
       unsubscribe();
       cancelWarm();
+      liveHistory.clear();
     };
-  }, [cancelWarm, canvasRef, lockedRef, queueWarm, session]);
+  }, [cancelWarm, canvasRef, lockedRef, queueWarm, session, liveHistory]);
 
   useEffect(() => {
     const snapshot = session.snapshot;

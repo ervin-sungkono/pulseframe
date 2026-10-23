@@ -1,0 +1,568 @@
+import type { TerrainOptions } from "../style-options";
+import { styleResponseHistory } from "./audio-response";
+import { clamp, finite, rgba } from "./shared";
+import type { FrequencyHistory, VisualFrameContext, VisualStyleRenderer } from "./types";
+
+export type TerrainResolution = { columns: number; rows: number };
+
+const RESOLUTIONS: Record<TerrainOptions["density"], TerrainResolution> = {
+  low: { columns: 32, rows: 24 },
+  medium: { columns: 48, rows: 40 },
+  high: { columns: 64, rows: 64 },
+};
+
+export function terrainResolution(density: TerrainOptions["density"]): TerrainResolution {
+  return RESOLUTIONS[density] ?? RESOLUTIONS.medium;
+}
+
+/** Smoothly fades distant terrain detail while keeping the nearest ridge clear. */
+export function terrainDepthOpacity(depth: number) {
+  const value = clamp(depth);
+  const smooth = value * value * (3 - 2 * value);
+  return 0.18 + smooth * 0.82;
+}
+
+export type TerrainSampleBuffer = {
+  columns: number;
+  rows: number;
+  /** Calibrated linear amplitudes, indexed by row then frequency column. */
+  levels: Float32Array;
+  /** Absolute source timestamp for each row, oldest to newest. */
+  times: Float64Array;
+  /** Current normalized depth for each row as source-time samples move through the view. */
+  depths: Float32Array;
+  /** One byte per row: 1 means measured or supplied by the current-frame fallback. */
+  knownRows: Uint8Array;
+  /** Temporary target passed to the history provider for each row. */
+  readTarget: Float32Array;
+};
+
+export function createTerrainSampleBuffer(columns: number, rows: number): TerrainSampleBuffer {
+  const safeColumns = Math.max(1, Math.min(64, Math.floor(finite(columns, 1))));
+  const safeRows = Math.max(1, Math.min(64, Math.floor(finite(rows, 1))));
+  return {
+    columns: safeColumns,
+    rows: safeRows,
+    levels: new Float32Array(safeColumns * safeRows),
+    times: new Float64Array(safeRows),
+    depths: new Float32Array(safeRows),
+    knownRows: new Uint8Array(safeRows),
+    readTarget: new Float32Array(safeColumns),
+  };
+}
+
+function validSampleBuffer(buffer: TerrainSampleBuffer | undefined, columns: number, rows: number) {
+  return (
+    buffer &&
+    buffer.columns === columns &&
+    buffer.rows === rows &&
+    buffer.levels.length === columns * rows &&
+    buffer.times.length === rows &&
+    buffer.depths.length === rows &&
+    buffer.knownRows.length === rows &&
+    buffer.readTarget.length === columns
+  );
+}
+
+function currentBandSample(bands: readonly Float32Array[], position: number) {
+  let sum = 0;
+  for (const channel of bands) {
+    if (!channel.length) continue;
+    const index = clamp(position) * (channel.length - 1);
+    const first = Math.floor(index);
+    const mix = index - first;
+    const a = clamp(channel[first]);
+    const b = clamp(channel[Math.min(channel.length - 1, first + 1)]);
+    const value = a * (1 - mix) + b * mix;
+    sum += value * value;
+  }
+  return clamp(Math.sqrt(sum / Math.max(1, bands.length)));
+}
+
+/**
+ * Fill a bounded history lattice using absolute source times. Interior samples
+ * stay anchored to the source clock while their depths advance, so a ridge
+ * travels through the view instead of every row changing at every draw.
+ * Missing rows are cleared rather than carried from a previous draw; only the
+ * newest row can fall back to the live frame's current bands.
+ */
+export function sampleTerrain(
+  history: FrequencyHistory | undefined,
+  currentBands: readonly Float32Array[],
+  time: number,
+  historySeconds: number,
+  columns: number,
+  rows: number,
+  quietThreshold: number,
+  reusable?: TerrainSampleBuffer,
+): TerrainSampleBuffer {
+  const safeColumns = Math.max(1, Math.min(64, Math.floor(finite(columns, 1))));
+  const safeRows = Math.max(1, Math.min(64, Math.floor(finite(rows, 1))));
+  const out = validSampleBuffer(reusable, safeColumns, safeRows)
+    ? reusable!
+    : createTerrainSampleBuffer(safeColumns, safeRows);
+  const frameTime = finite(time, 0);
+  const windowSeconds = clamp(historySeconds, 2, 10);
+  const threshold = clamp(quietThreshold, 0, 0.1);
+  out.levels.fill(0);
+  out.times.fill(0);
+  out.depths.fill(0);
+  out.knownRows.fill(0);
+  const hasInterior = out.rows >= 3;
+  const rowStep = hasInterior ? windowSeconds / (out.rows - 2) : windowSeconds;
+  const sourceStep = Math.floor(frameTime / rowStep);
+  for (let row = 0; row < out.rows; row++) {
+    let depth = out.rows > 1 ? row / (out.rows - 1) : 1;
+    let sourceTime = frameTime - windowSeconds * (1 - depth);
+    if (hasInterior && row === 0) {
+      depth = 0;
+      sourceTime = frameTime - windowSeconds;
+    } else if (hasInterior && row === out.rows - 1) {
+      depth = 1;
+      sourceTime = frameTime;
+    } else if (hasInterior) {
+      sourceTime = (sourceStep - out.rows + 2 + row) * rowStep;
+      depth = clamp((sourceTime - (frameTime - windowSeconds)) / windowSeconds);
+    }
+    const offset = row * out.columns;
+    out.times[row] = sourceTime;
+    out.depths[row] = depth;
+
+    out.readTarget.fill(0);
+    let measured = false;
+    if (history) {
+      try {
+        measured = history.read(sourceTime, out.readTarget, threshold) === true;
+      } catch {
+        // An unavailable history source behaves like an unavailable timestamp.
+      }
+    }
+    if (measured) {
+      // A small frequency-domain filter keeps narrow measurements readable as
+      // ridges while preserving separate bass, midrange and treble locations.
+      for (let column = 0; column < out.columns; column++)
+        out.levels[offset + column] =
+          clamp(out.readTarget[Math.max(0, column - 1)]) * 0.25 +
+          clamp(out.readTarget[column]) * 0.5 +
+          clamp(out.readTarget[Math.min(out.columns - 1, column + 1)]) * 0.25;
+      out.knownRows[row] = 1;
+    } else if (row === out.rows - 1) {
+      for (let column = 0; column < out.columns; column++) {
+        const position = out.columns > 1 ? column / (out.columns - 1) : 0.5;
+        out.levels[offset + column] = currentBandSample(currentBands, position);
+      }
+      out.knownRows[row] = currentBands.some((channel) => channel.length > 0) ? 1 : 0;
+    }
+  }
+  return out;
+}
+
+export type TerrainProjectionOptions = {
+  height: number;
+  visualScale: number;
+  sensitivity: number;
+  perspective: TerrainOptions["perspective"];
+  captionHeight?: number;
+};
+
+const perspectiveAmount: Record<TerrainOptions["perspective"], number> = {
+  low: 0.12,
+  medium: 0.42,
+  high: 0.78,
+};
+
+function terrainWarp(depth: number, perspective: TerrainOptions["perspective"]) {
+  const strength = perspectiveAmount[perspective] ?? perspectiveAmount.medium;
+  return depth / (1 + strength * (1 - depth) * 2.2);
+}
+
+/** Project the sampled surface into reusable screen-space x/y pairs. */
+export function projectTerrain(
+  levels: Float32Array,
+  columns: number,
+  rows: number,
+  width: number,
+  height: number,
+  options: TerrainProjectionOptions,
+  reusable?: Float32Array,
+  rowDepths?: Float32Array,
+): Float32Array {
+  const safeColumns = Math.max(1, Math.min(64, Math.floor(finite(columns, 1))));
+  const safeRows = Math.max(1, Math.min(64, Math.floor(finite(rows, 1))));
+  const required = safeColumns * safeRows * 2;
+  const points = reusable?.length === required ? reusable : new Float32Array(required);
+  const w = Math.max(1, finite(width, 1));
+  const h = Math.max(1, finite(height, 1));
+  const short = Math.min(w, h);
+  const displayHeight = clamp(options.height, 0, 100) / 100;
+  const visualScale = clamp(options.visualScale, 0.5, 1.5);
+  const sensitivity = clamp(options.sensitivity, 0, 4);
+  const horizon = h * 0.29;
+  const caption = Math.min(h * 0.25, Math.max(0, finite(options.captionHeight ?? 0)));
+  const floor = Math.max(horizon + 1, h - Math.max(h * 0.035, caption));
+  const verticalSpan = Math.max(1, floor - horizon);
+  // Height is a world-space terrain displacement. It must not shrink as row
+  // count rises: ridges can occlude farther valleys while source-time spacing
+  // stays regular and row depths advance through the view.
+  const baseLift = Math.min(short * 0.22 * displayHeight * visualScale, short * 0.2);
+  const viewWidth = w * (0.78 + (visualScale - 1) * 0.12);
+  for (let row = 0; row < safeRows; row++) {
+    const uniformDepth = safeRows > 1 ? row / (safeRows - 1) : 1;
+    const depth = clamp(
+      rowDepths?.length === safeRows ? finite(rowDepths[row], uniformDepth) : uniformDepth,
+    );
+    const warped = terrainWarp(depth, options.perspective);
+    const baseline = horizon + warped * verticalSpan;
+    const lift = baseLift * (0.7 + warped * 0.3);
+    for (let column = 0; column < safeColumns; column++) {
+      const index = row * safeColumns + column;
+      const frequency = safeColumns > 1 ? column / (safeColumns - 1) : 0.5;
+      const amplitude = clamp(levels[index]);
+      const response = 1 - Math.exp(-amplitude * sensitivity * 4);
+      const x = w * 0.5 + (frequency - 0.5) * viewWidth * (0.2 + warped * 0.8);
+      let y = baseline - response * lift;
+      y = clamp(y, -h * 0.05, h * 1.05);
+      points[index * 2] = finite(x, w / 2);
+      points[index * 2 + 1] = finite(y, baseline);
+    }
+  }
+  return points;
+}
+
+/** A smooth, source-time-based ping-pong phase with no frame-clock drift. */
+export function terrainTravelPosition(time: number, historySeconds: number, travelSpeed: number) {
+  const speed = clamp(travelSpeed, 0, 200) / 100;
+  if (speed <= 0) return 0;
+  const history = clamp(historySeconds, 2, 10);
+  const period = (2 * history) / speed;
+  const cycle = (((finite(time, 0) / period) % 1) + 1) % 1;
+  return (1 - Math.cos(cycle * Math.PI * 2)) / 2;
+}
+
+type TerrainBuffers = TerrainSampleBuffer & {
+  points: Float32Array;
+  travelPoints: Float32Array;
+};
+const contextBuffers = new WeakMap<CanvasRenderingContext2D, TerrainBuffers>();
+
+function getBuffers(ctx: CanvasRenderingContext2D, columns: number, rows: number) {
+  let buffers = contextBuffers.get(ctx);
+  if (!buffers || buffers.columns !== columns || buffers.rows !== rows) {
+    const sample = createTerrainSampleBuffer(columns, rows);
+    buffers = {
+      ...sample,
+      points: new Float32Array(columns * rows * 2),
+      travelPoints: new Float32Array(columns * 2),
+    };
+    contextBuffers.set(ctx, buffers);
+  }
+  return buffers;
+}
+
+function vertex(columns: number, row: number, column: number) {
+  return (row * columns + column) * 2;
+}
+
+function drawSurfaceFill(
+  ctx: CanvasRenderingContext2D,
+  points: Float32Array,
+  levels: Float32Array,
+  depths: Float32Array,
+  columns: number,
+  rows: number,
+  color: string,
+  opacity: number,
+) {
+  if (opacity <= 0 || columns < 2 || rows < 2) return;
+  for (let row = 0; row < rows - 1; row++) {
+    // Each depth ribbon is filled back-to-front. A nearer ridge can then cover
+    // a farther strip instead of having all overlapping strips merged at once.
+    ctx.beginPath();
+    addSurfaceRow(ctx, points, columns, row);
+    const farEdge = vertex(columns, row + 1, columns - 1);
+    ctx.lineTo(points[farEdge], points[farEdge + 1]);
+    addSurfaceRow(ctx, points, columns, row + 1, true, false);
+    ctx.closePath();
+    let energy = 0;
+    const first = row * columns;
+    const second = (row + 1) * columns;
+    for (let column = 0; column < columns; column++)
+      energy += clamp(levels[first + column]) + clamp(levels[second + column]);
+    energy /= columns * 2;
+    const depth = (finite(depths[row]) + finite(depths[row + 1])) * 0.5;
+    const heightShade = 0.74 + clamp(energy) * 0.26;
+    ctx.fillStyle = rgba(color, opacity * terrainDepthOpacity(depth) * heightShade);
+    ctx.fill();
+  }
+}
+
+function addSurfaceRow(
+  ctx: CanvasRenderingContext2D,
+  points: Float32Array,
+  columns: number,
+  row: number,
+  reverse = false,
+  move = true,
+) {
+  const step = reverse ? -1 : 1;
+  const firstColumn = reverse ? columns - 1 : 0;
+  const first = vertex(columns, row, firstColumn);
+  if (move) ctx.moveTo(points[first], points[first + 1]);
+  for (let column = 0; column < columns - 1; column++) {
+    const startColumn = firstColumn + step * column;
+    const endColumn = startColumn + step;
+    const start = vertex(columns, row, startColumn);
+    const end = vertex(columns, row, endColumn);
+    const x0 = points[start];
+    const y0 = points[start + 1];
+    const x1 = points[end];
+    const y1 = points[end + 1];
+    const dx = x1 - x0;
+    const secant = (y1 - y0) / dx;
+    let startSlope = contourTangent(points, columns, row, startColumn);
+    let endSlope = contourTangent(points, columns, row, endColumn);
+
+    // A local monotone limiter keeps the Bezier control points between the
+    // measured endpoint heights, so a narrow frequency peak cannot overshoot.
+    if (Math.abs(secant) <= 1e-12) {
+      startSlope = 0;
+      endSlope = 0;
+    } else {
+      let startRatio = Math.max(0, Math.min(3, startSlope / secant));
+      let endRatio = Math.max(0, Math.min(3, endSlope / secant));
+      const magnitude = startRatio * startRatio + endRatio * endRatio;
+      if (magnitude > 9) {
+        const scale = 3 / Math.sqrt(magnitude);
+        startRatio *= scale;
+        endRatio *= scale;
+      }
+      startSlope = startRatio * secant;
+      endSlope = endRatio * secant;
+    }
+
+    ctx.bezierCurveTo(
+      x0 + dx / 3,
+      y0 + (startSlope * dx) / 3,
+      x1 - dx / 3,
+      y1 - (endSlope * dx) / 3,
+      x1,
+      y1,
+    );
+  }
+}
+
+function contourTangent(points: Float32Array, columns: number, row: number, column: number) {
+  const current = vertex(columns, row, column);
+  if (column === 0) {
+    const next = vertex(columns, row, column + 1);
+    return (points[next + 1] - points[current + 1]) / (points[next] - points[current]);
+  }
+  if (column === columns - 1) {
+    const previous = vertex(columns, row, column - 1);
+    return (points[current + 1] - points[previous + 1]) / (points[current] - points[previous]);
+  }
+  const previous = vertex(columns, row, column - 1);
+  const next = vertex(columns, row, column + 1);
+  const before =
+    (points[current + 1] - points[previous + 1]) / (points[current] - points[previous]);
+  const after = (points[next + 1] - points[current + 1]) / (points[next] - points[current]);
+  if (before * after <= 0) return 0;
+  return (2 * before * after) / (before + after);
+}
+
+function addSurfaceLines(
+  ctx: CanvasRenderingContext2D,
+  points: Float32Array,
+  columns: number,
+  rows: number,
+) {
+  ctx.beginPath();
+  for (let row = 0; row < rows; row++) {
+    // Fade the two moving rows nearest the window boundaries separately.
+    if (row !== 1 && row !== rows - 2) addSurfaceRow(ctx, points, columns, row);
+  }
+}
+
+function strokeSurfaceRows(
+  ctx: CanvasRenderingContext2D,
+  points: Float32Array,
+  depths: Float32Array,
+  columns: number,
+  rows: number,
+  opacity: number,
+) {
+  for (let row = 0; row < rows; row++) {
+    let rowOpacity = opacity * terrainDepthOpacity(depths[row]);
+    if (row === 1 || row === rows - 2) {
+      const clearance = row === 1 ? depths[row] : 1 - depths[row];
+      rowOpacity *= clamp(clearance * (rows - 2));
+    }
+    ctx.globalAlpha = rowOpacity;
+    ctx.beginPath();
+    addSurfaceRow(ctx, points, columns, row);
+    ctx.stroke();
+  }
+}
+
+function addDepthLines(
+  ctx: CanvasRenderingContext2D,
+  points: Float32Array,
+  columns: number,
+  rows: number,
+) {
+  const stride = columns >= 64 ? 4 : columns >= 48 ? 3 : 2;
+  ctx.beginPath();
+  for (let column = 0; column < columns; column += stride) {
+    for (let row = 0; row < rows; row++) {
+      const index = vertex(columns, row, column);
+      if (row === 0) ctx.moveTo(points[index], points[index + 1]);
+      else ctx.lineTo(points[index], points[index + 1]);
+    }
+  }
+  const last = columns - 1;
+  for (let row = 0; row < rows; row++) {
+    const index = vertex(columns, row, last);
+    if (row === 0) ctx.moveTo(points[index], points[index + 1]);
+    else ctx.lineTo(points[index], points[index + 1]);
+  }
+}
+
+function drawTravelContour(
+  ctx: CanvasRenderingContext2D,
+  points: Float32Array,
+  travelPoints: Float32Array,
+  columns: number,
+  rows: number,
+  position: number,
+  depths: Float32Array,
+  color: string,
+  opacity: number,
+  glow: number,
+  short: number,
+) {
+  if (opacity <= 0 || columns < 2 || rows < 2) return;
+  const depth = clamp(position);
+  let row = 0;
+  while (row < rows - 2 && depths[row + 1] < depth) row++;
+  const span = depths[row + 1] - depths[row];
+  const mix = span > 0 ? clamp((depth - depths[row]) / span) : 0;
+  for (let column = 0; column < columns; column++) {
+    const a = vertex(columns, row, column);
+    const b = vertex(columns, row + 1, column);
+    const offset = column * 2;
+    travelPoints[offset] = points[a] + (points[b] - points[a]) * mix;
+    travelPoints[offset + 1] = points[a + 1] + (points[b + 1] - points[a + 1]) * mix;
+  }
+  ctx.beginPath();
+  addSurfaceRow(ctx, travelPoints, columns, 0);
+  ctx.strokeStyle = rgba(color, opacity * terrainDepthOpacity(depth));
+  ctx.lineWidth = Math.max(0.7, short / 800);
+  ctx.shadowColor = color;
+  ctx.shadowBlur = Math.min(short * 0.016, glow * short * 0.015);
+  ctx.stroke();
+}
+
+export const spectralTerrain: VisualStyleRenderer<TerrainOptions> = {
+  id: "terrain",
+  draw(ctx, frame: VisualFrameContext, options) {
+    const { width, height } = frame;
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+    const { columns, rows } = terrainResolution(options.density);
+    const buffers = getBuffers(ctx, columns, rows);
+    const time = finite(frame.time, 0);
+    const historySeconds = clamp(options.historySeconds, 2, 10);
+    const responseHistory = frame.history ? styleResponseHistory(frame.history) : undefined;
+    sampleTerrain(
+      responseHistory,
+      frame.audio.bands,
+      time,
+      historySeconds,
+      columns,
+      rows,
+      frame.settings.quietThreshold,
+      buffers,
+    );
+    projectTerrain(
+      buffers.levels,
+      columns,
+      rows,
+      width,
+      height,
+      {
+        height: options.height,
+        visualScale: frame.settings.visualScale,
+        sensitivity: frame.settings.sensitivity,
+        perspective: options.perspective,
+        captionHeight: frame.captionHeight,
+      },
+      buffers.points,
+      buffers.depths,
+    );
+
+    const short = Math.min(width, height);
+    const wireOpacity = clamp(options.wireOpacity / 100);
+    const fillOpacity = clamp(options.surfaceFill / 100) * 0.32;
+    const glow = clamp(frame.settings.glow, 0, 2.5);
+    ctx.save();
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    drawSurfaceFill(
+      ctx,
+      buffers.points,
+      buffers.levels,
+      buffers.depths,
+      columns,
+      rows,
+      frame.settings.primary,
+      fillOpacity,
+    );
+
+    if (wireOpacity > 0) {
+      ctx.strokeStyle = rgba(frame.settings.primary, wireOpacity);
+      ctx.lineWidth = Math.max(0.65, short / 1100);
+      ctx.shadowColor = frame.settings.primary;
+      ctx.shadowBlur = Math.min(short * 0.02, glow * short * 0.018);
+      addSurfaceLines(ctx, buffers.points, columns, rows);
+      // Keep one soft under-stroke, then draw each row once at its continuous
+      // depth opacity without repeating the shadow pass.
+      ctx.globalAlpha = 0.2;
+      ctx.stroke();
+      for (let edge = 0; edge < 2; edge++) {
+        const row = edge === 0 ? 1 : rows - 2;
+        const clearance = row === 1 ? buffers.depths[row] : 1 - buffers.depths[row];
+        ctx.globalAlpha = 0.2 * clamp(clearance * (rows - 2));
+        ctx.beginPath();
+        addSurfaceRow(ctx, buffers.points, columns, row);
+        ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+      strokeSurfaceRows(ctx, buffers.points, buffers.depths, columns, rows, 1);
+      ctx.globalAlpha = 1;
+
+      addDepthLines(ctx, buffers.points, columns, rows);
+      ctx.strokeStyle = rgba(frame.settings.secondary, wireOpacity * 0.72);
+      ctx.lineWidth = Math.max(0.55, short / 1400);
+      ctx.globalAlpha = 0.42 * terrainDepthOpacity(0.56);
+      ctx.shadowBlur = 0;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    if (wireOpacity > 0 && !frame.reducedMotion && options.travelSpeed > 0) {
+      drawTravelContour(
+        ctx,
+        buffers.points,
+        buffers.travelPoints,
+        columns,
+        rows,
+        terrainTravelPosition(time, historySeconds, options.travelSpeed),
+        buffers.depths,
+        frame.settings.secondary,
+        wireOpacity * 0.48,
+        glow,
+        short,
+      );
+    }
+    ctx.restore();
+  },
+};

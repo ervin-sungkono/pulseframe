@@ -22,7 +22,16 @@ const modes: { id: VisualMode; name: string; description: string }[] = [
   { id: "ring", name: "Pulse Ring", description: "Layered solid waves" },
   { id: "spectrum", name: "Spectrum", description: "Bars with a soft reflection" },
   { id: "edges", name: "Edge Bars", description: "Opposite frequency directions" },
+  { id: "radial", name: "Radial Spectrum", description: "Frequency bars around a center" },
+  { id: "terrain", name: "Spectral Terrain", description: "A scrolling sound landscape" },
 ];
+const fitTargets: Record<VisualMode, string> = {
+  ring: "inner circle",
+  spectrum: "upper frame",
+  edges: "center frame",
+  radial: "center aperture",
+  terrain: "upper frame",
+};
 const particleModes: ParticleMode[] = ["stardust", "sparks", "constellation", "comets"];
 const motionPresets: { id: MotionPreset; label: string }[] = [
   { id: "none", label: "None" },
@@ -127,6 +136,37 @@ function SettingSlider({
 function PanelSwitch(props: ComponentProps<typeof Switch>) {
   const panelDisabled = useContext(CustomizerDisabledContext);
   return <Switch {...props} disabled={props.disabled || panelDisabled} />;
+}
+
+function OptionGroup<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly { value: T; label: string }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="setting-choice">
+      <span>{label}</span>
+      <div className="pill-group" role="group" aria-label={label}>
+        {options.map((option) => (
+          <button
+            type="button"
+            key={option.value}
+            className={value === option.value ? "active" : ""}
+            aria-pressed={value === option.value}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function ColorField({
@@ -235,7 +275,11 @@ export type CustomizerPanelProps = {
   disabled?: boolean;
   onPatch: (changes: Partial<VisualSettings>) => void;
   onResetSection: (section: CustomizerSection) => void;
-  onChange: <K extends keyof VisualSettings>(key: K, value: VisualSettings[K]) => void;
+  onChange: <K extends keyof VisualSettings>(
+    key: K,
+    value: VisualSettings[K],
+    historyGroup?: string,
+  ) => void;
   isVideo: boolean;
   onReset: () => void;
   logoName: string | null;
@@ -269,15 +313,14 @@ export function CustomizerPanel({
       item.background === settings.background,
   );
   const placement = settings.logoPlacements[settings.mode];
-  const fitTarget =
-    settings.mode === "ring"
-      ? "inner circle"
-      : settings.mode === "edges"
-        ? "center frame"
-        : "upper frame";
-  const change = <K extends keyof VisualSettings>(key: K, value: VisualSettings[K]) => {
+  const fitTarget = fitTargets[settings.mode];
+  const change = <K extends keyof VisualSettings>(
+    key: K,
+    value: VisualSettings[K],
+    historyGroup?: string,
+  ) => {
     if (disabled) return;
-    onChange(key, value);
+    onChange(key, value, historyGroup);
   };
   const patch = (changes: Partial<VisualSettings>) => {
     if (!disabled) onPatch(changes);
@@ -287,6 +330,18 @@ export function CustomizerPanel({
       ...settings.logoPlacements,
       [settings.mode]: { ...placement, [key]: value },
     });
+  const updateRadialOptions = (changes: Partial<VisualSettings["radialOptions"]>) =>
+    change(
+      "radialOptions",
+      { ...settings.radialOptions, ...changes },
+      `radialOptions.${Object.keys(changes)[0]}`,
+    );
+  const updateTerrainOptions = (changes: Partial<VisualSettings["terrainOptions"]>) =>
+    change(
+      "terrainOptions",
+      { ...settings.terrainOptions, ...changes },
+      `terrainOptions.${Object.keys(changes)[0]}`,
+    );
 
   return (
     <CustomizerDisabledContext.Provider value={disabled}>
@@ -391,7 +446,7 @@ export function CustomizerPanel({
                 </div>
               </div>
             )}
-            {settings.mode !== "ring" && (
+            {(settings.mode === "spectrum" || settings.mode === "edges") && (
               <div className="style-options">
                 <SettingSlider
                   label="Bar roundness"
@@ -414,10 +469,156 @@ export function CustomizerPanel({
                   />
                 ) : (
                   <p className="setting-hint">
-                    Top: bass to treble. Bottom: treble to bass. Both grow inward from the frame
-                    edges.
+                    Top bars move from bass to treble; bottom bars reverse the order.
                   </p>
                 )}
+              </div>
+            )}
+            {settings.mode === "radial" && (
+              <div className="style-options">
+                <OptionGroup
+                  label="Bar direction"
+                  value={settings.radialOptions.variant}
+                  options={[
+                    { value: "outward", label: "Outward" },
+                    { value: "inward", label: "Inward" },
+                    { value: "both", label: "Both" },
+                  ]}
+                  onChange={(variant) => updateRadialOptions({ variant })}
+                />
+                <SettingSlider
+                  label="Bar count"
+                  value={settings.radialOptions.barCount}
+                  display={`${settings.radialOptions.barCount}`}
+                  min={32}
+                  max={160}
+                  onChange={(barCount) => updateRadialOptions({ barCount: Math.round(barCount) })}
+                />
+                <SettingSlider
+                  label="Inner radius"
+                  value={settings.radialOptions.innerRadius}
+                  display={`${settings.radialOptions.innerRadius}%`}
+                  min={10}
+                  max={40}
+                  onChange={(innerRadius) => updateRadialOptions({ innerRadius })}
+                />
+                <SettingSlider
+                  label="Maximum bar length"
+                  value={settings.radialOptions.maxBarLength}
+                  display={`${settings.radialOptions.maxBarLength}%`}
+                  min={5}
+                  max={35}
+                  onChange={(maxBarLength) => updateRadialOptions({ maxBarLength })}
+                />
+                <details className="style-advanced-controls">
+                  <summary>Advanced radial controls</summary>
+                  <div>
+                    <SettingSlider
+                      label="Bar width"
+                      value={settings.radialOptions.barWidth}
+                      display={`${settings.radialOptions.barWidth}%`}
+                      min={20}
+                      max={100}
+                      onChange={(barWidth) => updateRadialOptions({ barWidth })}
+                    />
+                    <SettingSlider
+                      label="Roundness"
+                      value={settings.radialOptions.roundness}
+                      display={`${settings.radialOptions.roundness}%`}
+                      min={0}
+                      max={100}
+                      onChange={(roundness) => updateRadialOptions({ roundness })}
+                    />
+                    <OptionGroup
+                      label="Frequency direction"
+                      value={settings.radialOptions.direction}
+                      options={[
+                        { value: "clockwise", label: "Clockwise" },
+                        { value: "mirrored", label: "Mirrored" },
+                      ]}
+                      onChange={(direction) => updateRadialOptions({ direction })}
+                    />
+                    <SettingSlider
+                      label="Rotation speed"
+                      value={settings.radialOptions.rotationSpeed}
+                      display={`${settings.radialOptions.rotationSpeed}%`}
+                      min={-100}
+                      max={100}
+                      onChange={(rotationSpeed) => updateRadialOptions({ rotationSpeed })}
+                    />
+                  </div>
+                </details>
+              </div>
+            )}
+            {settings.mode === "terrain" && (
+              <div className="style-options">
+                <SettingSlider
+                  label="Landscape height"
+                  value={settings.terrainOptions.height}
+                  display={`${settings.terrainOptions.height}%`}
+                  min={0}
+                  max={100}
+                  onChange={(height) => updateTerrainOptions({ height })}
+                />
+                <SettingSlider
+                  label="History length"
+                  value={settings.terrainOptions.historySeconds}
+                  display={`${settings.terrainOptions.historySeconds.toFixed(1)} s`}
+                  min={2}
+                  max={10}
+                  step={0.5}
+                  inputScale={10}
+                  onChange={(historySeconds) => updateTerrainOptions({ historySeconds })}
+                />
+                <OptionGroup
+                  label="Line density"
+                  value={settings.terrainOptions.density}
+                  options={[
+                    { value: "low", label: "Low" },
+                    { value: "medium", label: "Medium" },
+                    { value: "high", label: "High" },
+                  ]}
+                  onChange={(density) => updateTerrainOptions({ density })}
+                />
+                <details className="style-advanced-controls">
+                  <summary>Advanced terrain controls</summary>
+                  <div>
+                    <OptionGroup
+                      label="Perspective"
+                      value={settings.terrainOptions.perspective}
+                      options={[
+                        { value: "low", label: "Low" },
+                        { value: "medium", label: "Medium" },
+                        { value: "high", label: "High" },
+                      ]}
+                      onChange={(perspective) => updateTerrainOptions({ perspective })}
+                    />
+                    <SettingSlider
+                      label="Travel speed"
+                      value={settings.terrainOptions.travelSpeed}
+                      display={`${settings.terrainOptions.travelSpeed}%`}
+                      min={0}
+                      max={200}
+                      onChange={(travelSpeed) => updateTerrainOptions({ travelSpeed })}
+                    />
+                    <SettingSlider
+                      label="Wire opacity"
+                      value={settings.terrainOptions.wireOpacity}
+                      display={`${settings.terrainOptions.wireOpacity}%`}
+                      min={0}
+                      max={100}
+                      onChange={(wireOpacity) => updateTerrainOptions({ wireOpacity })}
+                    />
+                    <SettingSlider
+                      label="Surface fill"
+                      value={settings.terrainOptions.surfaceFill}
+                      display={`${settings.terrainOptions.surfaceFill}%`}
+                      min={0}
+                      max={100}
+                      onChange={(surfaceFill) => updateTerrainOptions({ surfaceFill })}
+                    />
+                  </div>
+                </details>
               </div>
             )}
             <SettingSlider

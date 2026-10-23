@@ -1,5 +1,5 @@
 import ts from "typescript";
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 const modules = {
+  "style-options": "visual/style-options",
   "audio-analysis-config": "audio/audio-analysis-config",
   "visual-settings-model": "visual/visual-settings-model",
   motion: "visual/motion",
@@ -34,6 +35,14 @@ const modules = {
   "local-image": "media/local-image",
   "media-session": "media/media-session",
 };
+
+// Style modules share the production module graph, including their small helpers.
+for (const file of readdirSync(new URL("../lib/visual/styles/", import.meta.url), {
+  recursive: true,
+})) {
+  if (typeof file === "string" && file.endsWith(".ts"))
+    modules[file.replace(/\.ts$/, "")] = `visual/styles/${file.replace(/\.ts$/, "")}`;
+}
 
 const jsModules = {
   "audio/audio-dsp": "audio/audio-dsp.mjs",
