@@ -1519,7 +1519,7 @@ test("Edge Bars leave room for a fitted center logo even at maximum scale and gl
 
 test("resolution presets retain aspect ratio, short edge and even encoder dimensions", () => {
   const { EXPORT_RESOLUTIONS, exportDimensions } = modules["export-settings"];
-  assert.deepEqual(EXPORT_RESOLUTIONS, [480, 720, 1080, 1440]);
+  assert.deepEqual(EXPORT_RESOLUTIONS, [480, 720, 1080, 1440, 2160]);
   for (const resolution of EXPORT_RESOLUTIONS) {
     for (const format of ["landscape", "portrait", "square"]) {
       const { width, height } = exportDimensions(format, resolution);
@@ -1535,6 +1535,16 @@ test("resolution presets retain aspect ratio, short edge and even encoder dimens
   }
   assert.throws(() => exportDimensions("landscape", 540), /Unsupported/);
 });
+
+test("shared rgba formatting handles malformed colors and nonfinite alpha", () => {
+  const { rgba } = modules.shared;
+  assert.equal(rgba("#12AbEF", 0.4), "rgba(18,171,239,0.4)");
+  assert.equal(rgba("not-a-hex-color", 0.4), "rgba(255,255,255,0.4)");
+  assert.equal(rgba("#12abef", Number.NaN), "rgba(18,171,239,0)");
+  assert.equal(rgba("#12abef", Number.POSITIVE_INFINITY), "rgba(18,171,239,0)");
+  assert.equal(rgba("#12abef", 2), "rgba(18,171,239,1)");
+});
+
 test("new export defaults and legacy ZIP settings do not opt users into lossy encoding", async () => {
   const { DEFAULT_EXPORT_FRAME_RATE, DEFAULT_EXPORT_RESOLUTION, EXPORT_RESOLUTIONS } =
     modules["export-settings"];
@@ -1609,4 +1619,47 @@ test("project subtitle validation follows the shared cue and text limits", async
     subtitles: [{ id: "long", start: 0, end: 1, text: "x".repeat(MAX_SUBTITLE_TEXT_LENGTH + 1) }],
   });
   await assert.rejects(readProjectFile(new File([tooLong], "too-long.pulseframe")));
+});
+
+test("v2 projects preserve valid subtitle word timings and reject invalid timings", async () => {
+  const { makeProjectFile, readProjectFile } = modules["project-file"];
+  const media = new File(["media"], "song.wav", { type: "audio/wav" });
+  const content = {
+    settings,
+    media,
+    logo: null,
+    background: null,
+    format: "landscape",
+    range: [0, 1],
+    subtitles: [
+      {
+        id: "timed",
+        start: 0,
+        end: 1,
+        text: "hello world",
+        words: [
+          { textStart: 0, textEnd: 5, start: 0.1, end: 0.4 },
+          { textStart: 6, textEnd: 11, start: 0.5, end: 0.9 },
+        ],
+      },
+    ],
+  };
+  const blob = makeProjectFile(content);
+  const manifestHeader = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
+  const manifestLength = new DataView(manifestHeader.buffer).getUint32(4, true);
+  const manifest = JSON.parse(await blob.slice(8, 8 + manifestLength).text());
+  assert.equal(manifest.version, 2);
+  const restored = await readProjectFile(new File([blob], "timed.pulseframe"));
+  assert.deepEqual(restored.subtitles, content.subtitles);
+
+  const invalid = makeProjectFile({
+    ...content,
+    subtitles: [
+      {
+        ...content.subtitles[0],
+        words: [{ textStart: 0, textEnd: 99, start: 0.1, end: 0.4 }],
+      },
+    ],
+  });
+  await assert.rejects(readProjectFile(new File([invalid], "invalid-words.pulseframe")));
 });

@@ -17,14 +17,47 @@ export const GEMINI_MAX_BASE64_CHARS = 4 * Math.ceil(GEMINI_MAX_WAV_BYTES / 3);
 // Preserve the original allowance of two phrases per second when chunk sizes change.
 export const GEMINI_MAX_SEGMENTS_PER_CHUNK = 2 * Math.ceil(GEMINI_AUDIO_CHUNK_MS / 1000);
 export const GEMINI_MAX_SEGMENT_TEXT_LENGTH = MAX_SUBTITLE_TEXT_LENGTH;
+export const GEMINI_MAX_WORDS_PER_SEGMENT = 8;
+
+export const geminiWordSchema = z
+  .object({
+    textStart: z.number().int().min(0).max(GEMINI_MAX_SEGMENT_TEXT_LENGTH),
+    textEnd: z.number().int().min(1).max(GEMINI_MAX_SEGMENT_TEXT_LENGTH),
+    startMs: z.number().finite().min(0).max(GEMINI_AUDIO_CHUNK_MS),
+    endMs: z.number().finite().min(0).max(GEMINI_AUDIO_CHUNK_MS),
+  })
+  .strict();
 
 export const geminiSegmentSchema = z
   .object({
-    startMs: z.number().finite(),
-    endMs: z.number().finite(),
+    startMs: z.number().finite().min(0).max(GEMINI_AUDIO_CHUNK_MS),
+    endMs: z.number().finite().min(0).max(GEMINI_AUDIO_CHUNK_MS),
     text: z.string().min(1).max(GEMINI_MAX_SEGMENT_TEXT_LENGTH),
+    words: z.array(geminiWordSchema).max(GEMINI_MAX_WORDS_PER_SEGMENT).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((segment, context) => {
+    if (!segment.words) return;
+    let previousTextEnd = 0;
+    for (const [index, word] of segment.words.entries()) {
+      if (
+        word.textStart < previousTextEnd ||
+        word.textEnd <= word.textStart ||
+        word.textEnd > segment.text.length ||
+        word.endMs <= word.startMs ||
+        word.startMs < segment.startMs ||
+        word.endMs > segment.endMs ||
+        !segment.text.slice(word.textStart, word.textEnd).trim()
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["words", index],
+          message: "Word timing must fit its phrase text and time range.",
+        });
+      }
+      previousTextEnd = word.textEnd;
+    }
+  });
 
 export const geminiSegmentsSchema = z.array(geminiSegmentSchema).max(GEMINI_MAX_SEGMENTS_PER_CHUNK);
 

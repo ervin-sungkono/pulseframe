@@ -1,16 +1,12 @@
 import type { VisualSettings } from "./visual-settings-model";
+import { formatTimestamp } from "../time";
+import { rgba } from "./styles/shared";
 
 const fonts = {
   sans: "ui-sans-serif,system-ui,sans-serif",
   serif: "Georgia,serif",
   mono: "ui-monospace,Menlo,monospace",
 };
-const rgba = (hex: string, alpha: number) => {
-  const v = parseInt(hex.slice(1), 16);
-  return `rgba(${v >>> 16},${(v >>> 8) & 255},${v & 255},${alpha})`;
-};
-const stamp = (time: number) =>
-  `${Math.floor(time / 60)}:${String(Math.floor(time % 60)).padStart(2, "0")}`;
 const fit = (ctx: CanvasRenderingContext2D, text: string, width: number) => {
   if (ctx.measureText(text).width <= width) return text;
   let value = text;
@@ -104,7 +100,7 @@ export function drawTrackOverlay(
     ...(s.showTimer
       ? [
           {
-            text: `${stamp(time)} / ${stamp(duration)}`,
+            text: `${formatTimestamp(time)} / ${formatTimestamp(duration)}`,
             size: secondarySize,
             color: secondary,
             height: secondarySize * 1.7,

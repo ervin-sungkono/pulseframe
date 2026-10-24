@@ -21,9 +21,12 @@ to the application package; shared build tools live in `scripts/`.
 - Preserve the existing MVC arrangement: React components are views, hooks
   orchestrate controllers, and settings, validation, serialization and DSP
   calculations belong in UI-independent models.
-- `app/Home.tsx` composes the editor; `app/components/` presents controls and dialogs.
+- `app/components/Home/index.tsx` composes the editor; `app/components/` presents controls and dialogs.
   Keep audio analysis, persistence rules and export algorithms out of views.
-- `app/hooks/` owns application orchestration, state transitions and cleanup.
+- Components use PascalCase folders with their exported function in `index.tsx`;
+  add `type.ts`, `const.ts` or `style.css` only for meaningful owned content.
+  Use native nested CSS and kebab-case classes. Keep shared tokens global.
+- `app/lib/hooks/` owns application orchestration, state transitions and cleanup.
   Delegate drawing to the canvas renderer rather than duplicating drawing code
   in controllers.
 - `app/lib/` contains several roles, not just models. `audio/`, `media/`,

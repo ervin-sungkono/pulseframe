@@ -24,9 +24,7 @@ const MAX_RETRIES_PER_CHUNK = 2;
 const FETCH_TIMEOUT_MS = 110_000;
 const MAX_CACHED_SCOPES = 6;
 
-const availabilitySchema = z
-  .object({ available: z.boolean(), serverKeyConfigured: z.boolean() })
-  .strict();
+const availabilitySchema = z.object({ available: z.boolean(), keyRequired: z.boolean() }).strict();
 
 const errorSchema = z
   .object({
@@ -44,7 +42,7 @@ const errorSchema = z
 
 export type GeminiAvailability = {
   available: boolean;
-  serverKeyConfigured: boolean;
+  keyRequired: boolean;
 };
 type ApiChunkResult = GeminiSuccessResponse;
 type ApiFailure = {
@@ -105,6 +103,7 @@ export class GeminiLyricsError extends Error {
       ![
         "invalid_request",
         "invalid_audio",
+        "missing_api_key",
         "invalid_api_key",
         "permission_denied",
         "account_precondition",
@@ -159,8 +158,7 @@ function encodeBase64(bytes: Uint8Array) {
   return btoa(binary);
 }
 
-async function fingerprintKey(key: string | null): Promise<string | null> {
-  if (!key) return "server-key";
+async function fingerprintKey(key: string): Promise<string | null> {
   try {
     if (typeof crypto === "undefined" || !crypto.subtle) return null;
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
@@ -248,7 +246,7 @@ async function requestChunk(input: {
   preset: LyricsRunOptions["preset"];
   recheck: boolean;
   languageCode: string;
-  apiKey: string | null;
+  apiKey: string;
   signal: AbortSignal;
   fetcher: typeof fetch;
   onProgress: LyricsRunOptions["onProgress"];
@@ -294,7 +292,7 @@ async function requestChunk(input: {
       total: input.totalChunks,
     });
     const headers = new Headers({ "content-type": "application/json" });
-    if (input.apiKey) headers.set("x-goog-api-key", input.apiKey);
+    headers.set("x-goog-api-key", input.apiKey);
     let response: Response;
     const combined = makeCombinedSignal(input.signal);
     const fetcher = input.fetcher;
@@ -497,13 +495,13 @@ export async function getGeminiAvailability(
     if (isAbortError(error)) throw error;
     return null;
   });
-  if (!response?.ok) return { available: false, serverKeyConfigured: false };
+  if (!response?.ok) return { available: false, keyRequired: true };
   const parsed = availabilitySchema.safeParse(await response.json().catch(() => null));
-  return parsed.success ? parsed.data : { available: false, serverKeyConfigured: false };
+  return parsed.success ? parsed.data : { available: false, keyRequired: true };
 }
 
 export function createGeminiLyricsAdapter(options: {
-  getApiKey: () => string | null | undefined;
+  getApiKey: () => string;
   fetcher?: typeof fetch;
 }): LyricsAdapter {
   const fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
@@ -543,10 +541,16 @@ export function createGeminiLyricsAdapter(options: {
       throwIfAborted(run.signal);
       const startedAt = Date.now();
       const durationMs = clampDuration(audio);
+      const apiKey = options.getApiKey().trim();
+      if (!apiKey) {
+        throw new GeminiLyricsError("Enter a Gemini API key before generating subtitles.", {
+          code: "missing_api_key",
+        });
+      }
       const isolation = run.preset === "quality" ? await isolateForGemini(audio, run) : null;
       const isolationMs = Date.now() - startedAt;
       const cloudAudio: LyricsAudio = isolation
-        ? { ...audio, channels: isolation.channels, sampleRate: 44_100 }
+        ? { ...audio, channels: isolation.channels, sampleRate: isolation.sampleRate }
         : audio;
       if (
         !Array.isArray(cloudAudio.channels) ||
@@ -574,7 +578,6 @@ export function createGeminiLyricsAdapter(options: {
         throw new Error("The decoded audio duration does not match the active track.");
       }
 
-      const apiKey = options.getApiKey()?.trim() || null;
       const keyFingerprint = await fingerprintKey(apiKey);
       const cacheNonce =
         keyFingerprint === null

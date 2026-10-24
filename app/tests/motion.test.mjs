@@ -352,3 +352,14 @@ test("camera shake scales with resolution and its envelope covers every translat
     }
   }
 });
+
+test("radial style reuses the ring motion transform with the same bounds", () => {
+  const ringSettings = { ...settings, mode: "ring", motionPreset: "orbit" };
+  const radialSettings = { ...ringSettings, mode: "radial" };
+  const ring = ringMotion(2.75, 1280, 720, ringSettings, 0.65);
+  const radial = ringMotion(2.75, 1280, 720, radialSettings, 0.65);
+
+  assert.deepEqual(radial, ring);
+  assert.ok(Math.hypot(radial.x, radial.y) <= 720 * 0.08 * 0.5 + 1e-9);
+  assert.deepEqual(ringMotion(2.75, 1280, 720, radialSettings, 0.65, true), identity);
+});

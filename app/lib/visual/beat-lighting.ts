@@ -1,4 +1,5 @@
 import type { BeatLighting } from "./visual-settings-model";
+import { rgba } from "./styles/shared";
 type LightingSettings = {
   primary: string;
   secondary: string;
@@ -6,11 +7,6 @@ type LightingSettings = {
   beatLighting: BeatLighting;
   beatLightingIntensity: number;
 };
-const rgba = (hex: string, alpha: number) => {
-  const rgb = parseInt(hex.slice(1), 16);
-  return `rgba(${rgb >>> 16},${(rgb >>> 8) & 255},${rgb & 255},${alpha})`;
-};
-
 /** Source-time animation is shared by playback and accelerated video export. */
 export function drawBeatLighting(
   ctx: CanvasRenderingContext2D,

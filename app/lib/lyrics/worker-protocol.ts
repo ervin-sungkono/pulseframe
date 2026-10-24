@@ -1,6 +1,8 @@
 import type { LyricsProgress, LyricsPreset, LyricsResult } from "./types";
 import type { IsolationBackend } from "./isolation";
 
+export const LOCAL_AUDIO_SLICE_SAMPLES = 65_536;
+
 export type LyricsWorkerStart = {
   type: "start";
   jobId: number;
@@ -38,7 +40,8 @@ export type LyricsWorkerResponse =
   | {
       type: "isolated";
       jobId: number;
-      channels: [Float32Array, Float32Array];
+      channels: [Float32Array];
+      sampleRate: 16_000;
       backend: IsolationBackend;
       notices: string[];
     }

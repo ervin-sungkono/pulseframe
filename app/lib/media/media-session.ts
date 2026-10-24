@@ -63,6 +63,7 @@ export type MediaSessionDependencies = {
   createMonitor?: (context: AudioContext) => GainNode;
   createLiveSound?: (context: AudioContext, source: MediaElementAudioSourceNode) => LiveSound;
   isBlocked?: () => boolean;
+  isSourceBlocked?: () => boolean;
   getMediaHost?: () => HTMLElement | null;
   onEvent?: (event: MediaSessionEvent) => void;
 };
@@ -209,6 +210,11 @@ export class MediaSessionOwner {
   private blocked() {
     return this.disposed || !!this.dependencies.isBlocked?.();
   }
+
+  private sourceBlocked() {
+    return this.blocked() || !!this.dependencies.isSourceBlocked?.();
+  }
+
   private objectUrl(blob: Blob) {
     return (this.dependencies.createObjectURL ?? URL.createObjectURL.bind(URL))(blob);
   }
@@ -317,7 +323,7 @@ export class MediaSessionOwner {
 
   /** Prepare media and project assets off to the side, then synchronously swap the complete snapshot. */
   async load(next: File | undefined, options: MediaSessionLoadOptions = {}): Promise<boolean> {
-    if (!next || this.blocked()) return false;
+    if (!next || this.sourceBlocked()) return false;
     const { video, valid } = isMediaFile(next);
     if (!valid) {
       this.emit({
@@ -366,7 +372,7 @@ export class MediaSessionOwner {
             controller.signal.aborted ||
             request !== this.requestValue ||
             this.disposed ||
-            this.blocked()
+            this.sourceBlocked()
           ) {
             this.revokeAsset(asset);
             return null;
@@ -388,7 +394,7 @@ export class MediaSessionOwner {
         Promise.all([ready, assets, soundWork, dspWork]),
         controller.signal,
       );
-      if (request !== this.requestValue || controller.signal.aborted || this.blocked())
+      if (request !== this.requestValue || controller.signal.aborted || this.sourceBlocked())
         return false;
 
       const length = Number.isFinite(element.duration)
@@ -619,7 +625,7 @@ export class MediaSessionOwner {
   }
 
   async changeImage(kind: MediaAssetKind, file: File | null): Promise<boolean> {
-    if (this.blocked()) return false;
+    if (this.sourceBlocked()) return false;
     const generation = kind === "logo" ? ++this.logoRequest : ++this.backgroundRequest;
     if (!file) {
       this.updateAsset(kind, null);
@@ -629,7 +635,7 @@ export class MediaSessionOwner {
       const asset = await this.readImage(file, kind);
       const stillCurrent =
         generation === (kind === "logo" ? this.logoRequest : this.backgroundRequest);
-      if (!stillCurrent || this.blocked()) {
+      if (!stillCurrent || this.sourceBlocked()) {
         this.revokeAsset(asset);
         return false;
       }

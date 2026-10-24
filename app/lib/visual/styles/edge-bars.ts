@@ -1,5 +1,5 @@
 import type { VisualSettings } from "../visual-settings-model";
-import { clamp } from "./legacy-common";
+import { clamp } from "./shared";
 import { spectrumLayout } from "./spectrum";
 import { sampleBarBand } from "./frequency-mapping";
 import type { VisualStyleRenderer } from "./types";

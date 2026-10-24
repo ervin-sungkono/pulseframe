@@ -1,6 +1,6 @@
 import type { VisualSettings } from "../visual-settings-model";
 import { trackOverlayLayout } from "../track-overlay";
-import { clamp, rgba } from "./legacy-common";
+import { clamp, rgba } from "./shared";
 import { sampleBarBand } from "./frequency-mapping";
 import type { VisualStyleRenderer } from "./types";
 

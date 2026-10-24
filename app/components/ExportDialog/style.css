@@ -1,0 +1,349 @@
+.export-dialog {
+  background: #131d2e;
+  border: 1px solid #44516b;
+  color: #edf2fc;
+  max-width: 480px;
+  padding: 27px;
+  gap: 0;
+  border-radius: 16px;
+  box-shadow: 0 30px 75px #0009;
+
+  & [data-slot="dialog-header"] {
+    text-align: left;
+    gap: 7px;
+  }
+
+  & [data-slot="dialog-title"] {
+    font-size: 23px;
+    letter-spacing: -0.04em;
+    line-height: 1.2;
+  }
+
+  & [data-slot="dialog-description"] {
+    color: #9daac0;
+    font-size: 14px;
+    line-height: 1.45;
+    margin-top: 2px;
+  }
+}
+
+.export-range-section {
+  margin-top: 24px;
+  padding: 19px;
+  border: 1px solid #36435b;
+  background: #1a263b;
+  border-radius: 11px;
+}
+
+.range-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+
+  & strong {
+    font-size: 14px;
+  }
+
+  & button {
+    border: 0;
+    background: transparent;
+    color: #b99cff;
+    font-size: 12px;
+    font-weight: 650;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+
+    &:hover {
+      color: #e0d3ff;
+    }
+  }
+}
+
+.range-readout {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 5px;
+  margin: 21px 0 15px;
+  font:
+    700 14px ui-monospace,
+    Menlo,
+    monospace;
+  color: #e4eafd;
+  font-variant-numeric: tabular-nums;
+}
+
+.range-duration {
+  color: #a992e3;
+  font:
+    600 11px ui-sans-serif,
+    system-ui,
+    sans-serif;
+  white-space: nowrap;
+}
+
+.range-slider {
+  margin: 0 5px;
+  width: calc(100% - 10px);
+
+  & [data-slot="slider-track"] {
+    height: 8px;
+  }
+
+  & [data-slot="slider-thumb"] {
+    width: 28px;
+    height: 28px;
+    border: 3px solid #b497ff;
+    box-shadow: 0 0 0 3px #5d4a8380;
+  }
+}
+
+.range-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 11px;
+  margin-top: 25px;
+}
+
+.time-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #9facbf;
+  font-size: 12px;
+  font-weight: 650;
+
+  & input {
+    width: 100%;
+    height: 44px;
+    background: #111a2a;
+    border: 1px solid #45536e;
+    border-radius: 7px;
+    color: #eff3fb;
+    font:
+      700 15px ui-monospace,
+      Menlo,
+      monospace;
+    padding: 0 11px;
+
+    &:disabled {
+      opacity: 0.6;
+    }
+  }
+}
+
+.preview-selection {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  margin: 10px auto 0;
+  border: 0;
+  background: transparent;
+  color: #bb9dff;
+  font-size: 13px;
+  font-weight: 700;
+
+  &:hover {
+    color: #eee7ff;
+  }
+}
+
+.export-summary {
+  display: grid;
+  gap: 10px;
+  padding: 19px 2px;
+  border-bottom: 1px solid #303e55;
+
+  & > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    font-size: 12px;
+  }
+}
+
+.export-quality {
+  margin-top: 17px;
+
+  & > strong {
+    color: #d7e0f1;
+    font-size: 14px;
+  }
+}
+
+.export-profile-list {
+  margin-top: 11px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+
+.export-frame-rate-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* stylelint-disable no-descending-specificity -- range and profile buttons are separate controls */
+
+.export-profile-list button {
+  display: grid;
+  gap: 5px;
+  min-height: 58px;
+  text-align: left;
+  border: 1px solid #3d4c67;
+  border-radius: 9px;
+  background: #1a263a;
+  color: #e4eaf5;
+  padding: 10px 12px;
+
+  &.selected {
+    border-color: #af8afa;
+    background: #2e2a4c;
+  }
+
+  &:disabled {
+    opacity: 0.65;
+  }
+}
+
+/* stylelint-enable no-descending-specificity */
+
+.export-profile-list strong {
+  font-size: 13px;
+}
+
+.export-profile-list span {
+  font-size: 11px;
+  color: #a6b2c7;
+}
+
+.export-summary span {
+  color: #8291aa;
+}
+
+.export-summary strong {
+  color: #d6dfed;
+  text-align: right;
+  font-weight: 620;
+}
+
+.export-progress {
+  margin: 18px 0 0;
+
+  & > div {
+    display: flex;
+    justify-content: space-between;
+    color: #e2e8f6;
+    font-size: 13px;
+    margin-bottom: 9px;
+  }
+
+  & progress {
+    display: block;
+    width: 100%;
+    height: 9px;
+    appearance: none;
+    border: 0;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #344159;
+
+    &::-webkit-progress-bar {
+      background: #344159;
+    }
+
+    &::-webkit-progress-value {
+      background: linear-gradient(90deg, #8b67df, #70dce4);
+    }
+
+    &::-moz-progress-bar {
+      background: #9e82e6;
+    }
+  }
+
+  & p {
+    color: #91a0b7;
+    font-size: 12px;
+    margin: 8px 0 0;
+  }
+}
+
+.export-time-estimate {
+  margin: 12px 0 0;
+  color: #b7c4d8;
+  font-size: 12px;
+  text-align: center;
+}
+
+.dialog-actions {
+  margin-top: 21px;
+}
+
+.cancel-export {
+  width: 100%;
+  height: 44px;
+  color: #f5dfe8;
+  background: #543a53;
+  border: 1px solid #9d6589;
+
+  &:hover {
+    background: #674763;
+  }
+}
+
+.export-footnote {
+  margin: 12px 0 0;
+  color: #7f8ca2;
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+@media (width <= 580px) {
+  .export-dialog {
+    padding: 22px 20px calc(20px + env(safe-area-inset-bottom));
+    max-height: 94dvh;
+    overflow-y: auto;
+  }
+
+  .export-range-section {
+    margin-top: 18px;
+    padding: 16px;
+  }
+
+  .range-readout {
+    margin-top: 18px;
+  }
+}
+
+/* stylelint-disable no-descending-specificity -- compression checkbox is a separate control */
+
+.video-compression-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+
+  & input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--primary);
+  }
+}
+
+/* stylelint-enable no-descending-specificity */
+
+.export-resolution-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (width <= 480px) {
+  .export-resolution-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

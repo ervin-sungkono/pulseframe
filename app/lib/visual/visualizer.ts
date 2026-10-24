@@ -7,12 +7,17 @@ import { drawGlitch } from "./glitch";
 import { drawTrackOverlay } from "./track-overlay";
 import { drawBeatLighting } from "./beat-lighting";
 import { cameraMotion, ringMotion, type MotionTransform } from "./motion";
-import { clamp, rgba, ringBandAmplitude } from "./styles/legacy-common";
+import {
+  DEFAULT_SUBTITLE_RENDER_STYLE,
+  drawAnimatedSubtitles,
+  type SubtitleRenderStyle,
+} from "../subtitles/render";
+import { ringBandAmplitude } from "./styles/legacy-common";
 import { ringInnerRadius } from "./styles/pulse-ring";
 import { drawVisualStyle } from "./styles/registry";
 import type { FrequencyHistory } from "./styles/types";
 import { bandEnergy } from "./styles/frequency-history";
-import { sampleBands } from "./styles/shared";
+import { clamp, rgba, sampleBands } from "./styles/shared";
 import { radialSpectrumAperture } from "./styles/radial-spectrum";
 export { ringBandAmplitude } from "./styles/legacy-common";
 export { ringMagnitude } from "./styles/pulse-ring";
@@ -44,10 +49,12 @@ export type AudioReactiveState = {
   ringBands: Float32Array[][];
 };
 export type RenderExtras = {
+  onset?: number;
   history?: FrequencyHistory;
   sound?: SoundEnvelope | null;
   background?: LogoLayer | null;
   drop?: number;
+  lyricStyle?: SubtitleRenderStyle;
   reducedMotion?: boolean;
 };
 
@@ -661,67 +668,6 @@ function subtitleLane(ctx: CanvasRenderingContext2D, w: number, h: number, cues:
   return height;
 }
 
-function drawSubtitle(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  cues: SubtitleCue[],
-  time: number,
-) {
-  const active = activeSubtitles(cues, time);
-  if (!active.length) return;
-
-  const unit = Math.min(w, h);
-  const naturalFontSize = subtitleFontSize(w, h);
-  const laneCapacity = subtitleLane(ctx, w, h, cues);
-  if (laneCapacity <= 0) return;
-
-  const naturalLineHeight = naturalFontSize * 1.3;
-  const naturalPadding = naturalFontSize * 0.55;
-  const naturalGap = naturalFontSize * 0.16;
-  ctx.save();
-  ctx.font = `700 ${naturalFontSize}px ui-sans-serif,system-ui,sans-serif`;
-  const lines = active.map((cue) => wrappedSubtitleLines(ctx, cue, w * 0.84));
-  const blockHeights = lines.map((items) => subtitleBlockHeight(items, naturalFontSize));
-  const totalHeight =
-    blockHeights.reduce((sum, height) => sum + height, 0) +
-    Math.max(0, active.length - 1) * naturalGap;
-  const scale = Math.min(1, laneCapacity / Math.max(1, totalHeight));
-  const fontSize = naturalFontSize * scale;
-  const lineHeight = naturalLineHeight * scale;
-  const padding = naturalPadding * scale;
-  const gap = naturalGap * scale;
-  const shownHeights = blockHeights.map((height) => height * scale);
-  const shownTotal =
-    shownHeights.reduce((sum, height) => sum + height, 0) + Math.max(0, active.length - 1) * gap;
-  const bottom = h - Math.max(unit * 0.055, 22);
-  const laneTop = bottom - laneCapacity;
-  ctx.beginPath();
-  ctx.rect(0, laneTop, w, laneCapacity);
-  ctx.clip();
-  ctx.font = `700 ${fontSize}px ui-sans-serif,system-ui,sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = "#fff";
-  ctx.shadowColor = "#000";
-  ctx.shadowBlur = fontSize * 0.22;
-
-  let top = bottom - shownTotal;
-  for (let cueIndex = 0; cueIndex < active.length; cueIndex += 1) {
-    const blockHeight = shownHeights[cueIndex];
-    ctx.fillStyle = "rgba(5,8,18,.76)";
-    ctx.beginPath();
-    ctx.roundRect(w * 0.07, top, w * 0.86, blockHeight, fontSize * 0.38);
-    ctx.fill();
-    ctx.fillStyle = "#fff";
-    lines[cueIndex].forEach((line, lineIndex) => {
-      ctx.fillText(line, w / 2, top + padding * 0.76 + (lineIndex + 0.5) * lineHeight);
-    });
-    top += blockHeight + gap;
-  }
-  ctx.restore();
-}
-
 function applyMotion(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -838,8 +784,17 @@ export function drawVisualization(
     ctx.fillStyle = aura;
     ctx.fillRect(0, 0, w, h);
   }
-  if (settings.beatRays && activity > 0)
-    drawBeatLighting(ctx, w, h, settings, ringPulse, motionTime, extras.reducedMotion);
+  const onset = Number.isFinite(extras.onset) ? clamp(extras.onset!) : 0;
+  if (settings.beatRays && (activity > 0 || onset > 0))
+    drawBeatLighting(
+      ctx,
+      w,
+      h,
+      settings,
+      Math.max(ringPulse, onset),
+      motionTime,
+      extras.reducedMotion,
+    );
   if (settings.particles) {
     ctx.save();
     ctx.globalAlpha = 0.26 + activity * 0.74;
@@ -908,5 +863,13 @@ export function drawVisualization(
     ctx.restore();
   }
   drawTrackOverlay(ctx, w, h, settings, time, duration, captionHeight);
-  drawSubtitle(ctx, w, h, subtitles, time);
+  drawAnimatedSubtitles(
+    ctx,
+    w,
+    h,
+    subtitles,
+    time,
+    extras.lyricStyle ?? DEFAULT_SUBTITLE_RENDER_STYLE,
+    !!extras.reducedMotion,
+  );
 }

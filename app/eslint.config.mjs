@@ -18,13 +18,6 @@ export default defineConfig([
   { ...js.configs.recommended, files: ["**/*.{ts,tsx}"] },
   tseslint.configs.recommended,
   { ...reactHooks.configs.flat.recommended, files: ["**/*.{ts,tsx}"] },
-  {
-    files: ["app/components/ui/**/*.{ts,tsx}"],
-    rules: {
-      "@typescript-eslint/no-unused-vars": "off",
-      "react-hooks/purity": "off",
-      "react-hooks/set-state-in-effect": "off",
-    },
-  },
   eslintConfigPrettier,
+  { rules: { "eol-last": ["error", "always"] } },
 ]);

@@ -1,8 +1,11 @@
 import type { LyricsAdapter, LyricsAudio, LyricsRunOptions } from "./types";
 import type { IsolationBackend } from "./isolation";
-import type { LyricsWorkerRequest, LyricsWorkerResponse } from "./worker-protocol";
+import {
+  LOCAL_AUDIO_SLICE_SAMPLES,
+  type LyricsWorkerRequest,
+  type LyricsWorkerResponse,
+} from "./worker-protocol";
 
-const AUDIO_SLICE_SAMPLES = 65_536;
 const WORKER_HANDSHAKE_TIMEOUT_MS = 30_000;
 
 type ActiveRequest = {
@@ -16,7 +19,8 @@ type ActiveRequest = {
 };
 
 type IsolatedAudio = {
-  channels: [Float32Array, Float32Array];
+  channels: [Float32Array];
+  sampleRate: 16_000;
   backend: IsolationBackend;
   notices: string[];
 };
@@ -88,7 +92,7 @@ export function createLocalLyricsAdapter(): LyricsAdapter & {
           offset < 0 ||
           !Number.isInteger(message.length) ||
           message.length < 1 ||
-          message.length > AUDIO_SLICE_SAMPLES ||
+          message.length > LOCAL_AUDIO_SLICE_SAMPLES ||
           end > firstChannelLength ||
           current.audio.channels.length < 1 ||
           current.audio.channels.some((channel) => end > channel.length)
@@ -131,6 +135,7 @@ export function createLocalLyricsAdapter(): LyricsAdapter & {
       message.type === "isolated"
         ? {
             channels: message.channels,
+            sampleRate: message.sampleRate,
             backend: message.backend,
             notices: message.notices,
           }

@@ -32,6 +32,9 @@ function createIncoming(body) {
     host: "localhost",
     "content-type": "application/json",
     "content-length": String(body.length),
+    origin: "http://localhost",
+    "sec-fetch-site": "same-origin",
+    "x-goog-api-key": "session-key-for-test",
   };
   return incoming;
 }
@@ -84,6 +87,7 @@ test("lyrics dev API accepts 100-second requests and matches canonical error res
     let middleware;
     let routeCalls = 0;
     let receivedPayload;
+    let receivedHeaders;
     lyricsDevApi().configureServer({
       middlewares: {
         use(path, handler) {
@@ -95,6 +99,7 @@ test("lyrics dev API accepts 100-second requests and matches canonical error res
         default: {
           fetch: async (request) => {
             routeCalls += 1;
+            receivedHeaders = request.headers;
             receivedPayload = await request.json();
             return Response.json({ ok: true });
           },
@@ -131,6 +136,9 @@ test("lyrics dev API accepts 100-second requests and matches canonical error res
     assert.equal(accepted.status, 200);
     assert.deepEqual(accepted.body, { ok: true });
     assert.equal(routeCalls, 1);
+    assert.equal(receivedHeaders.get("origin"), "http://localhost");
+    assert.equal(receivedHeaders.get("sec-fetch-site"), "same-origin");
+    assert.equal(receivedHeaders.get("x-goog-api-key"), "session-key-for-test");
     assert.equal(geminiTranscriptionRequestSchema.safeParse(receivedPayload).success, true);
     assert.equal(receivedPayload.audioBase64.length, wav.toString("base64").length);
 
@@ -168,6 +176,38 @@ test("lyrics dev API accepts 100-second requests and matches canonical error res
       providerAttempts: 0,
     });
     assert.equal(failed.headers["Cache-Control"], "no-store, max-age=0");
+
+    let timeoutMiddleware;
+    lyricsDevApi({ bodyReadTimeoutMs: 10 }).configureServer({
+      middlewares: {
+        use(_path, handler) {
+          timeoutMiddleware = handler;
+        },
+      },
+      ssrLoadModule: async () => {
+        throw new Error("a timed-out body must not load the route");
+      },
+    });
+    const hangingIncoming = new Readable({ read() {} });
+    hangingIncoming.method = "POST";
+    hangingIncoming.headers = {
+      host: "localhost",
+      "content-type": "application/json",
+      origin: "http://localhost",
+      "sec-fetch-site": "same-origin",
+      "x-goog-api-key": "session-key-for-test",
+    };
+    const timeoutOutgoing = createOutgoing();
+    await timeoutMiddleware(hangingIncoming, timeoutOutgoing);
+    assert.equal(timeoutOutgoing.statusCode, 408);
+    assert.deepEqual(JSON.parse(timeoutOutgoing.body.toString("utf8")), {
+      error: {
+        code: "invalid_request",
+        message: "This audio request timed out while being received.",
+        retryable: false,
+      },
+      providerAttempts: 0,
+    });
   } finally {
     await vite.close();
   }

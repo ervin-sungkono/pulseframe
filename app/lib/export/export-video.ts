@@ -9,9 +9,8 @@ import {
   Mp4OutputFormat,
   Output,
   Quality,
+  StreamTarget,
   WebMOutputFormat,
-  canEncodeAudio,
-  canEncodeVideo,
 } from "mediabunny";
 import {
   drawVisualization,
@@ -21,6 +20,7 @@ import {
 } from "../visual/visualizer";
 import type { VisualSettings } from "../visual/visual-settings-model";
 import type { SubtitleCue } from "../subtitles/model";
+import { temporalAt } from "../audio/audio-features";
 import { dropEnvelope, prepareSound, type PreparedSound } from "../audio/audio-features";
 import { initializeDsp } from "../dsp/loader";
 import { PcmFeatures } from "../audio/pcm-features";
@@ -28,8 +28,12 @@ import { decodeMediaAudio, audioSections } from "../media/media-audio";
 import {
   COMPRESSED_VIDEO_QUALITY,
   DEFAULT_EXPORT_FRAME_RATE,
+  isSupportedExportDimensions,
   type ExportFrameRate,
 } from "./export-settings";
+import { probeExportCapabilities, type ExportCodecCapabilities } from "./export-codec-capabilities";
+import { createExportFileTarget, type ExportDestination } from "./export-file-target";
+import { bufferedExportLimitBytes, createEncodedPacketBudget } from "./export-memory-budget";
 import { exportAnalysisStart, exportFrames, exportSoundAt } from "./export-timeline";
 import { PreparedFrequencyHistory } from "../visual/styles/frequency-history";
 import {
@@ -51,6 +55,8 @@ export type ExportProgress = {
   frameLoopElapsedMs?: number;
   timingProfile?: ExportTimingProfile;
   remainingEstimate?: RemainingEstimate;
+  /** False once a file save is committing and can no longer be canceled. */
+  canCancel?: boolean;
 };
 export type ExportOptions = {
   file: File;
@@ -65,12 +71,24 @@ export type ExportOptions = {
   frameRate?: ExportFrameRate;
   logo?: LogoLayer | null;
   background?: LogoLayer | null;
+  destination?: ExportDestination;
   prepared?: PreparedSound;
   reducedMotion?: boolean;
   startedAt: number;
   signal: AbortSignal;
   onProgress: (progress: ExportProgress) => void;
 };
+
+export type ExportResult =
+  | {
+      kind: "buffer";
+      blob: Blob;
+      extension: "mp4" | "webm";
+      timing: ExportTimingMeasurement;
+    }
+  | { kind: "file"; extension: "mp4" | "webm"; timing: ExportTimingMeasurement };
+
+export type { ExportDestination } from "./export-file-target";
 
 function checkCanceled(signal: AbortSignal) {
   if (signal.aborted) throw new DOMException("Export canceled", "AbortError");
@@ -91,20 +109,27 @@ export async function exportVisualVideo({
   background,
   prepared,
   reducedMotion,
+  destination,
   startedAt,
   signal,
   onProgress,
-}: ExportOptions): Promise<{
-  blob: Blob;
-  extension: "mp4" | "webm";
-  timing: ExportTimingMeasurement;
-}> {
+}: ExportOptions): Promise<ExportResult> {
   const runClock = new ExportRunClock(startedAt);
   const report = (progress: Omit<ExportProgress, "elapsedMs" | "phaseElapsedMs">) => {
     const timing = runClock.snapshot();
-    onProgress({ ...progress, elapsedMs: timing.elapsedMs, phaseElapsedMs: timing.phaseElapsedMs });
+    try {
+      onProgress({
+        ...progress,
+        elapsedMs: timing.elapsedMs,
+        phaseElapsedMs: timing.phaseElapsedMs,
+      });
+    } catch {
+      // UI progress listeners must not turn a completed file into a reported failure.
+    }
   };
   if (!(end > start + 0.05)) throw new Error("Select at least 0.1 seconds to export.");
+  if (!isSupportedExportDimensions(width, height))
+    throw new Error("Choose one of the supported export sizes up to 4K.");
   if (typeof VideoEncoder === "undefined")
     throw new Error("Fast video export needs WebCodecs. Try an up-to-date browser.");
   // Validate the frame rate before decoder/encoder resources are allocated.
@@ -112,7 +137,8 @@ export async function exportVisualVideo({
   checkCanceled(signal);
   report({ phase: "Preparing media", percent: 2 });
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
-  let output: Output<Mp4OutputFormat | WebMOutputFormat, BufferTarget> | null = null;
+  let output: Output<Mp4OutputFormat | WebMOutputFormat, BufferTarget | StreamTarget> | null = null;
+  let fileTarget: Awaited<ReturnType<typeof createExportFileTarget>> | null = null;
   let features: PcmFeatures | null = null;
   try {
     const analysisStart = prepared ? 0 : exportAnalysisStart(start, settings);
@@ -130,70 +156,77 @@ export async function exportVisualVideo({
     const videoTrack = await input.getPrimaryVideoTrack();
     if (videoTrack && !(await videoTrack.canDecode()))
       throw new Error("The video track cannot be decoded for export on this device.");
+    const videoSourceWidth = videoTrack?.displayWidth;
     const videoSink = videoTrack
-      ? new CanvasSink(videoTrack, { width: Math.min(width, 1280) })
+      ? new CanvasSink(videoTrack, {
+          width:
+            typeof videoSourceWidth === "number" && videoSourceWidth > 0
+              ? Math.min(width, videoSourceWidth)
+              : width,
+        })
       : null;
-    const quality = new Quality(videoCompression ? COMPRESSED_VIDEO_QUALITY : "high");
-    const audioQuality = new Quality("high");
     const audioChannels = audio?.numberOfChannels ?? 0;
     const sampleRate = audio?.sampleRate ?? 48000;
-    const avc = await canEncodeVideo("avc", { width, height, frameRate, quality });
-    const aac =
-      !audio ||
-      (await canEncodeAudio("aac", {
-        numberOfChannels: audioChannels,
-        sampleRate,
-        quality: audioQuality,
-      }));
-    const mp4 = avc && aac;
-    let webmVideo: "vp9" | "vp8" | null = null;
-    if (!mp4) {
-      webmVideo = (await canEncodeVideo("vp9", { width, height, frameRate, quality }))
-        ? "vp9"
-        : (await canEncodeVideo("vp8", { width, height, frameRate, quality }))
-          ? "vp8"
-          : null;
-      if (
-        !webmVideo ||
-        (audio &&
-          !(await canEncodeAudio("opus", {
-            numberOfChannels: audioChannels,
-            sampleRate: 48000,
-            quality: audioQuality,
-          })))
-      ) {
-        throw new Error(
-          "This device has no compatible fast video and audio encoder for MP4 or WebM.",
-        );
-      }
-    }
+    const capabilities: ExportCodecCapabilities = await probeExportCapabilities({
+      width,
+      height,
+      frameRate,
+      videoCompression,
+      ...(audio ? { audio: { numberOfChannels: audioChannels, sampleRate } } : {}),
+    });
+    if (!capabilities.supported) throw new Error(capabilities.message);
+    const mp4 = capabilities.extension === "mp4";
+    const videoCodec = capabilities.videoCodec;
+    const audioCodec = capabilities.audioCodec;
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
     const context = canvas.getContext("2d", { alpha: false });
     if (!context) throw new Error("Canvas rendering is unavailable.");
-    const target = new BufferTarget();
-    output = new Output({ format: mp4 ? new Mp4OutputFormat() : new WebMOutputFormat(), target });
+    const packetBudget = destination ? null : createEncodedPacketBudget(bufferedExportLimitBytes());
+    fileTarget = destination ? await createExportFileTarget(destination) : null;
+    const target = fileTarget?.target ?? new BufferTarget();
+    const format = mp4
+      ? new Mp4OutputFormat(destination ? { fastStart: false } : undefined)
+      : new WebMOutputFormat();
+    output = new Output({ format, target });
     const videoSource = new CanvasSource(canvas, {
-      codec: mp4 ? "avc" : webmVideo!,
-      quality,
+      codec: videoCodec,
+      quality: new Quality(videoCompression ? COMPRESSED_VIDEO_QUALITY : "high"),
       latencyMode: "quality",
+      onEncodedPacket: packetBudget?.onPacket,
     });
     output.addVideoTrack(videoSource, { frameRate });
     const audioSource = audio
       ? new AudioBufferSource({
-          codec: mp4 ? "aac" : "opus",
-          quality: audioQuality,
+          codec: audioCodec!,
+          quality: new Quality("high"),
           ...(!mp4 ? { transform: { sampleRate: 48000 } } : {}),
+          onEncodedPacket: packetBudget?.onPacket,
         })
       : null;
     if (audioSource) output.addAudioTrack(audioSource);
     await output.start();
-    if (audioSource && audio)
-      for (const section of audioSections(audio, start - analysisStart, end - analysisStart)) {
+    const audioIterator =
+      audioSource && audio
+        ? audioSections(audio, start - analysisStart, end - analysisStart)[Symbol.iterator]()
+        : null;
+    let nextAudioSection = audioIterator?.next() ?? { done: true as const, value: undefined };
+    let audioSecondsAdded = 0;
+    const addAudioThrough = async (untilSeconds: number) => {
+      while (
+        audioSource &&
+        audioIterator &&
+        !nextAudioSection.done &&
+        audioSecondsAdded + nextAudioSection.value.duration <= untilSeconds + 1e-9
+      ) {
         checkCanceled(signal);
-        await audioSource.add(section);
+        await audioSource.add(nextAudioSection.value);
+        audioSecondsAdded += nextAudioSection.value.duration;
+        packetBudget?.throwIfExceeded();
+        nextAudioSection = audioIterator.next();
       }
+    };
 
     const workload = makeExportWorkloadForExport({
       durationSeconds: end - start,
@@ -216,7 +249,7 @@ export async function exportVisualVideo({
         preparedAudio: !!prepared,
         workload,
       }),
-      codec: mp4 ? "avc" : webmVideo!,
+      codec: videoCodec,
       audioIncluded: !!audioSource,
     };
 
@@ -284,6 +317,7 @@ export async function exportVisualVideo({
         duration,
         subtitles,
         {
+          onset: prepared ? temporalAt(prepared, absoluteTime)?.onsetEnvelope : undefined,
           sound: frameData,
           background,
           reducedMotion,
@@ -293,6 +327,8 @@ export async function exportVisualVideo({
       );
       lastAnalysisTime = analysisTime;
       await videoSource.add(localTime, frameDuration, { keyFrame });
+      packetBudget?.throwIfExceeded();
+      await addAudioThrough(localTime + frameDuration);
       const completedFrames = frame + 1;
       const now = performance.now();
       if (now - lastProgressAt >= 750 || completedFrames === frames) {
@@ -307,6 +343,13 @@ export async function exportVisualVideo({
         lastProgressAt = now;
       }
       if (completedFrames % 10 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    while (audioIterator && !nextAudioSection.done) {
+      checkCanceled(signal);
+      await audioSource!.add(nextAudioSection.value);
+      audioSecondsAdded += nextAudioSection.value.duration;
+      packetBudget?.throwIfExceeded();
+      nextAudioSection = audioIterator.next();
     }
     checkCanceled(signal);
     runClock.setPhase("Finishing file");
@@ -334,9 +377,23 @@ export async function exportVisualVideo({
     } finally {
       clearInterval(finishPulse);
     }
+    packetBudget?.throwIfExceeded();
     checkCanceled(signal);
-    if (!target.buffer) throw new Error("The output file was empty.");
-    const blob = new Blob([target.buffer], { type: mp4 ? "video/mp4" : "video/webm" });
+    if (fileTarget) {
+      await fileTarget.commit(() => {
+        report({
+          phase: "Finishing file",
+          percent: 99,
+          completedFrames: frames,
+          totalFrames: frames,
+          frameLoopElapsedMs: Math.max(0, performance.now() - renderStartedAt),
+          timingProfile,
+          canCancel: false,
+        });
+      });
+    } else if (!(target instanceof BufferTarget) || !target.buffer) {
+      throw new Error("The output file was empty.");
+    }
     const elapsed = runClock.complete();
     const timing: ExportTimingMeasurement = {
       profile: timingProfile,
@@ -351,10 +408,15 @@ export async function exportVisualVideo({
       frameLoopElapsedMs: Math.max(0, performance.now() - renderStartedAt),
       timingProfile,
     });
-    return { blob, extension: mp4 ? "mp4" : "webm", timing };
+    if (fileTarget) return { kind: "file", extension: capabilities.extension, timing };
+    const blob = new Blob([(target as BufferTarget).buffer!], {
+      type: mp4 ? "video/mp4" : "video/webm",
+    });
+    return { kind: "buffer", blob, extension: capabilities.extension, timing };
   } catch (error) {
     if (output && output.state !== "finalized" && output.state !== "canceled")
       await output.cancel().catch(() => {});
+    await fileTarget?.abort(error).catch(() => {});
     throw error;
   } finally {
     features?.dispose();

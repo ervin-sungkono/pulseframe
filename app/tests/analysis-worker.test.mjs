@@ -4,7 +4,7 @@ import test from "node:test";
 import { loadSources } from "./load-source.mjs";
 
 const modules = await loadSources();
-const { PcmFeatures, findDropEvents, prepareSound } = modules["audio-features"];
+const { PcmFeatures, findDropEvents, prepareSound, temporalAt } = modules["audio-features"];
 
 class TestAudioBuffer {
   constructor(sampleRate, channels) {
@@ -36,6 +36,8 @@ class FakeWorker {
     this.messages.push({ message, transfer });
     if (message.type === "start") {
       this.retain = message.retain;
+      const temporalStarts =
+        FakeWorker.mode === "temporal-success" || FakeWorker.mode === "temporal-failure";
       if (FakeWorker.mode !== "no-ready") {
         queueMicrotask(() =>
           this.emit({
@@ -44,7 +46,8 @@ class FakeWorker {
             jobId: message.jobId,
             protocolVersion: message.protocolVersion,
             featureSchemaVersion: message.featureSchemaVersion,
-            backend: "js",
+            backend: temporalStarts ? "wasm" : "js",
+            temporalAvailable: temporalStarts,
           }),
         );
       }
@@ -66,6 +69,7 @@ class FakeWorker {
         frameStart,
         frameCount: batchCount,
         eventFrames,
+        temporalAvailable: FakeWorker.mode === "temporal-success",
       };
       if (FakeWorker.mode === "fail-after-batch") {
         const metrics = new Float64Array(batchCount * 7).fill(123456);
@@ -84,6 +88,9 @@ class FakeWorker {
           frameStart,
           frameCount: batchCount,
           eventFrames: frameStart % 60 === 0 ? [frameStart] : [],
+          temporalAvailable:
+            FakeWorker.mode === "temporal-success" ||
+            (FakeWorker.mode === "temporal-failure" && frameStart === workerMessage.frameStart),
         };
         if (this.retain) {
           const metrics = new Float64Array(batchCount * 7);
@@ -106,6 +113,18 @@ class FakeWorker {
           }
           batch.metrics = metrics.buffer;
           batch.bands = bandValues.buffer;
+          if (batch.temporalAvailable) {
+            const temporal = new Float64Array(batchCount * 7);
+            for (let local = 0; local < batchCount; local += 1) {
+              const frame = frameStart + local;
+              temporal.set(
+                [0.2, frame === 8 ? 0.22 : -1, frame === 8 ? 0.75 : 0, 120, 0.5, 0.8, 0.05],
+                local * 7,
+              );
+            }
+            batch.temporal = temporal.buffer;
+            if (frameStart === 0) batch.temporalEvents = new Float64Array([0.22, 0.75]).buffer;
+          }
         }
         this.emit(batch);
         frameStart += batchCount;
@@ -115,6 +134,7 @@ class FakeWorker {
         generation: workerMessage.generation,
         jobId: workerMessage.jobId,
         nextFrame: workerMessage.frameEnd,
+        temporalAvailable: FakeWorker.mode === "temporal-success",
       });
     };
     queueMicrotask(emitChunk);
@@ -195,6 +215,33 @@ test("prepared scan keeps returned envelope storage and exact 30 Hz frame positi
       prepared.envelopes[17].bands[1].every((value) => Math.abs(value - (1 + 17 / 1000)) < 1e-7),
     );
     assert.equal(prepared.audio, audio);
+  });
+});
+
+test("prepared temporal rows and exact onsets survive worker transfer for source-time reads", async () => {
+  await withFakeWorker("temporal-success", async () => {
+    const sampleRate = 24_000;
+    const audio = new TestAudioBuffer(sampleRate, [new Float32Array(sampleRate)]);
+    const prepared = await prepareSound(audio);
+    assert.equal(prepared.temporal.available, true);
+    assert.equal(prepared.temporal.frames.length, 30);
+    assert.deepEqual(prepared.temporal.events, [{ time: 0.22, strength: 0.75 }]);
+    const current = temporalAt(prepared, 0.28);
+    assert.equal(current.confidence, 0.8);
+    assert.ok(current.onsetEnvelope > 0.5);
+  });
+});
+
+test("temporal failure discards temporal rows without restarting the base FFT scan", async () => {
+  await withFakeWorker("temporal-failure", async () => {
+    const sampleRate = 24_000;
+    const audio = new TestAudioBuffer(sampleRate, [new Float32Array(sampleRate)]);
+    const prepared = await prepareSound(audio);
+    assert.equal(prepared.envelopes.length, 30);
+    assert.equal(prepared.envelopes[0].rms, 1);
+    assert.deepEqual(prepared.temporal, { available: false, frames: [], events: [] });
+    assert.equal(FakeWorker.instances.length, 1);
+    assert.equal(FakeWorker.instances[0].terminated, true);
   });
 });
 

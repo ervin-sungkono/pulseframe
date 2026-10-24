@@ -11,16 +11,22 @@ const modules = {
   "audio-analysis-config": "audio/audio-analysis-config",
   "visual-settings-model": "visual/visual-settings-model",
   motion: "visual/motion",
+  "preview-quality": "preview-quality",
   "export-settings": "export/export-settings",
   "export-timeline": "export/export-timeline",
+  "export-file-target": "export/export-file-target",
+  "export-memory-budget": "export/export-memory-budget",
+  "export-codec-capabilities": "export/export-codec-capabilities",
   "audio-features": "audio/audio-features",
   "pcm-features": "audio/pcm-features",
   "dsp/contracts": "dsp/contracts",
   "dsp/loader": "dsp/loader",
   "dsp/wasm-backend": "dsp/wasm-backend",
   "dsp/scan-client": "dsp/scan-client",
+  time: "time",
   visualizer: "visual/visualizer",
   subtitles: "subtitles/model",
+  "subtitles/render": "subtitles/render",
   "project-file": "persistence/project-file",
   "demo-file": "media/demo-file",
   "media-audio": "media/media-audio",
@@ -104,7 +110,10 @@ export async function loadSources({ dspAssets = false } = {}) {
     mkdirSync(dirname(target), { recursive: true });
     js = rewriteModuleSpecifiers(js)
       .replace(/from ["']zod["']/g, `from '${pathToFileURL(require.resolve("zod")).href}'`)
-      .replace(/from ["']mediabunny["']/g, `from '${import.meta.resolve("mediabunny")}'`);
+      .replace(
+        /(from\s+|import\(\s*)["']mediabunny["']/g,
+        (_match, prefix) => `${prefix}'${import.meta.resolve("mediabunny")}'`,
+      );
     writeFileSync(target, js);
   }
 

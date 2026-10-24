@@ -1,10 +1,17 @@
-import { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH, type SubtitleCue } from "../subtitles/model";
-import type { GeneratedApplication, GeneratedCue } from "./types";
+import {
+  MAX_SUBTITLE_CUES,
+  MAX_SUBTITLE_TEXT_LENGTH,
+  validateSubtitleWords,
+  type SubtitleCue,
+  type SubtitleWord,
+} from "../subtitles/model";
+import type { GeneratedApplication, GeneratedCue, GeneratedWord } from "./types";
 
 export type GeneratedCueInput = {
   startMs?: number | null;
   endMs?: number | null;
   text?: string | null;
+  words?: GeneratedWord[] | null;
 };
 
 export type CueWindowOwnership = {
@@ -22,6 +29,89 @@ export type GeneratedSubtitleFormat = "srt" | "vtt" | "lrc" | "json";
 
 function cleanCueText(text: string) {
   return text.replace(/\s+/gu, " ").trim();
+}
+
+function generatedWordsAreValid(
+  text: string,
+  words: unknown,
+  bounds?: { startMs: number; endMs: number },
+): words is GeneratedWord[] {
+  if (!Array.isArray(words)) return false;
+  const subtitleWords: SubtitleWord[] = words.map((word) => ({
+    textStart: word?.textStart,
+    textEnd: word?.textEnd,
+    start: word?.startMs,
+    end: word?.endMs,
+  }));
+  return (
+    validateSubtitleWords(
+      text,
+      subtitleWords,
+      bounds ? { start: bounds.startMs, end: bounds.endMs } : undefined,
+    ) !== undefined
+  );
+}
+
+function normalizedTextAndWords(text: string, words: unknown) {
+  const normalizedText = cleanCueText(text);
+  if (!generatedWordsAreValid(text, words)) return { text: normalizedText };
+  const mapOffset = (offset: number) =>
+    text.slice(0, offset).replace(/\s+/gu, " ").trimStart().length;
+  const normalizedWords = words.map((word) => ({
+    ...word,
+    textStart: mapOffset(word.textStart),
+    textEnd: mapOffset(word.textEnd),
+  }));
+  return generatedWordsAreValid(normalizedText, normalizedWords)
+    ? { text: normalizedText, words: normalizedWords }
+    : { text: normalizedText };
+}
+
+function fitGeneratedWords(
+  text: string,
+  words: GeneratedWord[] | undefined,
+  startMs: number,
+  endMs: number,
+) {
+  if (!generatedWordsAreValid(text, words)) return undefined;
+  const fitted = words.flatMap((word) => {
+    const start = Math.max(startMs, word.startMs);
+    const end = Math.min(endMs, word.endMs);
+    return end > start ? [{ ...word, startMs: start, endMs: end }] : [];
+  });
+  return generatedWordsAreValid(text, fitted, { startMs, endMs }) ? fitted : undefined;
+}
+
+function cloneCue(cue: GeneratedCue): GeneratedCue {
+  return { ...cue, ...(cue.words ? { words: cue.words.map((word) => ({ ...word })) } : {}) };
+}
+
+function mergeWordSpans(text: string, first?: GeneratedWord[], second?: GeneratedWord[]) {
+  if (!generatedWordsAreValid(text, first))
+    return generatedWordsAreValid(text, second) ? second.map((word) => ({ ...word })) : undefined;
+  if (!generatedWordsAreValid(text, second)) return first.map((word) => ({ ...word }));
+  const merged = first.map((word) => ({ ...word }));
+  for (const candidate of second) {
+    const overlappingText = merged.findIndex(
+      (word) => candidate.textStart < word.textEnd && word.textStart < candidate.textEnd,
+    );
+    if (overlappingText >= 0) {
+      const existing = merged[overlappingText];
+      if (
+        existing.textStart === candidate.textStart &&
+        existing.textEnd === candidate.textEnd &&
+        candidate.startMs < existing.endMs &&
+        existing.startMs < candidate.endMs
+      ) {
+        existing.startMs = Math.min(existing.startMs, candidate.startMs);
+        existing.endMs = Math.max(existing.endMs, candidate.endMs);
+      }
+      continue;
+    }
+    merged.push({ ...candidate });
+  }
+  merged.sort((left, right) => left.textStart - right.textStart || left.startMs - right.startMs);
+  return generatedWordsAreValid(text, merged) ? merged : first.map((word) => ({ ...word }));
 }
 
 function estimateMissingEndMs(
@@ -67,9 +157,11 @@ function mergeMatchingOverlaps(cues: GeneratedCue[]) {
     if (previous && previous.text === cue.text && cue.startMs < previous.endMs) {
       previous.startMs = Math.min(previous.startMs, cue.startMs);
       previous.endMs = Math.max(previous.endMs, cue.endMs);
+      previous.words = mergeWordSpans(previous.text, previous.words, cue.words);
+      if (!previous.words) delete previous.words;
       continue;
     }
-    result.push({ ...cue });
+    result.push(cloneCue(cue));
   }
   return result;
 }
@@ -83,16 +175,25 @@ function resolveResidualOverlaps(cues: GeneratedCue[]) {
       if (previous.text === cue.text) {
         previous.startMs = Math.min(previous.startMs, cue.startMs);
         previous.endMs = Math.max(previous.endMs, cue.endMs);
+        previous.words = mergeWordSpans(previous.text, previous.words, cue.words);
+        if (!previous.words) delete previous.words;
         cue.startMs = previous.startMs;
         cue.endMs = previous.endMs;
         result.pop();
         continue;
       }
       previous.endMs = cue.startMs;
+      previous.words = fitGeneratedWords(
+        previous.text,
+        previous.words,
+        previous.startMs,
+        previous.endMs,
+      );
+      if (!previous.words) delete previous.words;
       if (previous.endMs <= previous.startMs) result.pop();
       else break;
     }
-    if (cue.endMs > cue.startMs) result.push(cue);
+    if (cue.endMs > cue.startMs) result.push(cloneCue(cue));
   }
   return result;
 }
@@ -107,7 +208,8 @@ export function normalizeGeneratedCues(
   const candidates = input.flatMap((raw, order) => {
     if (!raw || typeof raw.text !== "string" || typeof raw.startMs !== "number") return [];
     if (!Number.isFinite(raw.startMs)) return [];
-    const text = cleanCueText(raw.text);
+    const normalized = normalizedTextAndWords(raw.text, raw.words);
+    const { text } = normalized;
     if (!text) return [];
     const unclampedStart = raw.startMs;
     const startMs = Math.max(0, Math.min(durationMs, unclampedStart));
@@ -123,7 +225,8 @@ export function normalizeGeneratedCues(
     }
     endMs = Math.min(durationMs, endMs);
     if (endMs <= startMs) return [];
-    return [{ cue: { startMs, endMs, text }, order }];
+    const words = fitGeneratedWords(text, normalized.words, startMs, endMs);
+    return [{ cue: { startMs, endMs, text, ...(words ? { words } : {}) }, order }];
   });
 
   const sorted = candidates
@@ -151,7 +254,8 @@ export function normalizeWindowCues(
   const owned = input.flatMap((raw, order) => {
     if (!raw || typeof raw.text !== "string" || typeof raw.startMs !== "number") return [];
     if (!Number.isFinite(raw.startMs)) return [];
-    const text = cleanCueText(raw.text);
+    const normalized = normalizedTextAndWords(raw.text, raw.words);
+    const { text } = normalized;
     if (!text) return [];
     const localStartMs = Math.max(0, Math.min(localDurationMs, raw.startMs));
     if (localStartMs >= localDurationMs) return [];
@@ -173,7 +277,17 @@ export function normalizeWindowCues(
     const endMs = Math.min(trackDurationMs, window.startMs + localEndMs);
     const midpointMs = (startMs + endMs) / 2;
     if (midpointMs < window.ownsStartMs || midpointMs >= window.ownsEndMs) return [];
-    return [{ startMs, endMs, text }];
+    const words = fitGeneratedWords(
+      text,
+      normalized.words?.map((word) => ({
+        ...word,
+        startMs: window.startMs + word.startMs,
+        endMs: window.startMs + word.endMs,
+      })),
+      startMs,
+      endMs,
+    );
+    return [{ startMs, endMs, text, ...(words ? { words } : {}) }];
   });
   return normalizeGeneratedCues(owned, trackDurationMs);
 }
@@ -190,6 +304,7 @@ export function canApplyGeneratedCues(
         start: cue.startMs / 1000,
         end: cue.endMs / 1000,
         text: cue.text,
+        ...(cue.words ? { words: cue.words } : {}),
       })),
     ),
   ).byteLength;
@@ -262,6 +377,16 @@ export function generatedCuesToSubtitles(
       start: cue.startMs / 1000,
       end: cue.endMs / 1000,
       text: cue.text,
+      ...(cue.words
+        ? {
+            words: cue.words.map((word) => ({
+              textStart: word.textStart,
+              textEnd: word.textEnd,
+              start: word.startMs / 1000,
+              end: word.endMs / 1000,
+            })),
+          }
+        : {}),
     };
   });
   return { cues, error: null };
@@ -279,6 +404,34 @@ function lrcTimestamp(valueMs: number) {
   return `[${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(fraction).padStart(2, "0")}]`;
 }
 
+function textWithWordMarkers(
+  text: string,
+  words: GeneratedWord[] | undefined,
+  marker: (timeMs: number) => string,
+  escape: (value: string) => string = (value) => value,
+  cueEndMs?: number,
+) {
+  if (!words?.length) return escape(text);
+  if (words.some((word, index) => index > 0 && word.startMs < words[index - 1].endMs))
+    return escape(text);
+  let output = "";
+  let offset = 0;
+  let lastMarker: number | undefined;
+  const addMarker = (timeMs: number) => {
+    if (timeMs !== lastMarker) output += marker(timeMs);
+    lastMarker = timeMs;
+  };
+  for (const [index, word] of words.entries()) {
+    output += escape(text.slice(offset, word.textStart));
+    addMarker(word.startMs);
+    output += escape(text.slice(word.textStart, word.textEnd));
+    const next = words[index + 1];
+    if (next ? word.endMs !== next.startMs : word.endMs !== cueEndMs) addMarker(word.endMs);
+    offset = word.textEnd;
+  }
+  return output + escape(text.slice(offset));
+}
+
 /** Serialize the complete generated result, independent of project apply limits. */
 export function serializeGeneratedSubtitles(
   input: readonly GeneratedCueInput[],
@@ -291,11 +444,21 @@ export function serializeGeneratedSubtitles(
       {
         version: 1,
         generated: true,
-        durationMs: Math.max(0, Math.round(durationMs)),
-        cues: cues.map(({ startMs, endMs, text }) => ({
-          startMs: Math.round(startMs),
-          endMs: Math.round(endMs),
+        durationMs: Math.max(0, durationMs),
+        cues: cues.map(({ startMs, endMs, text, words }) => ({
+          startMs,
+          endMs,
           text,
+          ...(words
+            ? {
+                words: words.map(({ textStart, textEnd, startMs: wordStart, endMs: wordEnd }) => ({
+                  textStart,
+                  textEnd,
+                  startMs: wordStart,
+                  endMs: wordEnd,
+                })),
+              }
+            : {}),
         })),
       },
       null,
@@ -303,10 +466,16 @@ export function serializeGeneratedSubtitles(
     );
   }
   if (format === "lrc") {
+    const inlineTimestamp = (timeMs: number) =>
+      lrcTimestamp(timeMs).replaceAll("[", "<").replaceAll("]", ">");
     return [
       "[by:Pulseframe]",
       "[re:Machine-generated lyrics]",
-      ...cues.map((cue) => `${lrcTimestamp(cue.startMs)}${cue.text}`),
+      ...cues.map(
+        (cue) =>
+          lrcTimestamp(cue.startMs) +
+          textWithWordMarkers(cue.text, cue.words, inlineTimestamp, (value) => value, cue.endMs),
+      ),
     ].join("\n");
   }
   const stamp = (milliseconds: number, separator: string) => {
@@ -332,7 +501,15 @@ export function serializeGeneratedSubtitles(
         " --> " +
         stamp(cue.endMs, format === "vtt" ? "." : ",") +
         "\n" +
-        (format === "vtt" ? escapeVttText(cue.text) : cue.text);
+        (format === "vtt"
+          ? textWithWordMarkers(
+              cue.text,
+              cue.words,
+              (timeMs) => "<" + stamp(timeMs, ".") + ">",
+              escapeVttText,
+              cue.endMs,
+            )
+          : cue.text);
       return (format === "srt" ? String(index + 1) + "\n" : "") + lines;
     })
     .join("\n\n");

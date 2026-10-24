@@ -9,8 +9,8 @@ method and confirms the upload.
 ## Source layout
 
 - `app/` contains the browser application, Vite entry/configuration, serverless
-  subtitle handler, public assets and application tests. `app/Home.tsx` composes
-  the editor; `app/components/` renders controls and dialogs; `app/hooks/`
+  subtitle handler, public assets and application tests. `app/components/Home/index.tsx` composes
+  the editor; `app/components/` renders controls and dialogs; `app/lib/hooks/`
   coordinates editor and media lifecycles. `app/lib/` groups audio analysis in
   `audio/`, browser resources in `media/`, settings and rendering in `visual/`,
   video jobs in `export/`, saved data and project files in `persistence/`, and
@@ -19,7 +19,6 @@ method and confirms the upload.
   library root.
 - `scripts/` contains root development helpers, runtime-asset preparation,
   reproducible DSP generation and benchmarks.
-- `vendor/` is reserved for checked-in third-party assets; it is currently empty.
 - `crates/pulseframe-dsp/` contains the Rust DSP crate. Its generated browser
   bindings and WASM are checked in under `app/public/dsp/` so deployment does
   not need Rust.
@@ -28,6 +27,15 @@ method and confirms the upload.
   installation and build tooling also use repository-root files, enable access
   to source files outside that root in the Vercel project settings when applying
   the root-directory change.
+
+Components live in PascalCase folders: `index.tsx` defines the exported view,
+`type.ts` holds meaningful component-specific contracts, `const.ts` holds static
+configuration, and `style.css` holds owned rules. Optional files are omitted
+when unnecessary. Shared UI wrappers remain under `components/ui/`. CSS uses
+native nesting and kebab-case classes; the entry point imports the style sheets
+in explicit cascade order. ESLint and Stylelint recommended rules run together
+through `pnpm lint`; Prettier owns formatting and trailing newlines. The empty
+vendor placeholder was removed; generated DSP assets remain intentional.
 
 ```mermaid
 flowchart LR
@@ -82,6 +90,12 @@ bounded copies of PCM in cooperative batches; they do not detach media-session
 buffers. Abort terminates the worker and incomplete scans are discarded. The
 frame adapter owns and frees WASM handles, and copies values that must survive
 memory growth or a later WASM call.
+
+Prepared scans also reuse the existing Rust temporal bindings for onset and beat
+features. Temporal arrays are sampled by source time and a bounded onset envelope
+feeds beat rays; the JavaScript fallback retains the prior response. Preview-only
+quality hysteresis can reduce backing resolution under sustained drawing load;
+PNG and video exports retain requested dimensions.
 
 The Rust crate uses Rust 1.85.1 and wasm-bindgen CLI 0.2.100. Regenerate the
 checked-in browser artifacts with `pnpm dsp:build`; deploys consume those
@@ -191,9 +205,9 @@ for verification, measurements and limits.
 
 ### Motion and camera effects
 
-In **Motion & effects**, Pulse Ring offers Orbit, Bounce, Drift, Rotate, Zoom
+In **Motion & effects**, Pulse Ring and Radial Spectrum offer Orbit, Bounce, Drift, Rotate, Zoom
 and Beat jump. Motion intensity controls travel, rotation or zoom; the existing
-Motion speed controls repeating movement. The ring, orbit accents and uploaded
+Motion speed controls repeating movement. The selected circular visual, its accents and uploaded
 logo move together. Switching visual styles retains the ring settings.
 Choose **Continuous** for looping motion through silent sections or
 **Audio-reactive** to ease movement with a slower envelope derived from bass
@@ -261,41 +275,54 @@ Preview and export draw active nonblank cues in stable start-time order. The
 editor accepts up to 500 cues with at most 600 characters per cue; a complete
 generated result can still be downloaded when it exceeds those editor limits.
 
-On-device generation is the default and runs in a dedicated worker. Fast uses
-quantized Whisper Tiny. Auto uses Tiny and adds Kim Vocal 2 vocal isolation only
-when the browser's GPU and memory checks allow it; an isolation failure is
-reported and transcription can continue on the original mix. Quality uses
-quantized Whisper Base with vocal isolation and stops if that isolation fails.
-Language defaults to Auto; both methods accept a hint from their supported language list.
-Local generation admits mono/stereo sources up to 100 MiB and ten minutes,
-subject to an estimated memory budget. Model files are pinned remote artifacts,
-downloaded when needed and cached by the browser; they are not bundled in this
-repository.
+The on-device method is the default and runs in a dedicated worker. Its Fast
+path uses quantized Whisper Tiny with mono 16 kHz audio prepared from bounded
+source slices and no vocal isolation. Auto uses Tiny and adds Kim Vocal 2
+isolation only when compatible WebGPU and the memory estimate allow it; an
+isolation failure is reported and transcription can continue on the original
+mix. Quality uses quantized Whisper Base with vocal isolation and stops if that
+isolation fails. Language defaults to Auto; both methods accept a hint from their
+supported language list. Automatic generation has a strict ten-minute duration
+cap and a 100 MiB source-file cap for local and Gemini methods. Memory admission
+uses an estimate and is not a hard guarantee of runtime memory availability.
+Model files are pinned remote artifacts, downloaded when needed and cached by
+the browser; they are not bundled in this repository.
 
-Gemini is optional. The browser sends prepared mono PCM16 WAV chunks to the
-same-origin serverless handler, which calls Google's Files and transcription
-APIs. Chunks are at most 100 seconds and are uploaded sequentially with a short
-overlap. Gemini Quality isolates vocals on device before uploading; isolation
-failure stops the job without uploading the original mix. Fast and Auto upload
-the original mix. The server key (`GEMINI_API_KEY`) is optional; a supplied session key
-takes precedence, and a rejected session key does not fall back to the server
-key. Configure the server key only in the hosting provider's sensitive
-environment settings. The default provider model is `gemini-3.5-transcribe`;
-`GEMINI_MODEL` can select a compatible transcription model. The development
-server routes through the same handler; static preview alone does not provide
-the API.
+Gemini is optional and uses a session key supplied by the user. The browser
+prepares mono PCM16 WAV audio at 16 kHz in sequential chunks of at most 100
+seconds with a two-second overlap. Fast and Auto upload the original mix;
+Quality first runs the existing on-device Kim Vocal 2 isolation worker and
+stops without uploading the original mix if isolation fails. The browser sends
+the key in a request header to the same-origin `/api/lyrics/transcribe` route,
+which calls Google's Files and transcription APIs. The POST route requires a
+matching `Origin`, rejects cross-site Fetch Metadata, and requires the session
+key before reading audio. It has no server API-key fallback. The default
+provider model is `gemini-3.5-transcribe`; the non-secret `GEMINI_MODEL` setting
+can select a compatible transcription model. The development server routes
+through the same handler; a static preview alone does not provide the API.
 
-Choosing Gemini and confirming generation is the upload consent. The session
-key is held in application memory and request headers, then cleared when
-disconnected; it is not written to projects, Quick Looks, storage or URLs.
-Uploaded audio is sent to Google and API use may incur charges. Cancellation
-prevents further requests where possible, but cannot undo a provider request
-already accepted. The handler bounds request size and validates input and
-provider responses. Logs contain fixed status/error codes and numeric timing
-diagnostics, not API keys, audio or transcript text. The handler deletes
-uploaded Google files after an attempt; failed deletion can leave a file with
-Google for up to 48 hours. Process-local request limits are best-effort and are
-not a global spending limit.
+The session key stays in application memory and request headers, then is cleared
+when disconnected or the page is reloaded; it is not written to projects, Quick
+Looks, browser storage or URLs. Selecting Gemini, checking the cloud consent and
+starting generation authorizes sending the active track to Google; API use may
+incur charges. The client retries retryable chunk failures at most twice and
+stops on ambiguous timeouts to avoid silently replaying a request that may
+already have used quota. Cancellation prevents later requests where possible,
+but cannot undo a provider request already accepted. The handler bounds request
+size and body-read time, validates audio and provider responses, and applies
+best-effort process-local limits per hashed session key; those limits are not a
+global spending limit. Logs use fixed status/error codes and numeric
+diagnostics, not keys, audio or transcript text. Uploaded Google files are
+deleted after an attempt; a file may remain with Google for up to 48 hours if
+deletion fails.
+
+Local Whisper output has cue/line timing only. Validated word timestamps from
+Gemini or timed imports survive editing and project round trips; editing cue
+text or timing removes stale word timing. The shared renderer accepts those
+words, while the default editor keeps its existing static subtitle appearance.
+Generation progress is owned by `SubtitleWorkspace`, so status updates do not
+rerender the root editor. Playback and preview can continue during inference;
+source replacement and video export share a separate activity lock.
 
 Whisper Tiny is pinned to revision
 [`ff4177021cc41f7db950912b73ea4fdf7d01d8e7`](https://huggingface.co/onnx-community/whisper-tiny/tree/ff4177021cc41f7db950912b73ea4fdf7d01d8e7);
@@ -324,12 +351,13 @@ editor in another site's iframe may need different headers.
 ## Export behavior and limits
 
 Video export supports landscape, portrait and square formats; 480p, 720p,
-1080p and 1440p resolutions; and 24, 30 or 60 FPS. New sessions default to
-720p/30 FPS. Resolution controls the short edge for landscape and portrait, and
-the edge for square; dimensions are even for codec compatibility. Export uses
-the browser's available encoders and produces MP4 or WebM. Unsupported
-dimensions or encoders report an error instead of silently lowering output
-quality.
+1080p, 1440p and 2160p resolutions; and 24, 30 or 60 FPS. A 2160p selection
+produces up to 3840×2160 landscape or 2160×3840 portrait output, with 2160×2160
+for square. New sessions default to 720p/30 FPS. Resolution controls the short
+edge for landscape and portrait, and the edge for square; dimensions are even
+for codec compatibility. Export uses the browser's available encoders and
+produces MP4 or WebM. Unsupported dimensions or encoders report an error
+instead of silently lowering output quality.
 
 Optional video compression is off by default. It uses Mediabunny's 0.68 quality
 target in place of the high-quality 0.75 setting and may reduce detail. It does
@@ -337,13 +365,25 @@ not change resolution, frame rate, audio, duration or subtitles. File-size
 savings vary by clip, codec and device. Project files preserve the setting;
 older ZIP-compression fields do not enable it.
 
-Before asynchronous preparation, export snapshots appearance, subtitles and
-range and retains source resources under the shared lock. Cancellation prevents
-late progress and download after the job settles. Time estimates use recent
-successful compatible runs from this browser (at most 20 records, expiring
-after 45 days) and current-device rendering progress. The stored profile omits
-media names, track titles, PCM and exact appearance values. Estimates are ranges
-and are unavailable until the browser has enough timing data.
+The export controller snapshots the selected media generation, settings,
+logo/background references, subtitles, format, range, resolution, frame
+rate, compression setting and prepared audio before asynchronous work. The
+shared lock retains source resources until encoding settles. Cancellation
+prevents late progress and download; an uncommitted file destination is aborted.
+Save to file uses the File System Access API when the source is prepared and the
+exact codec settings pass preflight. Encoded chunks stream through a backpressure
+aware writer, and the destination commits only after the media container
+finalizes. The output adapter aborts the staged file after a failed or canceled
+job before commit starts. If direct file output is unavailable, the browser
+uses an in-memory buffer and checks encoded packet bytes against 128 MiB on
+desktop or 64 MiB on likely-mobile devices. Those byte checks do not represent
+total process or peak-memory limits.
+
+Time estimates use recent successful compatible runs from this browser (at
+most 20 records, expiring after 45 days) and current-device rendering progress.
+The stored profile omits media names, track titles, PCM and exact appearance
+values. Estimates are ranges and are unavailable until the browser has enough
+timing data.
 
 Five-minute tracks are the current performance target, not a hard maximum for
 all editor actions. Browser codec support and memory determine practical media
@@ -369,5 +409,5 @@ pnpm preview
 For Rust/DSP work, also run `cargo test --locked --manifest-path
 crates/pulseframe-dsp/Cargo.toml` and `pnpm dsp:build`. The project is a Vite
 static app on Vercel; checked-in DSP assets mean hosting builds need Node and
-pnpm, not Rust. Optional Gemini deployment requires the sensitive server
-environment key described above.
+pnpm, not Rust. Gemini generation uses a user-supplied session key through the
+same-origin function; deployment does not supply a server-key fallback.

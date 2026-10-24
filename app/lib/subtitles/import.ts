@@ -1,4 +1,10 @@
-import { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH, type SubtitleCue } from "./model";
+import {
+  MAX_SUBTITLE_CUES,
+  MAX_SUBTITLE_TEXT_LENGTH,
+  validateSubtitleWords,
+  type SubtitleCue,
+  type SubtitleWord,
+} from "./model";
 
 export const MAX_SUBTITLE_IMPORT_BYTES = 2 * 1024 * 1024;
 export const SUBTITLE_IMPORT_ACCEPT = ".srt,.vtt,.lrc,.json";
@@ -24,7 +30,7 @@ function clock(value: string, short = false): number {
   );
 }
 
-function plainText(value: string) {
+function plainTextWithWhitespace(value: string) {
   const entities: Record<string, string> = {
     amp: "&",
     lt: "<",
@@ -47,8 +53,101 @@ function plainText(value: string) {
       return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff)
         ? String.fromCodePoint(code)
         : whole;
-    })
-    .trim();
+    });
+}
+
+function plainText(value: string) {
+  return plainTextWithWhitespace(value).trim();
+}
+
+function textRange(text: string, offset: number) {
+  const trimmedStart = text.length - text.trimStart().length;
+  const trimmedEnd = text.trimEnd().length;
+  return trimmedEnd > trimmedStart
+    ? { textStart: offset + trimmedStart, textEnd: offset + trimmedEnd }
+    : null;
+}
+
+function joinTimedText(
+  fragments: Array<{ raw: string; start: number; end: number }>,
+  bounds: { start: number; end: number },
+): { text: string; words?: SubtitleWord[] } {
+  const cleanFragments = fragments.map((fragment) => ({
+    ...fragment,
+    text: plainTextWithWhitespace(fragment.raw),
+  }));
+  const untrimmed = cleanFragments.map((fragment) => fragment.text).join("");
+  const leading = untrimmed.length - untrimmed.trimStart().length;
+  const text = untrimmed.trim();
+  if (!text) return { text };
+
+  let offset = 0;
+  const words: SubtitleWord[] = [];
+  for (const fragment of cleanFragments) {
+    const range = textRange(fragment.text, offset - leading);
+    if (range && fragment.end > fragment.start) {
+      words.push({ ...range, start: fragment.start, end: fragment.end });
+    }
+    offset += fragment.text.length;
+  }
+  return validateSubtitleWords(text, words, bounds) ? { text, words } : { text };
+}
+
+function vttText(value: string, start: number, end: number) {
+  const marker = /<((?:\d+:)?\d{2}:\d{2}\.\d{3})>/g;
+  const matches = [...value.matchAll(marker)];
+  if (!matches.length) return { text: plainText(value) };
+  const fragments: Array<{ raw: string; start: number; end: number }> = [];
+  let cursor = 0;
+  let fragmentStart = start;
+  for (const match of matches) {
+    const markerStart = clock(match[1], true);
+    if (markerStart < fragmentStart || markerStart > end)
+      fail("WebVTT inline timestamps must increase inside their cue.");
+    fragments.push({
+      raw: value.slice(cursor, match.index),
+      start: fragmentStart,
+      end: markerStart,
+    });
+    cursor = match.index + match[0].length;
+    fragmentStart = markerStart;
+  }
+  fragments.push({ raw: value.slice(cursor), start: fragmentStart, end });
+  return joinTimedText(fragments, { start, end });
+}
+
+function lrcTime(value: string, offset: number) {
+  const match = value.match(/^(\d+):(\d{2})(?:[.:](\d{1,3}))?$/);
+  if (!match || Number(match[2]) >= 60) fail("An enhanced LRC timestamp is invalid.");
+  return (
+    Number(match[1]) * 60 +
+    Number(match[2]) +
+    Number((match[3] ?? "0").padEnd(3, "0")) / 1000 -
+    offset
+  );
+}
+
+function enhancedLrcText(value: string, start: number, end: number, offset: number) {
+  const marker = /<(\d+:\d{2}(?:[.:]\d{1,3})?)>/g;
+  const matches = [...value.matchAll(marker)];
+  if (!matches.length) return { text: plainText(value) };
+  const fragments: Array<{ raw: string; start: number; end: number }> = [];
+  let cursor = 0;
+  let fragmentStart = start;
+  for (const match of matches) {
+    const markerStart = lrcTime(match[1], offset);
+    if (markerStart < fragmentStart || markerStart > end)
+      fail("Enhanced LRC timestamps must increase inside their lyric line.");
+    fragments.push({
+      raw: value.slice(cursor, match.index),
+      start: fragmentStart,
+      end: markerStart,
+    });
+    cursor = match.index + match[0].length;
+    fragmentStart = markerStart;
+  }
+  fragments.push({ raw: value.slice(cursor), start: fragmentStart, end });
+  return joinTimedText(fragments, { start, end });
 }
 
 function timedText(text: string, vtt: boolean): ImportedCue[] {
@@ -66,7 +165,12 @@ function timedText(text: string, vtt: boolean): ImportedCue[] {
     const end = clock(timing[2], vtt);
     if (lines.slice(timingIndex + 1).some((line) => /^\d[\d:.,]*\s+-->/.test(line)))
       fail("Subtitle blocks must be separated by a blank line.");
-    cues.push({ start, end, text: plainText(lines.slice(timingIndex + 1).join("\n")) });
+    const rawText = lines.slice(timingIndex + 1).join("\n");
+    cues.push({
+      start,
+      end,
+      ...(vtt ? vttText(rawText, start, end) : { text: plainText(rawText) }),
+    });
   }
   return cues;
 }
@@ -78,12 +182,11 @@ function lrc(text: string, duration: number): ImportedCue[] {
   if (!/^[+-]?\d+$/.test(offsetText) || !Number.isSafeInteger(Number(offsetText)))
     fail("The LRC offset must be an integer number of milliseconds.");
   const offset = Number(offsetText) / 1000;
-  const rows: Array<{ start: number; text: string }> = [];
+  const rows: Array<{ start: number; rawText: string }> = [];
   for (const line of text.split("\n")) {
     if (!line.trim() || /^\s*\[[a-z][\w-]*:[^\]]*\]\s*$/i.test(line)) continue;
     const match = line.trim().match(/^((?:\[\d+:\d{2}(?:[.:]\d{1,3})?\])+)(.*)$/);
     if (!match) fail("LRC lyrics need a [mm:ss.xx] timestamp on each line.");
-    const lyric = plainText(match[2].replace(/<\d+:\d{2}(?:[.:]\d{1,3})?>/g, ""));
     for (const tag of match[1].matchAll(/\[(\d+):(\d{2})(?:[.:](\d{1,3}))?\]/g)) {
       if (Number(tag[2]) >= 60) fail("An LRC timestamp has invalid seconds.");
       rows.push({
@@ -92,19 +195,18 @@ function lrc(text: string, duration: number): ImportedCue[] {
           Number(tag[2]) +
           Number((tag[3] ?? "0").padEnd(3, "0")) / 1000 -
           offset,
-        text: lyric,
+        rawText: match[2],
       });
       if (rows.length > MAX_SUBTITLE_CUES * 2)
         fail("The LRC file contains too many timestamped lines.");
     }
   }
   rows.sort((a, b) => a.start - b.start);
-  return rows
-    .filter((row) => row.text)
-    .map((row) => ({
-      ...row,
-      end: rows.find((next) => next.start > row.start)?.start ?? duration,
-    }));
+  return rows.flatMap((row) => {
+    const end = rows.find((next) => next.start > row.start)?.start ?? duration;
+    const lyric = enhancedLrcText(row.rawText, row.start, end, offset);
+    return lyric.text ? [{ start: row.start, end, ...lyric }] : [];
+  });
 }
 
 function jsonCues(text: string): ImportedCue[] {
@@ -130,11 +232,39 @@ function jsonCues(text: string): ImportedCue[] {
     const end = cue[milliseconds ? "endMs" : "end"];
     if (typeof start !== "number" || typeof end !== "number" || typeof cue.text !== "string")
       fail("JSON cues need numeric start/end times and text.");
-    return {
-      start: start / (milliseconds ? 1000 : 1),
-      end: end / (milliseconds ? 1000 : 1),
-      text: cue.text.trim(),
-    };
+    const scale = milliseconds ? 1000 : 1;
+    const cueStart = start / scale;
+    const cueEnd = end / scale;
+    const text = typeof cue.words === "undefined" ? cue.text.trim() : cue.text;
+    let words: SubtitleWord[] | undefined;
+    if (typeof cue.words !== "undefined") {
+      if (!Array.isArray(cue.words)) fail("JSON cue words must be an array.");
+      words = cue.words.map((rawWord: unknown) => {
+        if (!rawWord || typeof rawWord !== "object") fail("Each JSON word must be an object.");
+        const word = rawWord as Record<string, unknown>;
+        const wordMilliseconds = "startMs" in word || "endMs" in word;
+        if (wordMilliseconds && ("start" in word || "end" in word))
+          fail("JSON words must use either seconds or milliseconds, not both.");
+        const wordStart = word[wordMilliseconds ? "startMs" : "start"];
+        const wordEnd = word[wordMilliseconds ? "endMs" : "end"];
+        if (
+          typeof word.textStart !== "number" ||
+          typeof word.textEnd !== "number" ||
+          typeof wordStart !== "number" ||
+          typeof wordEnd !== "number"
+        )
+          fail("JSON words need textStart/textEnd and numeric start/end times.");
+        return {
+          textStart: word.textStart,
+          textEnd: word.textEnd,
+          start: wordStart / (wordMilliseconds ? 1000 : 1),
+          end: wordEnd / (wordMilliseconds ? 1000 : 1),
+        };
+      });
+      if (!validateSubtitleWords(text, words, { start: cueStart, end: cueEnd }))
+        fail("JSON cue words do not match their text or timing range.");
+    }
+    return { start: cueStart, end: cueEnd, text, ...(words ? { words } : {}) };
   });
 }
 
@@ -178,7 +308,15 @@ export function parseSubtitleImport(
     const start = Math.max(0, cue.start),
       end = Math.min(duration, cue.end);
     if (start !== cue.start || end !== cue.end) clipped++;
-    cues.push({ ...cue, start, end });
+    const words = cue.words?.flatMap((word) => {
+      const clippedStart = Math.max(start, word.start);
+      const clippedEnd = Math.min(end, word.end);
+      return clippedEnd > clippedStart ? [{ ...word, start: clippedStart, end: clippedEnd }] : [];
+    });
+    const imported: ImportedCue = { ...cue, start, end };
+    if (words?.length) imported.words = words;
+    else delete imported.words;
+    cues.push(imported);
   }
   if (!cues.length) fail("No nonempty subtitle blocks fall within the active track.");
   cues.sort((a, b) => a.start - b.start);

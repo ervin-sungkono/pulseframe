@@ -1,0 +1,20 @@
+.preset-save-summary {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid #33455e;
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+
+  & strong {
+    font-size: 15px;
+  }
+
+  & p {
+    color: #a6b7cf;
+    margin-top: 5px;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+}
