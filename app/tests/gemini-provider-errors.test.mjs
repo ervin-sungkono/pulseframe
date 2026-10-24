@@ -12,6 +12,7 @@ const require = createRequire(import.meta.url);
 for (const name of [
   "subtitles/model",
   "lyrics/mdx-config",
+  "lyrics/worker-protocol",
   "lyrics/policy",
   "lyrics/languages",
   "lyrics/gemini-contract",
@@ -75,6 +76,25 @@ function interaction(annotations = [], text = "") {
 }
 
 let requestSequence = 0;
+const sameOriginHeaders = {
+  "content-type": "application/json",
+  origin: "https://pulseframe.test",
+  "sec-fetch-site": "same-origin",
+  "x-goog-api-key": "session-key-for-test",
+};
+
+function createPostRequest({ headers = {}, body = payload } = {}) {
+  const requestHeaders = { ...sameOriginHeaders, ...headers };
+  for (const [name, value] of Object.entries(requestHeaders)) {
+    if (value === null) delete requestHeaders[name];
+  }
+  return new Request("https://pulseframe.test/api/lyrics/transcribe", {
+    method: "POST",
+    headers: requestHeaders,
+    body,
+  });
+}
+
 async function transcribe(
   providerBody,
   { languageCode = "", preset = "fast", recheck = false, durationMs = 1000 } = {},
@@ -88,6 +108,8 @@ async function transcribe(
     method: "POST",
     headers: {
       "content-type": "application/json",
+      origin: "https://pulseframe.test",
+      "sec-fetch-site": "same-origin",
       "x-goog-api-key": `session-secret-${requestSequence++}`,
     },
     body: JSON.stringify({
@@ -103,6 +125,7 @@ async function transcribe(
   const response = await handleGeminiLyricsRequest(request, {
     fetcher: async (url, options) => {
       calls.push({ url, options });
+      assert.equal(options.redirect, "error");
       if (url.endsWith("/upload/v1beta/files"))
         return new Response(null, {
           headers: {
@@ -124,6 +147,111 @@ async function transcribe(
   return { response, body: await response.json(), calls };
 }
 
+test("Gemini availability advertises the required session key without reading a server key", async () => {
+  const response = await handleGeminiLyricsRequest(
+    new Request("https://pulseframe.test/api/lyrics/transcribe"),
+    { env: { GEMINI_API_KEY: "ignored-server-key" } },
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { available: true, keyRequired: true });
+});
+
+test("Gemini rejects missing or blank session keys before reading the body, even with legacy env config", async () => {
+  for (const keyHeader of [undefined, "   "]) {
+    const headers = {
+      "content-type": "application/json",
+      origin: "https://pulseframe.test",
+      "sec-fetch-site": "same-origin",
+      ...(keyHeader === undefined ? {} : { "x-goog-api-key": keyHeader }),
+    };
+    const request = new Request("https://pulseframe.test/api/lyrics/transcribe", {
+      method: "POST",
+      headers,
+      body: "not-json",
+    });
+    let providerCalls = 0;
+    const response = await handleGeminiLyricsRequest(request, {
+      env: { GEMINI_API_KEY: "ignored-server-key" },
+      fetcher: async () => {
+        providerCalls += 1;
+        throw new Error("provider call should not happen");
+      },
+    });
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), {
+      error: {
+        code: "missing_api_key",
+        message: "Enter a Gemini API key to use transcription.",
+        retryable: false,
+      },
+      providerAttempts: 0,
+    });
+    assert.equal(request.bodyUsed, false);
+    assert.equal(providerCalls, 0);
+  }
+});
+
+test("Gemini POST requires a serialized same-origin Origin and rejects cross-site fetch metadata", async () => {
+  const cases = [
+    { name: "missing Origin", headers: { origin: null } },
+    { name: "malformed Origin", headers: { origin: "not-an-origin" } },
+    { name: "cross-origin Origin", headers: { origin: "https://other.test" } },
+    { name: "non-serialized Origin", headers: { origin: "https://pulseframe.test/lyrics" } },
+    { name: "cross-site fetch", headers: { "sec-fetch-site": "cross-site" } },
+  ];
+  for (const item of cases) {
+    const headers = { ...sameOriginHeaders, ...item.headers };
+    if (item.headers.origin === null) headers.origin = null;
+    let providerCalls = 0;
+    const response = await handleGeminiLyricsRequest(createPostRequest({ headers }), {
+      fetcher: async () => {
+        providerCalls += 1;
+        throw new Error("provider call should not happen");
+      },
+    });
+    assert.equal(response.status, 403, item.name);
+    assert.equal((await response.json()).error.code, "invalid_request", item.name);
+    assert.equal(providerCalls, 0, item.name);
+  }
+});
+
+test("Gemini bounds request-body reads with a deadline", async () => {
+  const request = new Request("https://pulseframe.test/api/lyrics/transcribe", {
+    method: "POST",
+    headers: sameOriginHeaders,
+    body: new ReadableStream({ pull: () => new Promise(() => {}) }),
+    duplex: "half",
+  });
+  const response = await handleGeminiLyricsRequest(request, { bodyReadTimeoutMs: 10 });
+  assert.equal(response.status, 408);
+  assert.deepEqual(await response.json(), {
+    error: {
+      code: "invalid_request",
+      message: "This audio request timed out while being received.",
+      retryable: false,
+    },
+    providerAttempts: 0,
+  });
+});
+
+test("Gemini provider fetches reject redirects", async () => {
+  const providerCalls = [];
+  const response = await handleGeminiLyricsRequest(createPostRequest(), {
+    fetcher: async (url, options) => {
+      providerCalls.push({ url, redirect: options.redirect });
+      throw new TypeError("redirect blocked");
+    },
+  });
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).error.code, "provider_unavailable");
+  assert.deepEqual(providerCalls, [
+    {
+      url: "https://generativelanguage.googleapis.com/upload/v1beta/files",
+      redirect: "error",
+    },
+  ]);
+});
+
 test("Gemini failures preserve actionable upstream categories without exposing keys", async () => {
   const cases = [
     [400, "INVALID_ARGUMENT", "invalid_request", 400, false],
@@ -139,12 +267,18 @@ test("Gemini failures preserve actionable upstream categories without exposing k
     for (const [upstreamStatus, upstreamCode, expectedCode, expectedStatus, retryable] of cases) {
       const request = new Request("https://pulseframe.test/api/lyrics/transcribe", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-goog-api-key": "session-secret" },
+        headers: {
+          "content-type": "application/json",
+          origin: "https://pulseframe.test",
+          "sec-fetch-site": "same-origin",
+          "x-goog-api-key": "session-secret",
+        },
         body: payload,
       });
       const response = await handleGeminiLyricsRequest(request, {
         env: { GEMINI_API_KEY: "server-secret" },
         fetcher: async (url, options) => {
+          assert.equal(options.redirect, "error");
           assert.equal(options.headers["x-goog-api-key"], "session-secret");
           if (url.endsWith("/upload/v1beta/files"))
             return new Response(null, {
@@ -203,7 +337,17 @@ test("Transcribe uploads server-side and converts timed words with a language hi
     { languageCode: "id-ID" },
   );
   assert.equal(response.status, 200);
-  assert.deepEqual(body.segments, [{ startMs: 100, endMs: 900, text: "Hello world." }]);
+  assert.deepEqual(body.segments, [
+    {
+      startMs: 100,
+      endMs: 900,
+      text: "Hello world.",
+      words: [
+        { textStart: 0, textEnd: 5, startMs: 100, endMs: 400 },
+        { textStart: 6, textEnd: 12, startMs: 500, endMs: 900 },
+      ],
+    },
+  ]);
   assert.equal(body.model, "gemini-3.5-transcribe");
   assert.equal(calls.length, 4);
   assert.equal(calls[1].options.body.byteLength, wav.byteLength);
@@ -244,7 +388,18 @@ test("Transcribe extracts missing WordInfo text with UTF-8 byte indices", async 
     ),
   );
   assert.equal(response.status, 200);
-  assert.deepEqual(body.segments, [{ startMs: 0, endMs: 900, text: "音楽 hello!" }]);
+  assert.deepEqual(body.segments, [
+    {
+      startMs: 0,
+      endMs: 900,
+      text: "音楽 hello!",
+      words: [
+        { textStart: 0, textEnd: 2, startMs: 0, endMs: 50 },
+        { textStart: 3, textEnd: 8, startMs: 100, endMs: 400 },
+        { textStart: 8, textEnd: 9, startMs: 500, endMs: 900 },
+      ],
+    },
+  ]);
 });
 
 test("Transcribe preserves sub-millisecond word timing", async () => {
@@ -259,7 +414,14 @@ test("Transcribe preserves sub-millisecond word timing", async () => {
     ]),
   );
   assert.equal(response.status, 200);
-  assert.deepEqual(body.segments, [{ startMs: 0.1, endMs: 0.4, text: "a" }]);
+  assert.deepEqual(body.segments, [
+    {
+      startMs: 0.1,
+      endMs: 0.4,
+      text: "a",
+      words: [{ textStart: 0, textEnd: 1, startMs: 0.1, endMs: 0.4 }],
+    },
+  ]);
 });
 
 test("Transcribe keeps zero-duration punctuation in a timed phrase", async () => {
@@ -271,7 +433,17 @@ test("Transcribe keeps zero-duration punctuation in a timed phrase", async () =>
     ]),
   );
   assert.equal(response.status, 200);
-  assert.deepEqual(body.segments, [{ startMs: 100, endMs: 900, text: "Hello, world." }]);
+  assert.deepEqual(body.segments, [
+    {
+      startMs: 100,
+      endMs: 900,
+      text: "Hello, world.",
+      words: [
+        { textStart: 0, textEnd: 5, startMs: 100, endMs: 400 },
+        { textStart: 7, textEnd: 13, startMs: 500, endMs: 900 },
+      ],
+    },
+  ]);
   assert.equal(body.flags.timing, false);
 });
 
@@ -283,7 +455,17 @@ test("Transcribe sorts reordered WordInfo annotations by start time", async () =
     ]),
   );
   assert.equal(response.status, 200);
-  assert.deepEqual(body.segments, [{ startMs: 100, endMs: 900, text: "Hello world." }]);
+  assert.deepEqual(body.segments, [
+    {
+      startMs: 100,
+      endMs: 900,
+      text: "Hello world.",
+      words: [
+        { textStart: 0, textEnd: 5, startMs: 100, endMs: 400 },
+        { textStart: 6, textEnd: 12, startMs: 500, endMs: 900 },
+      ],
+    },
+  ]);
 });
 
 test("Transcribe reports stable issues for malformed timestamped responses", async () => {
@@ -412,7 +594,17 @@ test("Transcribe clips overflowing word endings to the WAV duration in every mod
       { preset },
     );
     assert.equal(response.status, 200);
-    assert.deepEqual(body.segments, [{ startMs: 100, endMs: 1000, text: "hello world." }]);
+    assert.deepEqual(body.segments, [
+      {
+        startMs: 100,
+        endMs: 1000,
+        text: "hello world.",
+        words: [
+          { textStart: 0, textEnd: 5, startMs: 100, endMs: 400 },
+          { textStart: 6, textEnd: 12, startMs: 900, endMs: 1000 },
+        ],
+      },
+    ]);
     assert.equal(body.flags.timing, true);
   }
 });
@@ -436,7 +628,14 @@ test("Transcribe repairs the reported 100ms Quality reversal using supplied endp
     { preset: "quality", durationMs: 90312 },
   );
   assert.equal(response.status, 200);
-  assert.deepEqual(body.segments, [{ startMs: 2300, endMs: 2400, text: "word." }]);
+  assert.deepEqual(body.segments, [
+    {
+      startMs: 2300,
+      endMs: 2400,
+      text: "word.",
+      words: [{ textStart: 0, textEnd: 5, startMs: 2300, endMs: 2400 }],
+    },
+  ]);
   assert.equal(body.flags.timing, true);
   assert.equal(body.providerAttempts, 1);
 });
@@ -451,7 +650,17 @@ test("Minor reversal repair is shared by modes and never moves outside words ins
       { preset },
     );
     assert.equal(repaired.response.status, 200);
-    assert.deepEqual(repaired.body.segments, [{ startMs: 100, endMs: 400, text: "hello world." }]);
+    assert.deepEqual(repaired.body.segments, [
+      {
+        startMs: 100,
+        endMs: 400,
+        text: "hello world.",
+        words: [
+          { textStart: 0, textEnd: 5, startMs: 100, endMs: 200 },
+          { textStart: 6, textEnd: 12, startMs: 300, endMs: 400 },
+        ],
+      },
+    ]);
     assert.equal(repaired.body.flags.timing, true);
   }
   const outside = await transcribe(

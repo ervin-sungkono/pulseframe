@@ -2,7 +2,13 @@ import { getDspBackendPreference } from "./loader";
 import analysisWorkerUrl from "./analysis-worker.ts?worker&url";
 import { ANALYSIS_FPS } from "../audio/audio-analysis-config";
 import { BassReturnDetector } from "../audio/drop-detector.mjs";
-import { PcmFeatures, type SoundEnvelope } from "../audio/pcm-features";
+import {
+  PcmFeatures,
+  type SoundEnvelope,
+  type TemporalFeatures,
+  type TemporalFrame,
+  type TemporalOnset,
+} from "../audio/pcm-features";
 import {
   DSP_BAND_COUNT,
   DSP_FEATURE_COUNT,
@@ -10,6 +16,9 @@ import {
   DSP_SCAN_BATCH_FRAMES,
   DSP_SCAN_HISTORY_SAMPLES,
   DSP_SCAN_PROTOCOL_VERSION,
+  DSP_TEMPORAL_FEATURE_COUNT,
+  DSP_TEMPORAL_MAX_EVENTS,
+  DspTemporalFeatureIndex,
   type DspScanWorkerRequest,
   type DspScanWorkerResponse,
 } from "./contracts";
@@ -18,7 +27,15 @@ const MAX_CHUNK_SAMPLES = 768_000;
 const WORKER_START_TIMEOUT_MS = 8_000;
 const WORKER_PROGRESS_TIMEOUT_MS = 15_000;
 
-export type PreparedAnalysis = { events: number[]; envelopes: SoundEnvelope[] };
+export type PreparedAnalysis = {
+  events: number[];
+  envelopes: SoundEnvelope[];
+  temporal: TemporalFeatures;
+};
+
+function unavailableTemporal(): TemporalFeatures {
+  return { available: false, frames: [], events: [] };
+}
 
 let nextGeneration = 0;
 
@@ -66,6 +83,8 @@ function runWorkerScan(
 
     const events: number[] = [];
     const envelopes: SoundEnvelope[] = [];
+    const temporalFrames: TemporalFrame[] = [];
+    const temporalEvents: TemporalOnset[] = [];
     const totalSamples = samples[0]?.length ?? 0;
     const chunkSamples = Math.max(1, Math.min(Math.round(sampleRate * 3), MAX_CHUNK_SAMPLES));
     const historySamples = Math.max(DSP_SCAN_HISTORY_SAMPLES, Math.round(sampleRate * 0.02));
@@ -75,6 +94,8 @@ function runWorkerScan(
     let expectedChunk: { sampleEnd: number; frameEnd: number } | null = null;
     let ready = false;
     let settled = false;
+    let temporalAvailable = false;
+    let previousTemporalEvent = -Infinity;
     let timer: ReturnType<typeof setTimeout>;
 
     const cleanup = () => {
@@ -90,7 +111,46 @@ function runWorkerScan(
       settled = true;
       cleanup();
       if (error) reject(error);
-      else resolve({ events, envelopes });
+      else
+        resolve({
+          events,
+          envelopes,
+          temporal:
+            retain && temporalAvailable
+              ? { available: true, frames: temporalFrames, events: temporalEvents }
+              : unavailableTemporal(),
+        });
+    };
+    const discardTemporal = () => {
+      temporalAvailable = false;
+      temporalFrames.length = 0;
+      temporalEvents.length = 0;
+      previousTemporalEvent = -Infinity;
+    };
+    const appendTemporalEvents = (buffer?: ArrayBuffer) => {
+      if (!buffer) return true;
+      const values = new Float64Array(buffer);
+      if (
+        values.length % 2 !== 0 ||
+        temporalEvents.length + values.length / 2 > DSP_TEMPORAL_MAX_EVENTS
+      )
+        return false;
+      for (let index = 0; index < values.length; index += 2) {
+        const time = values[index];
+        const strength = values[index + 1];
+        if (
+          !Number.isFinite(time) ||
+          !Number.isFinite(strength) ||
+          time < previousTemporalEvent ||
+          time < 0 ||
+          time > totalSamples / sampleRate ||
+          strength < 0
+        )
+          return false;
+        temporalEvents.push({ time, strength });
+        previousTemporalEvent = time;
+      }
+      return true;
     };
     const resetTimeout = (duration: number, phase: string) => {
       clearTimeout(timer);
@@ -161,11 +221,13 @@ function runWorkerScan(
         if (
           message.protocolVersion !== DSP_SCAN_PROTOCOL_VERSION ||
           message.featureSchemaVersion !== DSP_FEATURE_SCHEMA_VERSION ||
-          (message.backend !== "js" && message.backend !== "wasm")
+          (message.backend !== "js" && message.backend !== "wasm") ||
+          typeof message.temporalAvailable !== "boolean"
         ) {
           finish(new Error("Audio analysis worker protocol does not match this application."));
           return;
         }
+        temporalAvailable = retain && message.temporalAvailable;
         ready = true;
         sendNextChunk();
         return;
@@ -254,6 +316,64 @@ function runWorkerScan(
             });
           }
         }
+        if (retain && temporalAvailable) {
+          if (message.temporalAvailable !== true || !(message.temporal instanceof ArrayBuffer)) {
+            discardTemporal();
+          } else {
+            const temporalValues = new Float64Array(message.temporal);
+            if (
+              temporalValues.length !== count! * DSP_TEMPORAL_FEATURE_COUNT ||
+              temporalValues.some((value) => !Number.isFinite(value))
+            ) {
+              discardTemporal();
+            } else {
+              let valid = true;
+              for (let localFrame = 0; localFrame < count!; localFrame += 1) {
+                const offset = localFrame * DSP_TEMPORAL_FEATURE_COUNT;
+                const onset = temporalValues[offset + DspTemporalFeatureIndex.OnsetTime];
+                const confidence = temporalValues[offset + DspTemporalFeatureIndex.Confidence];
+                const flux = temporalValues[offset + DspTemporalFeatureIndex.Flux];
+                const onsetStrength =
+                  temporalValues[offset + DspTemporalFeatureIndex.OnsetStrength];
+                if (
+                  onset < -1 ||
+                  flux < 0 ||
+                  flux > 1 ||
+                  confidence < 0 ||
+                  confidence > 1 ||
+                  onsetStrength < 0 ||
+                  onsetStrength > 1 ||
+                  temporalValues[offset + DspTemporalFeatureIndex.Phase] < 0 ||
+                  temporalValues[offset + DspTemporalFeatureIndex.Phase] >= 1 ||
+                  temporalValues[offset + DspTemporalFeatureIndex.Latency] < 0
+                ) {
+                  valid = false;
+                  break;
+                }
+              }
+              if (!valid || !appendTemporalEvents(message.temporalEvents)) {
+                discardTemporal();
+              } else {
+                for (let localFrame = 0; localFrame < count!; localFrame += 1) {
+                  const offset = localFrame * DSP_TEMPORAL_FEATURE_COUNT;
+                  const onset = temporalValues[offset + DspTemporalFeatureIndex.OnsetTime];
+                  temporalFrames.push({
+                    time: (start! + localFrame) / ANALYSIS_FPS,
+                    flux: temporalValues[offset + DspTemporalFeatureIndex.Flux],
+                    onsetTime: onset >= 0 ? onset : null,
+                    onsetStrength: temporalValues[offset + DspTemporalFeatureIndex.OnsetStrength],
+                    bpm: temporalValues[offset + DspTemporalFeatureIndex.Bpm],
+                    phase: temporalValues[offset + DspTemporalFeatureIndex.Phase],
+                    confidence: temporalValues[offset + DspTemporalFeatureIndex.Confidence],
+                    latency: temporalValues[offset + DspTemporalFeatureIndex.Latency],
+                  });
+                }
+              }
+            }
+          }
+        } else if (retain && message.temporalAvailable === false) {
+          discardTemporal();
+        }
         expectedBatchFrame = batchEnd;
         resetTimeout(WORKER_PROGRESS_TIMEOUT_MS, "a PCM chunk");
         return;
@@ -266,6 +386,12 @@ function runWorkerScan(
         ) {
           finish(new Error("Audio analysis worker ended a chunk before all frames were returned."));
           return;
+        }
+        if (retain && temporalAvailable) {
+          if (message.temporalAvailable !== true || !appendTemporalEvents(message.temporalEvents))
+            discardTemporal();
+        } else if (retain && message.temporalAvailable === false) {
+          discardTemporal();
         }
         sampleCursor = expectedChunk.sampleEnd;
         nextFrame = expectedChunk.frameEnd;
@@ -336,7 +462,7 @@ async function scanInline(
         });
       if (index % DSP_SCAN_BATCH_FRAMES === DSP_SCAN_BATCH_FRAMES - 1) await yieldToBrowser();
     }
-    return { events, envelopes };
+    return { events, envelopes, temporal: unavailableTemporal() };
   } finally {
     analyzer.dispose();
   }
@@ -350,9 +476,9 @@ export async function scanPreparedSound(
   retain = false,
 ): Promise<PreparedAnalysis> {
   if (signal?.aborted) throw abortError();
-  if (!samples.length) return { events: [], envelopes: [] };
+  if (!samples.length) return { events: [], envelopes: [], temporal: unavailableTemporal() };
   const totalFrames = frameCount(samples, sampleRate);
-  if (totalFrames === 0) return { events: [], envelopes: [] };
+  if (totalFrames === 0) return { events: [], envelopes: [], temporal: unavailableTemporal() };
   if (typeof Worker === "undefined") return scanInline(samples, sampleRate, signal, retain);
   try {
     return await runWorkerScan(samples, sampleRate, totalFrames, signal, retain);

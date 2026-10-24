@@ -183,6 +183,9 @@ const stubComponent = () => null;
 const icons = new Proxy({}, { get: () => stubComponent });
 const presetSaveDialogStub = () => null;
 const customizerPanelStub = () => null;
+const actualHomeConstants = compileTsx("../components/Home/const.ts", (id) => {
+  throw new Error(`Unexpected Home constants import: ${id}`);
+});
 
 const uiDialog = {
   Dialog: stubComponent,
@@ -212,7 +215,7 @@ const presetComponentMocks = (id) => {
   throw new Error(`Unexpected PresetDialog import: ${id}`);
 };
 actualPresetDialog = compileTsx(
-  "../components/PresetDialog.tsx",
+  "../components/PresetDialog/index.tsx",
   presetComponentMocks,
 ).PresetDialog;
 
@@ -278,8 +281,11 @@ const appMockRequire = (id) => {
     };
   if (id === "@/components/QuickLookStrip") return { QuickLookStrip: stubComponent };
   if (id === "@/components/PresetSaveDialog") return { PresetSaveDialog: presetSaveDialogStub };
-  if (id === "@/hooks/use-presets") return { usePresets: () => library };
-  if (id === "@/hooks/use-settings-history")
+  if (id === "@/components/Home/const") return actualHomeConstants;
+  if (id === "@/components/SubtitleWorkspace")
+    return { SubtitleWorkspace: stubComponent };
+  if (id === "@/lib/hooks/use-presets") return { usePresets: () => library };
+  if (id === "@/lib/hooks/use-settings-history")
     return {
       useSettingsHistory(initial) {
         const [value, setValue] = reactMock.useState(initial);
@@ -294,7 +300,7 @@ const appMockRequire = (id) => {
         };
       },
     };
-  if (id === "@/hooks/use-media-session")
+  if (id === "@/lib/hooks/use-media-session")
     return {
       useMediaSession: () => ({
         session: mediaSessionOwner,
@@ -321,11 +327,11 @@ const appMockRequire = (id) => {
         setLoop() {},
       }),
     };
-  if (id === "@/hooks/use-visualizer-preview")
+  if (id === "@/lib/hooks/use-visualizer-preview")
     return {
       useVisualizerPreview: () => ({ captureImage() {}, reducedMotionRef: { current: false } }),
     };
-  if (id === "@/hooks/use-export-controller")
+  if (id === "@/lib/hooks/use-export-controller")
     return {
       useExportController: () => ({
         exporting: false,
@@ -338,7 +344,7 @@ const appMockRequire = (id) => {
     return { SubtitleDialog: stubComponent, SubtitleEditor: stubComponent };
   if (id === "@/components/SubtitleGenerationPanel")
     return { SubtitleGenerationStatus: stubComponent };
-  if (id === "@/hooks/use-subtitle-generation")
+  if (id === "@/lib/hooks/use-subtitle-generation")
     return { useSubtitleGeneration: () => ({ running: false }) };
   if (id === "@/lib/audio/audio-features")
     return {
@@ -366,7 +372,7 @@ const appMockRequire = (id) => {
   throw new Error(`Unexpected page import: ${id}`);
 };
 
-const Home = compileTsx("../Home.tsx", appMockRequire).default;
+const Home = compileTsx("../components/Home/index.tsx", appMockRequire).default;
 const renderHome = () => {
   activeHarness = appHooks;
   return appHooks.render(() => Home());

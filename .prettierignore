@@ -5,7 +5,6 @@ app/dist/
 **/node_modules/
 pnpm-lock.yaml
 app/public/dsp/
-vendor/
 *.tsbuildinfo
 
 app/public/mdx-ort/

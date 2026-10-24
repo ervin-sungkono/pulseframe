@@ -12,7 +12,12 @@ function canvasContext() {
   const geometry = [];
   const gradient = { addColorStop() {} };
   const context = new Proxy(
-    { canvas: { width: 1280, height: 720 } },
+    {
+      canvas: { width: 1280, height: 720 },
+      measureText(value) {
+        return { width: Array.from(value).length * 10 };
+      },
+    },
     {
       set(target, key, value) {
         if (key === "globalAlpha") geometry.push([key, value]);
@@ -23,7 +28,7 @@ function canvasContext() {
         if (key in target) return target[key];
         if (String(key).startsWith("create")) return () => gradient;
         return (...args) => {
-          if (["roundRect", "moveTo", "lineTo", "quadraticCurveTo", "arc"].includes(key))
+          if (["rect", "roundRect", "moveTo", "lineTo", "quadraticCurveTo", "arc"].includes(key))
             geometry.push([key, ...args]);
         };
       },
@@ -94,4 +99,66 @@ test("new styles share source-time geometry across preview warm-up, clipped expo
     assert.deepEqual(clipFirstFrame, preview, mode);
     assert.deepEqual(pngCapture, preview, mode);
   }
+});
+
+test("single-style rendering forwards onset and timed lyric animation through the shared pipeline", () => {
+  const settings = {
+    ...DEFAULT_SETTINGS,
+    mode: "spectrum",
+    backdrop: "clean",
+    particles: false,
+    trails: false,
+    beatRays: true,
+    beatLighting: "rays",
+    beatLightingIntensity: 100,
+    glitch: false,
+    dropEffects: false,
+  };
+  const render = (subtitles, extras) => {
+    const { context, geometry } = canvasContext();
+    drawVisualization(
+      context,
+      settings,
+      new Uint8Array(2048),
+      new Uint8Array(4096).fill(128),
+      [],
+      1,
+      0,
+      null,
+      null,
+      createAudioReactiveState(),
+      48000,
+      10,
+      subtitles,
+      extras,
+    );
+    return geometry;
+  };
+
+  const noOnset = render([], {}).filter(([name]) => name === "arc").length;
+  const withOnset = render([], { onset: 1 }).filter(([name]) => name === "arc").length;
+  assert.ok(withOnset > noOnset, "prepared onsets should reach the beat-lighting renderer");
+
+  const cue = {
+    id: "line",
+    start: 0,
+    end: 2,
+    text: "one two",
+    words: [
+      { textStart: 0, textEnd: 3, start: 0, end: 0.75 },
+      { textStart: 4, textEnd: 7, start: 0.75, end: 1.5 },
+    ],
+  };
+  const style = {
+    animation: "karaoke",
+    color: "#ffffff",
+    highlightColor: "#b9a2ff",
+    fontSize: 0.046,
+    position: 0.945,
+    background: false,
+  };
+  const rects = (extras) => render([cue], extras).filter(([name]) => name === "rect").length;
+  const staticRects = rects({ lyricStyle: { ...style, animation: "static" } });
+  const karaokeRects = rects({ lyricStyle: style });
+  assert.ok(karaokeRects > staticRects, "word timing should add highlighted text spans");
 });

@@ -4,13 +4,17 @@ import {
   DSP_FEATURE_COUNT,
   DSP_FRAME_SIZE,
   DSP_MAX_SAMPLE_RATE,
+  DSP_TEMPORAL_FEATURE_COUNT,
+  DSP_TEMPORAL_WINDOW_SIZE,
   type DspModule,
   type FrameDspHandle,
   type FrameDspOutput,
+  type TemporalDspHandle,
 } from "./contracts";
 import { getInitializedDspModule } from "./loader";
 
 type BufferKey = "input" | "features" | "bands" | "amplitudes" | "db";
+type BufferLabel = BufferKey | "temporal input" | "temporal output";
 type BufferLayout = { pointer: number; length: number; bytesPerElement: number };
 
 function checkedLayout(
@@ -18,7 +22,7 @@ function checkedLayout(
   length: number,
   bytesPerElement: number,
   bufferBytes: number,
-  key: BufferKey,
+  key: BufferLabel,
 ) {
   if (!Number.isSafeInteger(pointer) || pointer < 0 || pointer % bytesPerElement !== 0) {
     throw new RangeError(`The DSP ${key} pointer is invalid.`);
@@ -203,4 +207,125 @@ export class WasmFrameBackend {
 export function createWasmFrameBackend(sampleRate: number, channelCount: number) {
   const dspModule = getInitializedDspModule();
   return dspModule ? new WasmFrameBackend(sampleRate, channelCount, dspModule) : null;
+}
+
+/** Owns the optional sequential temporal handle and returns copied output metrics. */
+export class WasmTemporalBackend {
+  private readonly bindings: DspModule;
+  private readonly handle: TemporalDspHandle;
+  private readonly inputLayout: BufferLayout;
+  private readonly outputLayout: BufferLayout;
+  private memoryBuffer: ArrayBuffer | null = null;
+  private input: Float32Array | null = null;
+  private output: Float64Array | null = null;
+  private disposed = false;
+
+  constructor(
+    readonly sampleRate: number,
+    bindings = getInitializedDspModule(),
+  ) {
+    if (!bindings?.TemporalDsp) throw new Error("The DSP WASM temporal binding is unavailable.");
+    if (!Number.isInteger(sampleRate) || sampleRate < 1 || sampleRate > DSP_MAX_SAMPLE_RATE) {
+      throw new RangeError(`The DSP sample rate must be between 1 and ${DSP_MAX_SAMPLE_RATE} Hz.`);
+    }
+    this.bindings = bindings;
+    this.handle = new bindings.TemporalDsp(sampleRate);
+    try {
+      if (this.handle.sample_rate() !== sampleRate)
+        throw new Error("The temporal DSP handle does not match its requested sample rate.");
+      const bufferBytes = this.bindings.memory.buffer.byteLength;
+      this.inputLayout = checkedLayout(
+        this.handle.input_ptr(),
+        this.handle.input_len(),
+        Float32Array.BYTES_PER_ELEMENT,
+        bufferBytes,
+        "temporal input",
+      );
+      this.outputLayout = checkedLayout(
+        this.handle.output_ptr(),
+        this.handle.output_len(),
+        Float64Array.BYTES_PER_ELEMENT,
+        bufferBytes,
+        "temporal output",
+      );
+      this.expectLength(this.inputLayout, DSP_TEMPORAL_WINDOW_SIZE, "input");
+      this.expectLength(this.outputLayout, DSP_TEMPORAL_FEATURE_COUNT, "output");
+      this.refreshViews();
+    } catch (error) {
+      try {
+        this.dispose();
+      } catch {
+        /* Preserve the binding-validation error. */
+      }
+      throw error;
+    }
+  }
+
+  private expectLength(layout: BufferLayout, expected: number, key: string) {
+    if (layout.length !== expected)
+      throw new RangeError(`The temporal DSP ${key} buffer has an invalid length.`);
+  }
+
+  private buffer() {
+    if (this.disposed) throw new Error("The DSP temporal handle has been disposed.");
+    return this.bindings.memory.buffer;
+  }
+
+  private refreshViews() {
+    const buffer = this.buffer();
+    if (this.memoryBuffer === buffer && this.input && this.output) return;
+    for (const [key, layout] of [
+      ["temporal input", this.inputLayout],
+      ["temporal output", this.outputLayout],
+    ] as const) {
+      if (layout.pointer + layout.length * layout.bytesPerElement > buffer.byteLength) {
+        throw new RangeError(`The DSP ${key} buffer is outside current WASM memory.`);
+      }
+    }
+    this.input = new Float32Array(buffer, this.inputLayout.pointer, this.inputLayout.length);
+    this.output = new Float64Array(buffer, this.outputLayout.pointer, this.outputLayout.length);
+    this.memoryBuffer = buffer;
+  }
+
+  inputView() {
+    this.refreshViews();
+    return this.input!;
+  }
+
+  snapshot() {
+    this.refreshViews();
+    return this.output!.slice();
+  }
+
+  observe(endSample: number) {
+    if (!Number.isSafeInteger(endSample) || endSample < 0 || endSample > 0xffff_ffff)
+      throw new RangeError("The temporal DSP sample position must be a valid u32 value.");
+    if (this.disposed) throw new Error("The DSP temporal handle has been disposed.");
+    this.handle.observe(endSample);
+    // WASM memory may grow during a call, so refresh before reading its output.
+    return this.snapshot();
+  }
+
+  reset() {
+    if (this.disposed) throw new Error("The DSP temporal handle has been disposed.");
+    this.handle.reset();
+    this.refreshViews();
+  }
+
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    try {
+      this.handle.free();
+    } finally {
+      this.memoryBuffer = null;
+      this.input = null;
+      this.output = null;
+    }
+  }
+}
+
+export function createWasmTemporalBackend(sampleRate: number) {
+  const dspModule = getInitializedDspModule();
+  return dspModule?.TemporalDsp ? new WasmTemporalBackend(sampleRate, dspModule) : null;
 }

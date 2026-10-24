@@ -15,14 +15,34 @@ import {
   type ExportFrameRate,
   type ExportResolution,
 } from "../export/export-settings";
-import { MAX_SUBTITLE_CUES, MAX_SUBTITLE_TEXT_LENGTH, type SubtitleCue } from "../subtitles/model";
+import {
+  MAX_SUBTITLE_CUES,
+  MAX_SUBTITLE_TEXT_LENGTH,
+  validateSubtitleWords,
+  type SubtitleCue,
+} from "../subtitles/model";
 
-const cueSchema = z.object({
-  id: z.string().max(80),
-  start: z.number().finite().min(0),
-  end: z.number().finite().min(0),
-  text: z.string().max(MAX_SUBTITLE_TEXT_LENGTH),
-});
+const cueSchema = z
+  .object({
+    id: z.string().max(80),
+    start: z.number().finite().min(0),
+    end: z.number().finite().min(0),
+    text: z.string().max(MAX_SUBTITLE_TEXT_LENGTH),
+    words: z.unknown().optional(),
+  })
+  .superRefine((cue, ctx) => {
+    if (
+      cue.words !== undefined &&
+      !validateSubtitleWords(cue.text, cue.words, { start: cue.start, end: cue.end })
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["words"],
+        message: "Invalid subtitle word timing.",
+      });
+    }
+  });
+
 const assetSchema = z.object({
   name: z.string().min(1).max(255),
   type: z.string().max(100),
@@ -169,7 +189,10 @@ export async function readProjectFile(file: File): Promise<ProjectContent> {
     migratedStyle: VISUAL_MODES.includes(data.settings.mode as VisualMode)
       ? undefined
       : data.settings.mode,
-    subtitles: data.subtitles,
+    subtitles: data.subtitles.map(({ words, ...cue }) => ({
+      ...cue,
+      ...(words === undefined ? {} : { words: validateSubtitleWords(cue.text, words, cue)! }),
+    })),
     media: new File([file.slice(mediaStart, logoStart)], data.media.name, {
       type: data.media.type,
     }),

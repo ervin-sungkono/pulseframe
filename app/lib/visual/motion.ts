@@ -44,7 +44,12 @@ export function ringMotion(
   pulse: number,
   reducedMotion = false,
 ): MotionTransform {
-  if (reducedMotion || !settings || settings.mode !== "ring" || !hasValidClock(time, w, h))
+  if (
+    reducedMotion ||
+    !settings ||
+    (settings.mode !== "ring" && settings.mode !== "radial") ||
+    !hasValidClock(time, w, h)
+  )
     return identity();
 
   const amount = Number.isFinite(settings.motionAmount) ? clamp01(settings.motionAmount / 100) : 0;

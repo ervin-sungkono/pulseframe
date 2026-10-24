@@ -1,5 +1,6 @@
 import type { LyricsPreset } from "./types.js";
 import { MDX_SAMPLE_RATE, MDX_TRIM, MDX_VALID_LENGTH } from "./mdx-config.js";
+import { LOCAL_AUDIO_SLICE_SAMPLES } from "./worker-protocol.js";
 
 export { MDX_BLOCK_LENGTH, MDX_SAMPLE_RATE, MDX_TRIM, MDX_VALID_LENGTH } from "./mdx-config.js";
 
@@ -48,6 +49,7 @@ export type LyricsInputAdmissionInput = {
   fileBytes: number;
   durationMs: number;
   sampleRate: number;
+  sampleCount?: number;
   channelCount: number;
   retainedBytes?: number;
   deviceMemoryGiB?: number;
@@ -192,6 +194,11 @@ export function assessLyricsInput(input: LyricsInputAdmissionInput): LyricsInput
     reason = "Automatic subtitles support tracks up to ten minutes.";
   else if (!Number.isInteger(sampleRate) || sampleRate < 8_000 || sampleRate > 384_000)
     reason = "The audio sample rate is not supported for subtitle generation.";
+  else if (
+    input.sampleCount !== undefined &&
+    (!Number.isSafeInteger(input.sampleCount) || input.sampleCount < 1)
+  )
+    reason = "The decoded audio sample count is invalid.";
   else if (!Number.isInteger(channels) || channels < 1 || channels > 2)
     reason = "Automatic subtitles support mono or stereo audio.";
   else if (
@@ -200,33 +207,47 @@ export function assessLyricsInput(input: LyricsInputAdmissionInput): LyricsInput
   )
     reason = "The retained audio memory size is invalid.";
 
+  const sourceSampleCount = input.sampleCount ?? Math.ceil(durationSeconds * sampleRate);
   const retainedBytes =
-    input.retainedBytes ??
-    Math.ceil(durationSeconds * sampleRate * channels * Float32Array.BYTES_PER_ELEMENT);
+    input.retainedBytes ?? sourceSampleCount * channels * Float32Array.BYTES_PER_ELEMENT;
   const isGemini = input.method === "gemini";
-  const workerSourceBytes = Math.ceil(
-    durationSeconds * sampleRate * channels * Float32Array.BYTES_PER_ELEMENT,
-  );
+  const workerSourceBytes = sourceSampleCount * channels * Float32Array.BYTES_PER_ELEMENT;
+  const workerSliceBytes =
+    Math.min(sourceSampleCount, LOCAL_AUDIO_SLICE_SAMPLES) *
+    channels *
+    Float32Array.BYTES_PER_ELEMENT;
   const mdxPcmBytes =
-    Math.ceil(durationSeconds * MDX_SAMPLE_RATE) * 2 * Float32Array.BYTES_PER_ELEMENT;
+    Math.ceil((sourceSampleCount * MDX_SAMPLE_RATE) / sampleRate) *
+    2 *
+    Float32Array.BYTES_PER_ELEMENT;
   const mdxInputBytes = sampleRate === MDX_SAMPLE_RATE ? workerSourceBytes : mdxPcmBytes;
   const vocalOutputBytes = input.isolation ? mdxPcmBytes : 0;
   const overlapWeightsBytes = input.isolation
-    ? Math.ceil(durationSeconds * MDX_SAMPLE_RATE) * Float32Array.BYTES_PER_ELEMENT
+    ? Math.ceil((sourceSampleCount * MDX_SAMPLE_RATE) / sampleRate) * Float32Array.BYTES_PER_ELEMENT
     : 0;
-  const whisperInputBytes = Math.ceil(durationSeconds * 16_000 * Float32Array.BYTES_PER_ELEMENT);
+  const whisperInputBytes =
+    Math.ceil((sourceSampleCount * 16_000) / sampleRate) * Float32Array.BYTES_PER_ELEMENT;
+  // createFilterPhases is capped at 4,096 phases of 48 Float64 weights, plus
+  // the per-phase array bookkeeping.
+  const resampleFilterBytes = input.isolation || sampleRate !== 16_000 ? 2 * mebibyte : 0;
+  const resampleWindowBytes = Math.min(
+    whisperInputBytes,
+    Math.ceil((LOCAL_AUDIO_SLICE_SAMPLES * 16_000) / sampleRate) * Float32Array.BYTES_PER_ELEMENT,
+  );
   const whisperWorkspaceBytes = (input.model === "base" ? 320 : 192) * mebibyte;
-  // These stages are sequential. The source copy is counted during conversion,
-  // then MDX buffers or the Whisper model are counted after earlier resources
-  // are released. The estimate is advisory because browser model allocations vary.
+  // Non-isolation conversion holds one source slice, one converted window, and
+  // the mono waveform. Isolation stages count the full source/MDX buffers; model
+  // allocations vary by browser, so the estimate remains advisory.
   const mdxWorkspaceBytes = 160 * mebibyte;
   const preparationStageBytes = input.isolation
-    ? workerSourceBytes + (sampleRate === MDX_SAMPLE_RATE ? 0 : mdxPcmBytes)
-    : workerSourceBytes + whisperInputBytes;
+    ? workerSourceBytes + (sampleRate === MDX_SAMPLE_RATE ? 0 : mdxPcmBytes) + resampleFilterBytes
+    : workerSliceBytes + resampleWindowBytes + whisperInputBytes + resampleFilterBytes;
   const mdxInferenceStageBytes = input.isolation
     ? mdxInputBytes + vocalOutputBytes + overlapWeightsBytes + mdxWorkspaceBytes
     : 0;
-  const whisperPreparationStageBytes = input.isolation ? vocalOutputBytes + whisperInputBytes : 0;
+  const whisperPreparationStageBytes = input.isolation
+    ? vocalOutputBytes + whisperInputBytes + resampleFilterBytes
+    : 0;
   const whisperInferenceStageBytes =
     (input.isolation ? vocalOutputBytes : 0) + whisperInputBytes + whisperWorkspaceBytes;
   const cloudChunkFloatBytes = 100 * 16_000 * Float32Array.BYTES_PER_ELEMENT;
@@ -236,6 +257,7 @@ export function assessLyricsInput(input: LyricsInputAdmissionInput): LyricsInput
     ? retainedBytes +
       Math.max(
         vocalOutputBytes + cloudChunkFloatBytes + cloudWavBytes + cloudBase64Bytes,
+        input.isolation ? vocalOutputBytes + whisperInputBytes + resampleFilterBytes : 0,
         input.isolation ? preparationStageBytes : 0,
         mdxInferenceStageBytes,
       )

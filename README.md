@@ -31,5 +31,9 @@ Rust/WASM analysis assets; see the architecture guide for the required toolchain
 After the branch is merged, set Vercel's project root to `app` and allow the
 build to access repository-root workspace and tooling files. The deployed
 static app uses the checked-in DSP assets and does not require Rust. Gemini
-subtitle generation can also use an optional sensitive `GEMINI_API_KEY`
-environment variable on Vercel.
+subtitle generation requires a user-supplied session key through the same-origin
+serverless function. Only the non-secret `GEMINI_MODEL` override is optional.
+
+`pnpm lint` runs ESLint and Stylelint; Prettier handles spacing and newlines.
+Components use `ComponentName/index.tsx` with optional owned types, constants
+and styles; controller hooks live under `app/lib/hooks/`.

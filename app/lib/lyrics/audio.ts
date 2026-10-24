@@ -4,6 +4,7 @@ import {
   GEMINI_AUDIO_STRIDE_MS,
   GEMINI_SAMPLE_RATE,
 } from "./gemini-contract";
+import { LOCAL_AUDIO_SLICE_SAMPLES } from "./worker-protocol";
 
 export {
   GEMINI_AUDIO_CHUNK_MS,
@@ -37,6 +38,8 @@ export const SILENCE_RMS_THRESHOLD = 1e-5;
 const FILTER_TAPS = 48;
 const FILTER_RADIUS = FILTER_TAPS / 2;
 const RESAMPLE_YIELD_FRAMES = 32_768;
+
+type ResampleFilter = ReturnType<typeof createFilterPhases>;
 
 function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) throw new DOMException("Audio preparation canceled", "AbortError");
@@ -110,9 +113,18 @@ async function resampleRange(
   endOutputSample: number,
   signal?: AbortSignal,
   onProgress?: (completed: number, total: number) => void,
+  sourceOffset = 0,
+  totalSourceLength = channels[0]?.length ?? 0,
+  filter?: ResampleFilter,
 ) {
-  const sourceLength = validateChannels(channels, sourceRate);
+  const sliceLength = validateChannels(channels, sourceRate);
+  const sourceEnd = sourceOffset + sliceLength;
   if (
+    !Number.isSafeInteger(sourceOffset) ||
+    sourceOffset < 0 ||
+    !Number.isSafeInteger(totalSourceLength) ||
+    totalSourceLength < 1 ||
+    sourceEnd > totalSourceLength ||
     !Number.isSafeInteger(startOutputSample) ||
     !Number.isSafeInteger(endOutputSample) ||
     startOutputSample < 0 ||
@@ -121,23 +133,28 @@ async function resampleRange(
     throw new Error("The requested audio conversion range is invalid.");
   if (!Number.isInteger(targetRate) || targetRate < 8_000 || targetRate > 192_000)
     throw new Error("The requested audio conversion rate is not supported.");
+  const sampleAt = (sourceIndex: number) => {
+    const boundedIndex = Math.max(0, Math.min(totalSourceLength - 1, sourceIndex));
+    const sliceIndex = boundedIndex - sourceOffset;
+    if (sliceIndex < 0 || sliceIndex >= sliceLength)
+      throw new Error("The audio conversion slice is missing filter context.");
+    return monoSample(channels, sliceIndex);
+  };
   const output = new Float32Array(endOutputSample - startOutputSample);
   if (sourceRate === targetRate) {
     for (let base = 0; base < output.length; base += RESAMPLE_YIELD_FRAMES) {
       throwIfAborted(signal);
       const limit = Math.min(output.length, base + RESAMPLE_YIELD_FRAMES);
       for (let index = base; index < limit; index += 1)
-        output[index] = monoSample(channels, startOutputSample + index);
+        output[index] = sampleAt(startOutputSample + index);
       onProgress?.(limit, output.length);
       if (limit < output.length) await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }
     throwIfAborted(signal);
     return output;
   }
-  const { phaseCount, phases, useExactPhases, divisor } = createFilterPhases(
-    sourceRate,
-    targetRate,
-  );
+  const { phaseCount, phases, useExactPhases, divisor } =
+    filter ?? createFilterPhases(sourceRate, targetRate);
 
   for (let base = 0; base < output.length; base += RESAMPLE_YIELD_FRAMES) {
     throwIfAborted(signal);
@@ -160,8 +177,7 @@ async function resampleRange(
       let value = 0;
       for (let tap = 0; tap < FILTER_TAPS; tap += 1) {
         const offset = tap - FILTER_RADIUS + 1;
-        const sourceIndex = Math.max(0, Math.min(sourceLength - 1, sourceCenter + offset));
-        const sample = monoSample(channels, sourceIndex);
+        const sample = sampleAt(sourceCenter + offset);
         value += (Number.isFinite(sample) ? sample : 0) * weights[tap];
       }
       output[localIndex] = value;
@@ -179,6 +195,7 @@ async function resampleSingleChannel(
   targetRate: number,
   signal?: AbortSignal,
   onProgress?: (completed: number, total: number) => void,
+  filter?: ResampleFilter,
 ) {
   return resampleRange(
     [input],
@@ -188,6 +205,9 @@ async function resampleSingleChannel(
     Math.round((input.length * targetRate) / sourceRate),
     signal,
     onProgress,
+    0,
+    input.length,
+    filter,
   );
 }
 
@@ -210,6 +230,98 @@ export async function resampleMono16k(
   );
 }
 
+function firstOutputSampleWithSourceCenterAtLeast(
+  sourceIndex: number,
+  sourceRate: number,
+  targetRate: number,
+  totalOutputSamples: number,
+) {
+  let low = 0;
+  let high = totalOutputSamples;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (Math.floor((middle * sourceRate) / targetRate) < sourceIndex) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+/** Build the Whisper waveform from bounded source slices without retaining full-rate PCM. */
+export async function resampleMono16kFromSlices(
+  sourceLength: number,
+  sourceRate: number,
+  readSlice: (offset: number, length: number) => Promise<readonly Float32Array[]>,
+  signal?: AbortSignal,
+  onProgress?: (completed: number, total: number) => void,
+) {
+  if (!Number.isSafeInteger(sourceLength) || sourceLength < 1)
+    throw new Error("The decoded audio channels have an invalid sample layout.");
+  if (!Number.isInteger(sourceRate) || sourceRate < 8_000 || sourceRate > 384_000)
+    throw new Error("The audio sample rate is not supported for subtitle generation.");
+  if (typeof readSlice !== "function") throw new Error("The audio slice reader is unavailable.");
+
+  const totalOutputSamples = Math.round((sourceLength * WHISPER_SAMPLE_RATE) / sourceRate);
+  if (totalOutputSamples < 1) throw new Error("The requested audio conversion range is invalid.");
+  const waveform = new Float32Array(totalOutputSamples);
+  const filter =
+    sourceRate === WHISPER_SAMPLE_RATE
+      ? undefined
+      : createFilterPhases(sourceRate, WHISPER_SAMPLE_RATE);
+  const coreCapacity = LOCAL_AUDIO_SLICE_SAMPLES - 2 * FILTER_RADIUS;
+
+  for (let coreStart = 0; coreStart < sourceLength; coreStart += coreCapacity) {
+    throwIfAborted(signal);
+    const coreEnd = Math.min(sourceLength, coreStart + coreCapacity);
+    const startOutputSample = firstOutputSampleWithSourceCenterAtLeast(
+      coreStart,
+      sourceRate,
+      WHISPER_SAMPLE_RATE,
+      totalOutputSamples,
+    );
+    const endOutputSample = Math.min(
+      totalOutputSamples,
+      firstOutputSampleWithSourceCenterAtLeast(
+        coreEnd,
+        sourceRate,
+        WHISPER_SAMPLE_RATE,
+        totalOutputSamples,
+      ),
+    );
+    if (endOutputSample <= startOutputSample) continue;
+
+    const sliceStart = Math.max(0, coreStart - FILTER_RADIUS);
+    const sliceEnd = Math.min(sourceLength, coreEnd + FILTER_RADIUS);
+    const channels = await readSlice(sliceStart, sliceEnd - sliceStart);
+    throwIfAborted(signal);
+    if (
+      !Array.isArray(channels) ||
+      channels.length < 1 ||
+      channels.length > 2 ||
+      channels.some(
+        (channel) => !(channel instanceof Float32Array) || channel.length !== sliceEnd - sliceStart,
+      )
+    ) {
+      throw new Error("The received audio slice did not match the requested source range.");
+    }
+    const converted = await resampleRange(
+      channels,
+      sourceRate,
+      WHISPER_SAMPLE_RATE,
+      startOutputSample,
+      endOutputSample,
+      signal,
+      (completed) => onProgress?.(startOutputSample + completed, totalOutputSamples),
+      sliceStart,
+      sourceLength,
+      filter,
+    );
+    waveform.set(converted, startOutputSample);
+    onProgress?.(endOutputSample, totalOutputSamples);
+  }
+  throwIfAborted(signal);
+  return waveform;
+}
+
 /** Convert mono/stereo decoded audio to the 44.1 kHz stereo Kim Vocal 2 input. */
 export async function resampleStereo44100(
   channels: readonly Float32Array[],
@@ -224,30 +336,47 @@ export async function resampleStereo44100(
   }
   const outputLength = Math.round((sourceLength * MDX_SAMPLE_RATE) / sampleRate);
   if (channels.length === 1) {
+    const filter = createFilterPhases(sampleRate, MDX_SAMPLE_RATE);
     const mono = await resampleSingleChannel(
       channels[0],
       sampleRate,
       MDX_SAMPLE_RATE,
       signal,
       (completed, total) => onProgress?.(completed * 2, total * 2),
+      filter,
     );
     onProgress?.(outputLength * 2, outputLength * 2);
     if (mono.length !== outputLength)
       throw new Error("The audio conversion returned an unexpected sample count.");
     return [mono, mono.slice()];
   }
+  const filter = createFilterPhases(sampleRate, MDX_SAMPLE_RATE);
   let leftCompleted = 0;
   let rightCompleted = 0;
   const report = () => onProgress?.(leftCompleted + rightCompleted, outputLength * 2);
   const [left, right] = await Promise.all([
-    resampleSingleChannel(channels[0], sampleRate, MDX_SAMPLE_RATE, signal, (completed) => {
-      leftCompleted = completed;
-      report();
-    }),
-    resampleSingleChannel(channels[1], sampleRate, MDX_SAMPLE_RATE, signal, (completed) => {
-      rightCompleted = completed;
-      report();
-    }),
+    resampleSingleChannel(
+      channels[0],
+      sampleRate,
+      MDX_SAMPLE_RATE,
+      signal,
+      (completed) => {
+        leftCompleted = completed;
+        report();
+      },
+      filter,
+    ),
+    resampleSingleChannel(
+      channels[1],
+      sampleRate,
+      MDX_SAMPLE_RATE,
+      signal,
+      (completed) => {
+        rightCompleted = completed;
+        report();
+      },
+      filter,
+    ),
   ]);
   if (left.length !== outputLength || right.length !== outputLength)
     throw new Error("The audio conversion returned an unexpected sample count.");

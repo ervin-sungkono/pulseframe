@@ -206,6 +206,7 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
   const timePath = join(testDirectory, "time.mjs");
   const reactPath = join(testDirectory, "react-mock.mjs");
   const adapterPath = join(testDirectory, "export-video-mock.mjs");
+  const capabilitiesPath = join(testDirectory, "export-capabilities-mock.mjs");
   const hookPath = join(testDirectory, "use-export-controller.mjs");
   writeFileSync(
     settingsPath,
@@ -279,8 +280,21 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
     }
   `,
   );
+  writeFileSync(
+    capabilitiesPath,
+    `
+    export function getCachedExportCapabilities(request) {
+      globalThis.__capabilityRequests.push(request);
+      return globalThis.__capabilityCache ?? null;
+    }
+    export function probeExportCapabilities(request) {
+      globalThis.__capabilityRequests.push(request);
+      return Promise.resolve(globalThis.__capabilityResult);
+    }
+  `,
+  );
   let hookSource = readFileSync(
-    new URL("../hooks/use-export-controller.ts", import.meta.url),
+    new URL("../lib/hooks/use-export-controller.ts", import.meta.url),
     "utf8",
   );
   hookSource = hookSource
@@ -290,6 +304,10 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
     .replaceAll(
       '"@/lib/export/export-time-estimate"',
       JSON.stringify(pathToFileURL(estimatePath).href),
+    )
+    .replaceAll(
+      '"@/lib/export/export-codec-capabilities"',
+      JSON.stringify(pathToFileURL(capabilitiesPath).href),
     )
     .replaceAll('"@/lib/export/export-timeline"', JSON.stringify(pathToFileURL(timelinePath).href))
     .replaceAll('"@/lib/time"', JSON.stringify(pathToFileURL(timePath).href))
@@ -306,6 +324,14 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
   let resolveImport;
   let resolveEncoding;
   globalThis.__snapshotEvents = events;
+  globalThis.__capabilityRequests = [];
+  globalThis.__capabilityCache = {
+    supported: true,
+    extension: "mp4",
+    videoCodec: "avc",
+    audioCodec: "aac",
+  };
+  globalThis.__capabilityResult = globalThis.__capabilityCache;
   globalThis.__snapshotImportGate = new Promise((resolve) => {
     resolveImport = resolve;
   });
@@ -397,7 +423,15 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
   };
   const range = [2, 4];
   const settings = { mode: "ring", primary: "#original", logoPlacements: { ring: { x: 25 } } };
-  const subtitles = [{ id: "cue-1", start: 2.2, end: 3.5, text: "original subtitle" }];
+  const subtitles = [
+    {
+      id: "cue-1",
+      start: 2.2,
+      end: 3.5,
+      text: "original subtitle",
+      words: [{ textStart: 0, textEnd: 8, start: 2.2, end: 2.8 }],
+    },
+  ];
   const source = {
     file: { name: "track.wav" },
     duration: 12,
@@ -415,6 +449,7 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
   };
   const options = {
     lockedRef,
+    preflightEnabled: true,
     getSource: () => source,
     pausePlayback: () => {
       events.push(`pause:${lockedRef.current}`);
@@ -445,6 +480,7 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
     settings.primary = "#mutated";
     settings.logoPlacements.ring.x = 90;
     subtitles[0].text = "mutated subtitle";
+    subtitles[0].words[0].start = 99;
     source.logo = { asset: "replacement logo" };
     source.background = { asset: "replacement background" };
     source.prepared = { events: [9] };
@@ -457,6 +493,9 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
     assert.equal(received.settings.primary, "#original");
     assert.equal(received.settings.logoPlacements.ring.x, 25);
     assert.equal(received.subtitles[0].text, "original subtitle");
+    assert.deepEqual(received.subtitles[0].words, [
+      { textStart: 0, textEnd: 8, start: 2.2, end: 2.8 },
+    ]);
     assert.equal(received.prepared, originalPrepared);
     assert.equal(received.logo, originalLogo);
     assert.equal(received.background, originalBackground);
@@ -468,6 +507,152 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
     await task;
     assert.equal(events.at(-1), "download");
     assert.equal(lockedRef.current, false);
+
+    const priorWindow = globalThis.window;
+    let unpreparedPickerCalls = 0;
+    globalThis.window = {
+      showSaveFilePicker: () => {
+        unpreparedPickerCalls++;
+        throw new Error("An unprepared source must use buffered output.");
+      },
+    };
+    source.prepared = undefined;
+    const jobsBeforeUnpreparedFallback = events.filter(
+      (event) => event === "adapter-called",
+    ).length;
+    const bufferedFallback = hook.exportVideo();
+    await bufferedFallback;
+    assert.equal(unpreparedPickerCalls, 0);
+    assert.equal(
+      events.filter((event) => event === "adapter-called").length,
+      jobsBeforeUnpreparedFallback + 1,
+    );
+    assert.equal(globalThis.__snapshotExportOptions.destination, undefined);
+
+    let resolvePicker;
+    let resolveFileEncoding;
+    let pickerOptions;
+    let pickerCalls = 0;
+    const selectedHandle = { createWritable: async () => ({}) };
+    globalThis.__snapshotEncodeGate = new Promise((resolve) => {
+      resolveFileEncoding = resolve;
+    });
+    globalThis.window = {
+      showSaveFilePicker: (options) => {
+        pickerCalls++;
+        pickerOptions = options;
+        events.push("save-picker");
+        return new Promise((resolve) => {
+          resolvePicker = resolve;
+        });
+      },
+    };
+    const callsBeforePicker = events.filter((event) => event === "adapter-called").length;
+    source.range = [3, 6];
+    source.generation = 17;
+    source.prepared = {
+      audio: { numberOfChannels: 2, sampleRate: 44100 },
+      events: [],
+      envelopes: [],
+      overview: [],
+    };
+    settings.primary = "#before-picker";
+    settings.logoPlacements.ring.x = 31;
+    let pickerTask;
+    try {
+      pickerTask = hook.exportVideo();
+      assert.ok(pickerTask);
+      assert.equal(events.at(-1), "save-picker", "the picker runs before the handler returns");
+      assert.equal(lockedRef.current, true, "the shared lock covers the pending picker");
+      assert.equal(pickerOptions.suggestedName, "track-pulseframe-3-6.mp4");
+      assert.deepEqual(pickerOptions.types[0].accept, { "video/mp4": [".mp4"] });
+      assert.deepEqual(globalThis.__capabilityRequests.at(-1), {
+        width: 480,
+        height: 480,
+        frameRate: 24,
+        videoCompression: true,
+        audio: { numberOfChannels: 2, sampleRate: 44100 },
+      });
+
+      source.range[0] = 8;
+      source.range[1] = 11;
+      settings.primary = "#after-picker";
+      settings.logoPlacements.ring.x = 93;
+      resolvePicker(selectedHandle);
+      await waitFor(
+        () => events.filter((event) => event === "adapter-called").length > callsBeforePicker,
+      );
+      const fileExport = globalThis.__snapshotExportOptions;
+      assert.equal(fileExport.start, 3);
+      assert.equal(fileExport.end, 6);
+      assert.equal(fileExport.settings.primary, "#before-picker");
+      assert.equal(fileExport.settings.logoPlacements.ring.x, 31);
+      assert.equal(fileExport.destination, selectedHandle);
+      assert.equal(lockedRef.current, true, "the export job takes the lock from the picker");
+
+      // The just-started adapter already captured the previous gate; settle it
+      // with a file result so the job can complete without a browser download.
+      resolveFileEncoding({ kind: "file", extension: "mp4" });
+      await pickerTask;
+      assert.equal(lockedRef.current, false);
+      assert.equal(pickerCalls, 1);
+
+      let resolveGenerationPicker;
+      globalThis.window = {
+        showSaveFilePicker: () => {
+          pickerCalls++;
+          return new Promise((resolve) => {
+            resolveGenerationPicker = resolve;
+          });
+        },
+      };
+      const jobsBeforeGenerationChange = events.filter(
+        (event) => event === "adapter-called",
+      ).length;
+      const generationTask = hook.exportVideo();
+      source.generation = 18;
+      resolveGenerationPicker(selectedHandle);
+      await generationTask;
+      assert.equal(
+        events.filter((event) => event === "adapter-called").length,
+        jobsBeforeGenerationChange,
+        "a save selection for a replaced media generation is discarded",
+      );
+      assert.equal(lockedRef.current, false);
+
+      globalThis.window = {
+        showSaveFilePicker: () => {
+          pickerCalls++;
+          return Promise.reject(new DOMException("Canceled", "AbortError"));
+        },
+      };
+      const jobsBeforeCancel = events.filter((event) => event === "adapter-called").length;
+      await hook.exportVideo();
+      assert.equal(pickerCalls, 3);
+      assert.equal(events.filter((event) => event === "adapter-called").length, jobsBeforeCancel);
+      assert.equal(lockedRef.current, false, "canceling the picker releases its lock");
+
+      let resolveTeardownPicker;
+      globalThis.window = {
+        showSaveFilePicker: () => {
+          pickerCalls++;
+          return new Promise((resolve) => {
+            resolveTeardownPicker = resolve;
+          });
+        },
+      };
+      const jobsBeforeTeardown = events.filter((event) => event === "adapter-called").length;
+      const teardownTask = hook.exportVideo();
+      assert.equal(lockedRef.current, true);
+      harness.cleanup();
+      resolveTeardownPicker(selectedHandle);
+      await teardownTask;
+      assert.equal(events.filter((event) => event === "adapter-called").length, jobsBeforeTeardown);
+      assert.equal(lockedRef.current, false, "teardown releases a pending picker lock");
+    } finally {
+      if (priorWindow === undefined) delete globalThis.window;
+      else globalThis.window = priorWindow;
+    }
   } finally {
     harness.cleanup();
     resolveImport();
@@ -484,6 +669,9 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
     delete globalThis.__snapshotImportGate;
     delete globalThis.__snapshotEncodeGate;
     delete globalThis.__snapshotExportOptions;
+    delete globalThis.__capabilityRequests;
+    delete globalThis.__capabilityCache;
+    delete globalThis.__capabilityResult;
   }
 });
 

@@ -1,3 +1,4 @@
+import type { ExportDestination } from "./export-file-target";
 import type { PreparedSound } from "../audio/audio-features";
 import type { ExportAspect, ExportFrameRate, ExportResolution } from "./export-settings";
 import type { ExportProgress } from "./export-video";
@@ -19,6 +20,7 @@ export type ExportSource = {
   videoCompression: boolean;
   settings: VisualSettings;
   subtitles: SubtitleCue[];
+  destination?: ExportDestination;
   logo: LogoLayer | null;
   background: LogoLayer | null;
   prepared?: PreparedSound;
@@ -26,11 +28,14 @@ export type ExportSource = {
 };
 
 export type ExportJobProgress = ExportProgress;
-export type ExportJobOutput = {
-  blob: Blob;
-  extension: "mp4" | "webm";
-  timing?: ExportTimingMeasurement;
-};
+export type ExportJobOutput =
+  | {
+      kind?: "buffer";
+      blob: Blob;
+      extension: "mp4" | "webm";
+      timing?: ExportTimingMeasurement;
+    }
+  | { kind: "file"; extension: "mp4" | "webm"; timing?: ExportTimingMeasurement };
 
 type ExportJobOptions = {
   lockedRef: { current: boolean };
@@ -65,6 +70,7 @@ export function createExportJobController(options: ExportJobOptions): ExportJobC
     controller: AbortController;
     source: ExportSource;
     startedAt: number;
+    canCancel: boolean;
     timer: ReturnType<typeof setInterval> | null;
   } | null = null;
   let disposed = false;
@@ -116,6 +122,7 @@ export function createExportJobController(options: ExportJobOptions): ExportJobC
       controller,
       source,
       startedAt,
+      canCancel: true,
       timer: null as ReturnType<typeof setInterval> | null,
     };
     options.lockedRef.current = true;
@@ -134,6 +141,7 @@ export function createExportJobController(options: ExportJobOptions): ExportJobC
     let estimateStartedAt = startedAt;
     const publish = (progress: ExportJobProgress) => {
       if (disposed || controller.signal.aborted || active !== job) return;
+      if (progress.canCancel === false) job.canCancel = false;
       const at = now();
       if (progress.phase !== lastPhase) {
         lastPhase = progress.phase;
@@ -183,7 +191,7 @@ export function createExportJobController(options: ExportJobOptions): ExportJobC
         options.pausePlayback();
         const output = await options.execute(source, controller.signal, publish, startedAt);
         if (disposed || controller.signal.aborted || active !== job) return;
-        const revoke = options.download(output, source);
+        const revoke = output.kind === "file" ? undefined : options.download(output, source);
         retainDownload(revoke);
         notify(() => options.onComplete?.(output, source));
       } catch (caught) {
@@ -205,7 +213,7 @@ export function createExportJobController(options: ExportJobOptions): ExportJobC
   };
 
   const cancel = () => {
-    if (!active || active.controller.signal.aborted) return;
+    if (!active || !active.canCancel || active.controller.signal.aborted) return;
     active.controller.abort();
     if (!disposed) notify(() => options.onNotice("Export canceled."));
   };

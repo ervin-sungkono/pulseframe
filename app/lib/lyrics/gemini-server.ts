@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   GEMINI_AUDIO_CHUNK_MS,
   GEMINI_AUDIO_STRIDE_MS,
@@ -5,6 +6,7 @@ import {
   GEMINI_MAX_REQUEST_BYTES,
   GEMINI_MAX_SEGMENTS_PER_CHUNK,
   GEMINI_MAX_SEGMENT_TEXT_LENGTH,
+  GEMINI_MAX_WORDS_PER_SEGMENT,
   GEMINI_MAX_WAV_BYTES,
   GEMINI_SAMPLE_RATE,
   geminiProviderContentSchema,
@@ -23,6 +25,7 @@ type ServerConfig = {
   env?: Record<string, string | undefined>;
   fetcher?: typeof fetch;
   now?: () => number;
+  bodyReadTimeoutMs?: number;
 };
 
 type KeyAdmission = { active: number; starts: number[]; touchedAt: number };
@@ -31,14 +34,10 @@ type ProviderAdmission =
 const keyAdmissions = new Map<string, KeyAdmission>();
 const MAX_ACTIVE_PER_KEY = 2;
 const MAX_REQUESTS_PER_KEY_PER_MINUTE = 24;
+const BODY_READ_TIMEOUT_MS = 10_000;
 
 function keyFingerprint(key: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < key.length; index += 1) {
-    hash ^= key.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16);
+  return createHash("sha256").update(key).digest("hex");
 }
 
 function acquireProviderSlot(key: string, now: number): ProviderAdmission {
@@ -154,6 +153,7 @@ function apiError(
 async function readBodyLimited(
   input: { headers: Headers; body: ReadableStream<Uint8Array> | null },
   maxBytes: number,
+  timeoutMs = BODY_READ_TIMEOUT_MS,
 ) {
   const declared = Number(input.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > maxBytes) throw new Error("body_too_large");
@@ -161,9 +161,18 @@ async function readBodyLimited(
   const reader = input.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
+  let timedOut = false;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      timedOut = true;
+      reject(new Error("body_timeout"));
+      void reader.cancel().catch(() => {});
+    }, timeoutMs);
+  });
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await Promise.race([reader.read(), deadline]);
       if (done) break;
       total += value.byteLength;
       if (total > maxBytes) {
@@ -173,7 +182,8 @@ async function readBodyLimited(
       chunks.push(value);
     }
   } finally {
-    reader.releaseLock();
+    if (timeout !== undefined) clearTimeout(timeout);
+    if (!timedOut) reader.releaseLock();
   }
   const bytes = new Uint8Array(total);
   let offset = 0;
@@ -356,7 +366,7 @@ function publicErrorMessage(code: ApiErrorCode) {
     case "invalid_response":
       return "Gemini returned an incomplete or invalid timestamped response.";
     case "missing_api_key":
-      return "Enter a Gemini API key or configure GEMINI_API_KEY on the server.";
+      return "Enter a Gemini API key to use transcription.";
     case "server_configuration":
       return "Gemini is not configured correctly on the server.";
     case "invalid_request":
@@ -503,7 +513,12 @@ function normalizeInteraction(body: unknown, chunkDurationMs: number) {
 
   // WordInfo's schema does not promise chronological annotation ordering.
   words.sort((left, right) => left.startMs - right.startMs);
-  const segments: Array<{ startMs: number; endMs: number; text: string }> = [];
+  const segments: Array<{
+    startMs: number;
+    endMs: number;
+    text: string;
+    words: Array<{ textStart: number; textEnd: number; startMs: number; endMs: number }>;
+  }> = [];
   let phrase: typeof words = [];
   const flush = () => {
     if (!phrase.length) return;
@@ -511,13 +526,32 @@ function normalizeInteraction(body: unknown, chunkDurationMs: number) {
     // Point-timed tokens (including punctuation) belong to a neighbouring timed
     // phrase; they must never become fabricated positive-duration subtitles.
     if (endMs <= phrase[0].startMs) return;
+    let text = "";
+    const alignedWords: Array<{
+      textStart: number;
+      textEnd: number;
+      startMs: number;
+      endMs: number;
+    }> = [];
+    for (const word of phrase) {
+      const separator = text && !/^\p{P}/u.test(word.text) ? " " : "";
+      text += separator;
+      const textStart = text.length;
+      text += word.text;
+      if (word.endMs > word.startMs) {
+        alignedWords.push({
+          textStart,
+          textEnd: text.length,
+          startMs: word.startMs,
+          endMs: word.endMs,
+        });
+      }
+    }
     segments.push({
       startMs: phrase[0].startMs,
       endMs,
-      text: phrase
-        .map((word) => word.text)
-        .join(" ")
-        .replace(/\s+([,.!?;:，。！？；：])/gu, "$1"),
+      text,
+      words: alignedWords,
     });
     phrase = [];
   };
@@ -542,6 +576,8 @@ function normalizeInteraction(body: unknown, chunkDurationMs: number) {
   if (phrase.length) throw new TranscriptionResponseError("no_positive_phrase_timing");
   if (segments.length > GEMINI_MAX_SEGMENTS_PER_CHUNK)
     throw new TranscriptionResponseError("segment_limit_exceeded");
+  if (segments.some((segment) => segment.words.length > GEMINI_MAX_WORDS_PER_SEGMENT))
+    throw new TranscriptionResponseError("invalid_subtitle_contract");
   const result = geminiProviderContentSchema.safeParse({
     segments,
     flags: { uncertain: false, timing: timingAdjusted },
@@ -552,8 +588,10 @@ function normalizeInteraction(body: unknown, chunkDurationMs: number) {
 
 export async function handleGeminiLyricsRequest(request: Request, config: ServerConfig = {}) {
   const env = config.env ?? process.env;
+  let requestUrl: URL;
   try {
-    if (new URL(request.url).search)
+    requestUrl = new URL(request.url);
+    if (requestUrl.search)
       return apiError(
         400,
         "invalid_request",
@@ -565,29 +603,45 @@ export async function handleGeminiLyricsRequest(request: Request, config: Server
   if (request.method === "GET") {
     return json(200, {
       available: true,
-      serverKeyConfigured: Boolean(env.GEMINI_API_KEY?.trim()),
+      keyRequired: true,
     });
   }
   if (request.method !== "POST")
     return json(405, { error: { code: "method_not_allowed" } }, { allow: "GET, POST" });
 
+  const rejectOrigin = () =>
+    apiError(403, "invalid_request", "This request must come from the same site.");
   const origin = request.headers.get("origin");
-  if (origin) {
-    try {
-      if (new URL(origin).origin !== new URL(request.url).origin)
-        return apiError(403, "invalid_request", "This request must come from the same site.");
-    } catch {
-      return apiError(403, "invalid_request", "This request must come from the same site.");
-    }
+  if (!origin) return rejectOrigin();
+  try {
+    const originUrl = new URL(origin);
+    if (originUrl.origin !== requestUrl.origin || origin !== originUrl.origin)
+      return rejectOrigin();
+  } catch {
+    return rejectOrigin();
   }
+  if (request.headers.get("sec-fetch-site")?.toLowerCase() === "cross-site") return rejectOrigin();
+
+  const apiKey = request.headers.get("x-goog-api-key")?.trim();
+  if (!apiKey) return apiError(401, "missing_api_key", publicErrorMessage("missing_api_key"));
+  if (apiKey.length > 4096)
+    return apiError(400, "invalid_request", publicErrorMessage("invalid_request"));
 
   if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get("content-type") ?? ""))
     return apiError(415, "invalid_request", "This request must use JSON.");
 
   let raw: unknown;
   try {
-    raw = parseJsonBytes(await readBodyLimited(request, GEMINI_MAX_REQUEST_BYTES));
+    raw = parseJsonBytes(
+      await readBodyLimited(
+        request,
+        GEMINI_MAX_REQUEST_BYTES,
+        config.bodyReadTimeoutMs ?? BODY_READ_TIMEOUT_MS,
+      ),
+    );
   } catch (error) {
+    if (error instanceof Error && error.message === "body_timeout")
+      return apiError(408, "invalid_request", "This audio request timed out while being received.");
     const code =
       error instanceof Error && error.message === "body_too_large"
         ? "invalid_request"
@@ -614,12 +668,6 @@ export async function handleGeminiLyricsRequest(request: Request, config: Server
     return apiError(400, "invalid_audio", publicErrorMessage("invalid_audio"));
   }
 
-  const suppliedKey = request.headers.get("x-goog-api-key")?.trim();
-  const clientHeaderPresent = request.headers.has("x-goog-api-key");
-  const apiKey = clientHeaderPresent ? suppliedKey : env.GEMINI_API_KEY?.trim();
-  if (!apiKey) return apiError(503, "missing_api_key", publicErrorMessage("missing_api_key"));
-  if (apiKey.length > 4096)
-    return apiError(400, "invalid_request", publicErrorMessage("invalid_request"));
   if (input.recheck && input.preset !== "quality")
     return apiError(
       400,
@@ -665,6 +713,7 @@ export async function handleGeminiLyricsRequest(request: Request, config: Server
       },
       body: JSON.stringify({ file: { display_name: "pulseframe-audio.wav" } }),
       signal,
+      redirect: "error",
     });
     if (!uploadStart.ok) providerResponse = uploadStart;
     else {
@@ -681,6 +730,7 @@ export async function handleGeminiLyricsRequest(request: Request, config: Server
         },
         body: Buffer.from(audio),
         signal,
+        redirect: "error",
       });
       if (!uploaded.ok) providerResponse = uploaded;
       else {
@@ -711,6 +761,7 @@ export async function handleGeminiLyricsRequest(request: Request, config: Server
             },
           }),
           signal,
+          redirect: "error",
         });
       }
     }
@@ -727,6 +778,7 @@ export async function handleGeminiLyricsRequest(request: Request, config: Server
         method: "DELETE",
         headers: { "x-goog-api-key": apiKey },
         signal: AbortSignal.timeout(5_000),
+        redirect: "error",
       }).catch(() => {});
     }
     if (admission.acquired) admission.release();

@@ -1,4 +1,4 @@
-import { clamp } from "./legacy-common";
+import { clamp } from "./shared";
 
 /** Smooth neighboring bands, then average one bar's fractional frequency footprint. */
 export function sampleBarBand(

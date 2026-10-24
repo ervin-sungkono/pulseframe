@@ -1,5 +1,5 @@
 import type { VisualSettings } from "../visual-settings-model";
-import { clamp, rgba } from "./legacy-common";
+import { clamp, rgba } from "./shared";
 import type { VisualStyleRenderer } from "./types";
 
 export const ringInnerRadius = (unit: number, bass: number) => unit * (0.205 + bass * 0.016) * 0.88;
@@ -45,6 +45,8 @@ export function ringMagnitude(
   return (1 - Math.exp(-magnitude * sensitivity * 3)) * contour;
 }
 
+const ringPoints = new WeakMap<CanvasRenderingContext2D, Float64Array>();
+
 export function drawRing(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -61,6 +63,11 @@ export function drawRing(
   const innerRadius = ringInnerRadius(unit, bass),
     layers = Math.max(1, Math.min(4, Math.round(s.ringLayers ?? 3)));
   const radius = innerRadius + unit * 0.007;
+  let points = ringPoints.get(ctx);
+  if (!points) {
+    points = new Float64Array(segments * 2);
+    ringPoints.set(ctx, points);
+  }
   ctx.save();
   // Paint outside-in: offset contours expose contrasting, solid ribbons,
   // while the common inner aperture stays free for a fitted logo.
@@ -71,7 +78,6 @@ export function drawRing(
     gradient.addColorStop(0, secondary);
     gradient.addColorStop(0.55, primary);
     gradient.addColorStop(1, secondary);
-    const points: { x: number; y: number }[] = [];
     ctx.beginPath();
     for (let i = 0; i < segments; i++) {
       const u = i / segments,
@@ -89,17 +95,21 @@ export function drawRing(
       const r = radius + layer * unit * 0.003 + response * unit * (0.16 + layer * 0.008);
       const x = w / 2 + Math.cos(angle) * r,
         y = h / 2 + Math.sin(angle) * r;
-      points.push({ x, y });
+      points[i * 2] = x;
+      points[i * 2 + 1] = y;
     }
-    const midpoint = (a: (typeof points)[number], b: (typeof points)[number]) =>
-      [(a.x + b.x) / 2, (a.y + b.y) / 2] as const;
-    ctx.moveTo(...midpoint(points.at(-1)!, points[0]));
-    for (let i = 0; i < points.length; i++)
+    const last = (segments - 1) * 2;
+    ctx.moveTo((points[last] + points[0]) / 2, (points[last + 1] + points[1]) / 2);
+    for (let i = 0; i < segments; i++) {
+      const index = i * 2,
+        next = ((i + 1) % segments) * 2;
       ctx.quadraticCurveTo(
-        points[i].x,
-        points[i].y,
-        ...midpoint(points[i], points[(i + 1) % points.length]),
+        points[index],
+        points[index + 1],
+        (points[index] + points[next]) / 2,
+        (points[index + 1] + points[next + 1]) / 2,
       );
+    }
     ctx.closePath();
     ctx.moveTo(w / 2 + innerRadius, h / 2);
     ctx.arc(w / 2, h / 2, innerRadius, 0, Math.PI * 2);

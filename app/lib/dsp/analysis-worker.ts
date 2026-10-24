@@ -2,12 +2,18 @@ import { ANALYSIS_FPS } from "../audio/audio-analysis-config";
 import { BassReturnDetector } from "../audio/drop-detector.mjs";
 import { PcmFeatures } from "../audio/pcm-features";
 import { initializeDsp } from "./loader";
+import { createWasmTemporalBackend, type WasmTemporalBackend } from "./wasm-backend";
 import {
   DSP_BAND_COUNT,
   DSP_FEATURE_COUNT,
   DSP_FEATURE_SCHEMA_VERSION,
   DSP_SCAN_BATCH_FRAMES,
   DSP_SCAN_PROTOCOL_VERSION,
+  DSP_TEMPORAL_FEATURE_COUNT,
+  DSP_TEMPORAL_HOP_SIZE,
+  DSP_TEMPORAL_MAX_EVENTS,
+  DSP_TEMPORAL_WINDOW_SIZE,
+  DspTemporalFeatureIndex,
   type DspScanStartMessage,
   type DspScanChunkMessage,
   type DspScanWorkerRequest,
@@ -20,6 +26,12 @@ type Job = DspScanStartMessage & {
   canceled: boolean;
   backend: "js" | "wasm";
   detector: BassReturnDetector;
+  temporal: WasmTemporalBackend | null;
+  temporalAvailable: boolean;
+  nextTemporalEnd: number;
+  temporalMetrics: Float64Array;
+  temporalEvents: number[];
+  temporalEventCount: number;
 };
 
 const scope = self as unknown as {
@@ -48,6 +60,7 @@ function matches(job: Job | null, message: { generation: number; jobId: number }
 
 function fail(job: Job, error: unknown) {
   if (activeJob !== job) return;
+  disposeTemporal(job);
   post(job, {
     type: "error",
     message: error instanceof Error ? error.message : "Audio analysis worker failed.",
@@ -57,8 +70,27 @@ function fail(job: Job, error: unknown) {
 
 function finishCanceled(job: Job) {
   if (activeJob !== job) return;
+  disposeTemporal(job);
   post(job, { type: "canceled" });
   activeJob = null;
+}
+
+function disposeTemporal(job: Job) {
+  const temporal = job.temporal;
+  job.temporal = null;
+  if (!temporal) return;
+  try {
+    temporal.dispose();
+  } catch {
+    /* Temporal cleanup must not interrupt the legacy scan lifecycle. */
+  }
+}
+
+function disableTemporal(job: Job) {
+  disposeTemporal(job);
+  job.temporalAvailable = false;
+  job.temporalEvents.length = 0;
+  job.temporalEventCount = 0;
 }
 
 async function beginScan(message: DspScanStartMessage) {
@@ -82,6 +114,12 @@ async function beginScan(message: DspScanStartMessage) {
       canceled: false,
       backend: "js",
       detector: new BassReturnDetector(),
+      temporal: null,
+      temporalAvailable: false,
+      nextTemporalEnd: DSP_TEMPORAL_HOP_SIZE,
+      temporalMetrics: new Float64Array(DSP_TEMPORAL_FEATURE_COUNT),
+      temporalEvents: [],
+      temporalEventCount: 0,
     };
     post(invalidJob, {
       type: "error",
@@ -96,6 +134,12 @@ async function beginScan(message: DspScanStartMessage) {
     canceled: false,
     backend: "js",
     detector: new BassReturnDetector(),
+    temporal: null,
+    temporalAvailable: false,
+    nextTemporalEnd: DSP_TEMPORAL_HOP_SIZE,
+    temporalMetrics: new Float64Array(DSP_TEMPORAL_FEATURE_COUNT),
+    temporalEvents: [],
+    temporalEventCount: 0,
   };
   activeJob = job;
   try {
@@ -114,12 +158,24 @@ async function beginScan(message: DspScanStartMessage) {
     );
     job.backend = probe.backendMode;
     probe.dispose();
+    if (job.backend === "wasm") {
+      try {
+        job.temporal = createWasmTemporalBackend(job.sampleRate);
+        if (job.temporal) {
+          job.temporalMetrics = job.temporal.snapshot();
+          job.temporalAvailable = true;
+        }
+      } catch {
+        disableTemporal(job);
+      }
+    }
     job.ready = true;
     post(job, {
       type: "ready",
       protocolVersion: DSP_SCAN_PROTOCOL_VERSION,
       featureSchemaVersion: DSP_FEATURE_SCHEMA_VERSION,
       backend: job.backend,
+      temporalAvailable: job.temporalAvailable,
     });
   } catch (error) {
     fail(job, error);
@@ -148,6 +204,69 @@ async function yieldBetweenBatches() {
     return;
   }
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+function observeTemporalThrough(
+  job: Job,
+  samples: Float32Array[],
+  sourceOffsetSamples: number,
+  targetEndSample: number,
+) {
+  const temporal = job.temporal;
+  if (!job.temporalAvailable || !temporal) return;
+  const chunkLength = samples[0]?.length ?? 0;
+  const chunkEnd = sourceOffsetSamples + chunkLength;
+  const limit = Math.min(targetEndSample, chunkEnd);
+  try {
+    while (job.nextTemporalEnd <= limit) {
+      const firstSample = job.nextTemporalEnd - DSP_TEMPORAL_WINDOW_SIZE;
+      if (firstSample >= 0 && firstSample < sourceOffsetSamples)
+        throw new Error("The temporal DSP input window is missing source history.");
+      const input = temporal.inputView();
+      for (let offset = 0; offset < input.length; offset += 1) {
+        const sourceIndex = firstSample + offset - sourceOffsetSamples;
+        if (firstSample + offset < 0) {
+          input[offset] = 0;
+          continue;
+        }
+        if (sourceIndex < 0 || sourceIndex >= chunkLength)
+          throw new Error("The temporal DSP input window is outside the active PCM chunk.");
+        let mono = 0;
+        for (const channel of samples) mono += channel[sourceIndex];
+        input[offset] = mono / samples.length;
+      }
+      const metrics = temporal.observe(job.nextTemporalEnd);
+      if (
+        metrics.length !== DSP_TEMPORAL_FEATURE_COUNT ||
+        metrics.some((value) => !Number.isFinite(value)) ||
+        metrics[DspTemporalFeatureIndex.OnsetTime] < -1 ||
+        metrics[DspTemporalFeatureIndex.OnsetStrength] < 0 ||
+        metrics[DspTemporalFeatureIndex.OnsetStrength] > 1 ||
+        metrics[DspTemporalFeatureIndex.Phase] < 0 ||
+        metrics[DspTemporalFeatureIndex.Phase] >= 1 ||
+        metrics[DspTemporalFeatureIndex.Confidence] < 0 ||
+        metrics[DspTemporalFeatureIndex.Confidence] > 1 ||
+        metrics[DspTemporalFeatureIndex.Latency] < 0
+      )
+        throw new Error("The temporal DSP returned invalid metrics.");
+      job.temporalMetrics = metrics;
+      if (
+        job.retain &&
+        metrics[DspTemporalFeatureIndex.OnsetTime] >= 0 &&
+        job.temporalEventCount < DSP_TEMPORAL_MAX_EVENTS
+      ) {
+        job.temporalEvents.push(
+          metrics[DspTemporalFeatureIndex.OnsetTime],
+          metrics[DspTemporalFeatureIndex.OnsetStrength],
+        );
+        job.temporalEventCount += 1;
+      }
+      job.nextTemporalEnd += DSP_TEMPORAL_HOP_SIZE;
+    }
+  } catch {
+    // Temporal analysis is optional. A failure must leave the FFT scan running.
+    disableTemporal(job);
+  }
 }
 
 async function processChunk(job: Job, message: DspScanChunkMessage) {
@@ -189,6 +308,7 @@ async function processChunk(job: Job, message: DspScanChunkMessage) {
       message.sourceOffsetSamples,
       job.backendPreference ?? "auto",
     );
+    if (analyzer.backendMode !== "wasm") disableTemporal(job);
     for (
       let batchStart = message.frameStart;
       batchStart < message.frameEnd;
@@ -202,10 +322,21 @@ async function processChunk(job: Job, message: DspScanChunkMessage) {
       const eventFrames: number[] = [];
       const metrics = job.retain ? new Float64Array(count * DSP_FEATURE_COUNT) : null;
       const bands = job.retain ? new Float32Array(count * job.channelCount * DSP_BAND_COUNT) : null;
+      const temporalMetrics =
+        job.retain && job.temporalAvailable
+          ? new Float64Array(count * DSP_TEMPORAL_FEATURE_COUNT)
+          : null;
 
       for (let local = 0; local < count; local += 1) {
         const index = batchStart + local;
+        observeTemporalThrough(
+          job,
+          samples,
+          message.sourceOffsetSamples,
+          Math.round((index / ANALYSIS_FPS) * job.sampleRate),
+        );
         const frame = analyzer.at(index / ANALYSIS_FPS, false);
+        if (analyzer.backendMode !== "wasm") disableTemporal(job);
         if (
           job.detector.observe({ time: frame.time, bassDb: frame.bassDb, levelDb: frame.rmsDb }) ===
           1
@@ -228,6 +359,9 @@ async function processChunk(job: Job, message: DspScanChunkMessage) {
             bands.set(channelBands, bandOffset + channel * DSP_BAND_COUNT);
           }
         }
+        if (temporalMetrics && job.temporalAvailable) {
+          temporalMetrics.set(job.temporalMetrics, local * DSP_TEMPORAL_FEATURE_COUNT);
+        }
       }
 
       const result: Omit<DspScanWorkerResponse, "generation" | "jobId"> = {
@@ -235,12 +369,23 @@ async function processChunk(job: Job, message: DspScanChunkMessage) {
         frameStart: batchStart,
         frameCount: count,
         eventFrames,
+        temporalAvailable: job.temporalAvailable,
       };
       const transfers: Transferable[] = [];
       if (metrics && bands) {
         result.metrics = metrics.buffer;
         result.bands = bands.buffer;
         transfers.push(metrics.buffer, bands.buffer);
+      }
+      if (temporalMetrics && job.temporalAvailable) {
+        result.temporal = temporalMetrics.buffer;
+        transfers.push(temporalMetrics.buffer);
+        if (job.temporalEvents.length) {
+          const temporalEvents = new Float64Array(job.temporalEvents);
+          result.temporalEvents = temporalEvents.buffer;
+          transfers.push(temporalEvents.buffer);
+          job.temporalEvents.length = 0;
+        }
       }
       post(job, result, transfers);
       // Yield so cancel messages can be handled between bounded frame batches.
@@ -250,7 +395,26 @@ async function processChunk(job: Job, message: DspScanChunkMessage) {
       finishCanceled(job);
       return;
     }
-    post(job, { type: "chunk-done", nextFrame: message.frameEnd });
+    observeTemporalThrough(
+      job,
+      samples,
+      message.sourceOffsetSamples,
+      message.sourceOffsetSamples + chunkLength,
+    );
+    const chunkDone: Omit<DspScanWorkerResponse, "generation" | "jobId"> = {
+      type: "chunk-done",
+      nextFrame: message.frameEnd,
+      temporalAvailable: job.temporalAvailable,
+    };
+    const transfers: Transferable[] = [];
+    if (job.temporalAvailable && job.temporalEvents.length) {
+      const temporalEvents = new Float64Array(job.temporalEvents);
+      chunkDone.temporalEvents = temporalEvents.buffer;
+      transfers.push(temporalEvents.buffer);
+      job.temporalEvents.length = 0;
+    }
+    post(job, chunkDone, transfers);
+    if (message.frameEnd >= job.totalFrames) disposeTemporal(job);
   } catch (error) {
     fail(job, error);
   } finally {

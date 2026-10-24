@@ -1,5 +1,10 @@
 import { WHISPER_LANGUAGE_CODES } from "./languages";
-import { resampleMono16k, resampleStereo44100 } from "./audio";
+import {
+  WHISPER_SAMPLE_RATE,
+  resampleMono16k,
+  resampleMono16kFromSlices,
+  resampleStereo44100,
+} from "./audio";
 import type { IsolationBackend } from "./isolation";
 import { assessLyricsInput, getCpuThreadCount, resolveLocalLyricsPolicy } from "./policy";
 import {
@@ -10,11 +15,12 @@ import {
   type WhisperModelId,
 } from "./whisper";
 import type { LyricsProgress, LyricsResult } from "./types";
-import type {
-  LyricsWorkerAudioSlice,
-  LyricsWorkerRequest,
-  LyricsWorkerResponse,
-  LyricsWorkerStart,
+import {
+  LOCAL_AUDIO_SLICE_SAMPLES,
+  type LyricsWorkerAudioSlice,
+  type LyricsWorkerRequest,
+  type LyricsWorkerResponse,
+  type LyricsWorkerStart,
 } from "./worker-protocol";
 
 type WorkerScope = {
@@ -53,7 +59,6 @@ type ActiveJob = {
 };
 
 const scope = self as unknown as WorkerScope;
-const AUDIO_SLICE_SAMPLES = 65_536;
 let activeJob: ActiveJob | null = null;
 let checkpoint: Checkpoint | null = null;
 let retainedWhisperModel: Plan["model"] | null = null;
@@ -168,27 +173,12 @@ async function collectSource(request: LyricsWorkerStart, jobId: number): Promise
     { length: request.channelCount },
     () => new Float32Array(request.sampleCount),
   );
-  const total = Math.ceil(request.sampleCount / AUDIO_SLICE_SAMPLES);
+  const total = Math.ceil(request.sampleCount / LOCAL_AUDIO_SLICE_SAMPLES);
   for (let index = 0; index < total; index += 1) {
     if (activeJob?.id !== jobId) throw new DOMException("Generation canceled.", "AbortError");
-    const offset = index * AUDIO_SLICE_SAMPLES;
-    const length = Math.min(AUDIO_SLICE_SAMPLES, request.sampleCount - offset);
-    const slice = await new Promise<LyricsWorkerAudioSlice>((resolve, reject) => {
-      const job = activeJob;
-      if (!job || job.id !== jobId) {
-        reject(new DOMException("Generation canceled.", "AbortError"));
-        return;
-      }
-      job.requestAudio = resolve;
-      post({
-        type: "need-audio",
-        jobId,
-        offset,
-        length,
-        completed: index,
-        total,
-      });
-    });
+    const offset = index * LOCAL_AUDIO_SLICE_SAMPLES;
+    const length = Math.min(LOCAL_AUDIO_SLICE_SAMPLES, request.sampleCount - offset);
+    const slice = await requestAudioSlice(jobId, offset, length, index, total);
     if (
       slice.offset !== offset ||
       slice.channels.length !== request.channelCount ||
@@ -208,6 +198,57 @@ async function collectSource(request: LyricsWorkerStart, jobId: number): Promise
   return channels;
 }
 
+function requestAudioSlice(
+  jobId: number,
+  offset: number,
+  length: number,
+  completed = 0,
+  total = 1,
+): Promise<LyricsWorkerAudioSlice> {
+  return new Promise((resolve, reject) => {
+    const job = activeJob;
+    if (!job || job.id !== jobId) {
+      reject(new DOMException("Generation canceled.", "AbortError"));
+      return;
+    }
+    job.requestAudio = resolve;
+    post({
+      type: "need-audio",
+      jobId,
+      offset,
+      length,
+      completed,
+      total,
+    });
+  });
+}
+
+async function prepareMonoWaveform(request: LyricsWorkerStart, jobId: number) {
+  return resampleMono16kFromSlices(
+    request.sampleCount,
+    request.sampleRate,
+    async (offset, length) => {
+      const slice = await requestAudioSlice(jobId, offset, length);
+      if (
+        slice.offset !== offset ||
+        slice.channels.length !== request.channelCount ||
+        slice.channels.some((channel) => channel.length !== length)
+      ) {
+        throw new Error("The received audio slice did not match the requested source range.");
+      }
+      return slice.channels;
+    },
+    activeJob?.controller.signal,
+    (completed, total) =>
+      progress(jobId, {
+        stage: "prepare",
+        message: "Resampling audio for transcription.",
+        completed,
+        total,
+      }),
+  );
+}
+
 function createAdmission(request: LyricsWorkerStart, isolation: boolean, model: "tiny" | "base") {
   return assessLyricsInput({
     // The UI validates the selected file's byte size. The worker rechecks all
@@ -215,6 +256,7 @@ function createAdmission(request: LyricsWorkerStart, isolation: boolean, model: 
     fileBytes: 1,
     durationMs: request.durationMs,
     sampleRate: request.sampleRate,
+    sampleCount: request.sampleCount,
     channelCount: request.channelCount,
     retainedBytes: request.retainedBytes,
     deviceMemoryGiB: readDeviceMemoryGiB(),
@@ -266,7 +308,30 @@ async function runIsolationOnly(request: LyricsWorkerStart) {
         total: value.total,
       }),
   });
-  return isolated;
+  stereo[0] = new Float32Array(0);
+  stereo[1] = new Float32Array(0);
+  const backend = isolated.backend;
+  const notices = isolated.notices;
+  const waveform = await resampleMono16k(
+    isolated.channels,
+    isolated.sampleRate,
+    signal,
+    (completed, total) =>
+      progress(jobId, {
+        stage: "prepare",
+        message: "Preparing the isolated vocal for transcription.",
+        completed,
+        total,
+      }),
+  );
+  isolated.channels[0] = new Float32Array(0);
+  isolated.channels[1] = new Float32Array(0);
+  return {
+    channels: [waveform] as [Float32Array],
+    sampleRate: WHISPER_SAMPLE_RATE as 16_000,
+    backend,
+    notices,
+  };
 }
 
 async function run(request: LyricsWorkerStart) {
@@ -296,9 +361,11 @@ async function run(request: LyricsWorkerStart) {
 
   const preparationStarted = performance.now();
   if (!cached) {
-    updateCheckpoint(plan, request, {
-      source: await collectSource(request, jobId),
-    });
+    updateCheckpoint(
+      plan,
+      request,
+      plan.isolation === "none" ? {} : { source: await collectSource(request, jobId) },
+    );
     cached = checkpoint;
   }
   if (!cached) throw new Error("The audio could not be prepared for local processing.");
@@ -339,7 +406,7 @@ async function run(request: LyricsWorkerStart) {
       updateCheckpoint(plan, request, { mdxInput: cached.mdxInput });
       cached = checkpoint!;
     }
-    const mdxInput = cached.mdxInput;
+    let mdxInput = cached.mdxInput;
     if (!mdxInput) throw new Error("The vocal-isolation retry checkpoint is unavailable.");
     let isolated: Awaited<ReturnType<(typeof import("./isolation"))["isolateVocals"]>> | null =
       null;
@@ -398,14 +465,15 @@ async function run(request: LyricsWorkerStart) {
       cached.separationBackend = isolated.backend;
       cached.separationTimings = isolated.timings;
       cached.notices.push(...isolated.notices);
+      const separatedBackend = isolated.backend;
       updateCheckpoint(plan, request, {
         vocals: separatedVocals,
-        separationBackend: isolated.backend,
+        separationBackend: separatedBackend,
         separationTimings: isolated.timings,
         notices: cached.notices,
       });
       cached = checkpoint!;
-      isolationBackend = isolated.backend;
+      isolationBackend = separatedBackend;
       waveform = await resampleMono16k(
         separatedVocals,
         isolated.sampleRate,
@@ -422,18 +490,26 @@ async function run(request: LyricsWorkerStart) {
       cached.waveform = waveform;
       updateCheckpoint(plan, request, {
         waveform,
-        vocals: separatedVocals,
-        separationBackend: isolated.backend,
+        source: undefined,
+        mdxInput: undefined,
+        vocals: undefined,
+        separationBackend: separatedBackend,
         notices: cached.notices,
       });
       cached = checkpoint!;
+      separatedVocals[0] = new Float32Array(0);
+      separatedVocals[1] = new Float32Array(0);
+      isolated = null;
     }
+    mdxInput = undefined;
   } else if (!waveform) {
     if (cached.vocals) {
       waveform = await resampleMono16k(cached.vocals, 44_100, activeJob?.controller.signal);
       updateCheckpoint(plan, request, {
         waveform,
-        vocals: cached.vocals,
+        vocals: undefined,
+        mdxInput: undefined,
+        source: undefined,
         separationBackend: cached.separationBackend,
       });
       cached = checkpoint!;
@@ -441,30 +517,37 @@ async function run(request: LyricsWorkerStart) {
       waveform = await resampleMono16k(cached.mdxInput, 44_100, activeJob?.controller.signal);
       updateCheckpoint(plan, request, {
         waveform,
-        mdxInput: cached.mdxInput,
+        mdxInput: undefined,
+        vocals: undefined,
+        source: undefined,
         notices: cached.notices,
       });
       cached = checkpoint!;
     } else {
       const source = cached.source;
-      if (!source)
-        throw new Error(
-          "The local audio retry checkpoint is unavailable. Reload the audio and retry.",
+      if (source) {
+        waveform = await resampleMono16k(
+          source,
+          request.sampleRate,
+          activeJob?.controller.signal,
+          (completed, total) => {
+            progress(jobId, {
+              stage: "prepare",
+              message: "Resampling audio for transcription.",
+              completed,
+              total,
+            });
+          },
         );
-      waveform = await resampleMono16k(
-        source,
-        request.sampleRate,
-        activeJob?.controller.signal,
-        (completed, total) => {
-          progress(jobId, {
-            stage: "prepare",
-            message: "Resampling audio for transcription.",
-            completed,
-            total,
-          });
-        },
-      );
-      updateCheckpoint(plan, request, { source: undefined, waveform });
+      } else {
+        waveform = await prepareMonoWaveform(request, jobId);
+      }
+      updateCheckpoint(plan, request, {
+        source: undefined,
+        mdxInput: undefined,
+        vocals: undefined,
+        waveform,
+      });
       cached = checkpoint!;
     }
   }
@@ -544,6 +627,7 @@ scope.addEventListener("message", (event) => {
             type: "isolated",
             jobId: request.jobId,
             channels: isolated.channels,
+            sampleRate: isolated.sampleRate,
             backend: isolated.backend,
             notices: isolated.notices,
           },

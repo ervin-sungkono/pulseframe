@@ -36,6 +36,27 @@ export type SoundEnvelope = Pick<
   SoundFrame,
   "rms" | "rmsDb" | "bassDb" | "bassHitDb" | "ringBassDb" | "middleDb" | "highDb" | "bands"
 >;
+export type TemporalFrame = {
+  time: number;
+  flux: number;
+  onsetTime: number | null;
+  onsetStrength: number;
+  bpm: number;
+  phase: number;
+  confidence: number;
+  latency: number;
+};
+export type TemporalOnset = { time: number; strength: number };
+export type TemporalFeatures = {
+  available: boolean;
+  frames: TemporalFrame[];
+  events: TemporalOnset[];
+};
+export type TemporalSample = Omit<TemporalFrame, "time" | "onsetTime"> & {
+  time: number;
+  onsetTime: number | null;
+  onsetEnvelope: number;
+};
 export type PcmBackendOverride = "auto" | "js" | "wasm";
 
 /** Same calibrated, causal PCM windows for preview, saved frames and exports. */

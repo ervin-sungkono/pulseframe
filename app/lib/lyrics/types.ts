@@ -1,8 +1,24 @@
 import type { SubtitleCue } from "../subtitles/model.js";
 
+export type GeneratedWord = {
+  /** UTF-16 code-unit offset into the cue's unchanged text, inclusive. */
+  textStart: number;
+  /** UTF-16 code-unit offset into the cue's unchanged text, exclusive. */
+  textEnd: number;
+  /** Absolute source time in milliseconds, inclusive. */
+  startMs: number;
+  /** Absolute source time in milliseconds, exclusive. */
+  endMs: number;
+};
+
 export type LyricsMethod = "local" | "gemini";
 export type LyricsPreset = "auto" | "fast" | "quality";
-export type GeneratedCue = { startMs: number; endMs: number; text: string };
+export type GeneratedCue = {
+  startMs: number;
+  endMs: number;
+  text: string;
+  words?: GeneratedWord[];
+};
 export type LyricsStage = "prepare" | "download" | "isolate" | "send" | "transcribe" | "format";
 export type LyricsProgress = {
   stage: LyricsStage;
@@ -39,6 +55,7 @@ export type LyricsSource = {
   duration: number;
   generation: number;
   retainedAudio?: AudioBuffer | null;
+  retainedOtherBytes?: number;
 };
 /** Read-only media-owner PCM. Adapters transfer only their own copied slices. */
 export type LyricsAudio = {

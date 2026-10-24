@@ -14,6 +14,7 @@ for (const name of [
   "lyrics/languages",
   "lyrics/mdx-config",
   "lyrics/policy",
+  "lyrics/worker-protocol",
   "lyrics/gemini-contract",
   "lyrics/audio",
   "lyrics/cues",

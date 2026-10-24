@@ -8,9 +8,13 @@ export const DSP_BAND_COUNT = 96;
 export const DSP_BIN_COUNT = DSP_FRAME_SIZE / 2 + 1;
 export const DSP_FEATURE_COUNT = 7;
 export const DSP_MAX_SAMPLE_RATE = 192_000;
-export const DSP_SCAN_PROTOCOL_VERSION = 1;
+export const DSP_SCAN_PROTOCOL_VERSION = 2;
 export const DSP_SCAN_BATCH_FRAMES = 15;
 export const DSP_SCAN_HISTORY_SAMPLES = DSP_FRAME_SIZE;
+export const DSP_TEMPORAL_WINDOW_SIZE = 2048;
+export const DSP_TEMPORAL_HOP_SIZE = 512;
+export const DSP_TEMPORAL_FEATURE_COUNT = 7;
+export const DSP_TEMPORAL_MAX_EVENTS = 8192;
 
 export const enum DspFeatureIndex {
   Rms = 0,
@@ -20,6 +24,16 @@ export const enum DspFeatureIndex {
   RingBassDb = 4,
   MiddleDb = 5,
   HighDb = 6,
+}
+
+export const enum DspTemporalFeatureIndex {
+  Flux = 0,
+  OnsetTime = 1,
+  OnsetStrength = 2,
+  Bpm = 3,
+  Phase = 4,
+  Confidence = 5,
+  Latency = 6,
 }
 
 export type FrameDspHandle = {
@@ -41,8 +55,22 @@ export type FrameDspHandle = {
 
 export type FrameDspConstructor = new (sampleRate: number, channelCount: number) => FrameDspHandle;
 
+export type TemporalDspHandle = {
+  input_ptr(): number;
+  input_len(): number;
+  output_ptr(): number;
+  output_len(): number;
+  sample_rate(): number;
+  observe(endSample: number): void;
+  reset(): void;
+  free(): void;
+};
+
+export type TemporalDspConstructor = new (sampleRate: number) => TemporalDspHandle;
+
 export type DspModuleBindings = {
   FrameDsp: FrameDspConstructor;
+  TemporalDsp?: TemporalDspConstructor;
   core_version(): string;
   feature_schema_version(): number;
   default(input?: {
@@ -103,6 +131,9 @@ export type DspScanWorkerResponse = {
   eventFrames?: number[];
   metrics?: ArrayBuffer;
   bands?: ArrayBuffer;
+  temporalAvailable?: boolean;
+  temporal?: ArrayBuffer;
+  temporalEvents?: ArrayBuffer;
   nextFrame?: number;
   message?: string;
 };
