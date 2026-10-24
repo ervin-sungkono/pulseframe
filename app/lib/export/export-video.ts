@@ -20,6 +20,7 @@ import {
 } from "../visual/visualizer";
 import type { VisualSettings } from "../visual/visual-settings-model";
 import type { SubtitleCue } from "../subtitles/model";
+import type { Composition, CompositionImages } from "../composition/model";
 import { temporalAt } from "../audio/audio-features";
 import { dropEnvelope, prepareSound, type PreparedSound } from "../audio/audio-features";
 import { initializeDsp } from "../dsp/loader";
@@ -66,12 +67,17 @@ export type ExportOptions = {
   height: number;
   settings: VisualSettings;
   subtitles: SubtitleCue[];
+  composition?: Composition;
+  images?: CompositionImages;
   duration: number;
   videoCompression?: boolean;
   frameRate?: ExportFrameRate;
   logo?: LogoLayer | null;
   background?: LogoLayer | null;
   destination?: ExportDestination;
+  /** Optional scene-workload details supplied by the composition owner. */
+  instanceCount?: number;
+  compositionComplexity?: string;
   prepared?: PreparedSound;
   reducedMotion?: boolean;
   startedAt: number;
@@ -102,6 +108,8 @@ export async function exportVisualVideo({
   height,
   settings,
   subtitles,
+  composition,
+  images,
   duration,
   videoCompression = false,
   frameRate = DEFAULT_EXPORT_FRAME_RATE,
@@ -110,6 +118,8 @@ export async function exportVisualVideo({
   prepared,
   reducedMotion,
   destination,
+  instanceCount,
+  compositionComplexity,
   startedAt,
   signal,
   onProgress,
@@ -238,6 +248,8 @@ export async function exportVisualVideo({
       background: !!background,
       videoOverlay: !!videoTrack,
       reducedMotion: !!reducedMotion,
+      instanceCount,
+      compositionComplexity,
     });
     const timingProfile: ExportTimingProfile = {
       ...makeExportTimingProfileBase({
@@ -317,6 +329,8 @@ export async function exportVisualVideo({
         duration,
         subtitles,
         {
+          composition,
+          images,
           onset: prepared ? temporalAt(prepared, absoluteTime)?.onsetEnvelope : undefined,
           sound: frameData,
           background,

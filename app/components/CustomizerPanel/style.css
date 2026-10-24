@@ -167,6 +167,19 @@
 
 /* stylelint-enable no-descending-specificity */
 
+@media (width <= 1100px) {
+  .mobile-editing-workspace {
+    & .studio-slider {
+      min-height: 44px;
+    }
+
+    & [data-slot="slider-thumb"] {
+      width: 22px;
+      height: 22px;
+    }
+  }
+}
+
 .setting-choice {
   margin-top: 20px;
 
@@ -918,38 +931,3 @@
   min-height: 44px;
   font-size: 12px;
 }
-
-/* stylelint-disable no-descending-specificity -- mobile overrides target separate control states */
-
-.mobile-customizer-drawer {
-  & .panel-scroll {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    touch-action: pan-y;
-  }
-
-  & .mode-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  & .setting-slider .studio-slider {
-    min-height: 32px;
-  }
-
-  & .setting-slider [data-slot="slider-thumb"] {
-    width: 23px;
-    height: 23px;
-  }
-
-  & .setting-slider [data-slot="slider-track"] {
-    height: 7px;
-  }
-
-  & .mode-card {
-    min-height: 88px;
-  }
-}
-
-/* stylelint-enable no-descending-specificity */

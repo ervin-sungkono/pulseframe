@@ -88,6 +88,8 @@ function sourceProfileBase(source: ExportSource): ExportTimingProfileBase {
       background: !!source.background,
       videoOverlay: source.sourceKind === "video",
       reducedMotion: source.reducedMotion,
+      instanceCount: source.instanceCount,
+      compositionComplexity: source.compositionComplexity,
     }),
   });
 }
@@ -115,6 +117,8 @@ function snapshotSource(source: ExportSource): ExportSource {
     range: [source.range[0], source.range[1]],
     settings: structuredClone(source.settings),
     subtitles: structuredClone(source.subtitles),
+    composition: source.composition ? structuredClone(source.composition) : undefined,
+    images: source.images ? new Map(source.images) : undefined,
     // Prepared PCM and image objects are retained by reference for this job.
   };
 }
@@ -303,7 +307,11 @@ export function useExportController(
           frameRate: source.frameRate,
           settings: source.settings,
           subtitles: source.subtitles,
+          composition: source.composition,
+          images: source.images,
           destination: source.destination,
+          instanceCount: source.instanceCount,
+          compositionComplexity: source.compositionComplexity,
           logo: source.logo,
           background: source.background,
           prepared: source.prepared,

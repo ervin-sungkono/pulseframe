@@ -415,6 +415,19 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
 
   const originalLogo = { asset: "logo original" };
   const originalBackground = { asset: "background original" };
+  const originalComposition = {
+    visualizers: [
+      {
+        id: "visualizer",
+        transform: { x: 0.4, y: 0.5, width: 1, height: 1, rotation: 0 },
+      },
+    ],
+    elements: [],
+    lyrics: { animation: "static" },
+    logoFrameId: "visualizer",
+  };
+  const originalCompositionImage = { asset: "composition image original" };
+  const images = new Map([["cover", originalCompositionImage]]);
   const originalPrepared = {
     audio: { asset: "pcm original" },
     events: [1],
@@ -442,6 +455,10 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
     videoCompression: true,
     settings,
     subtitles,
+    composition: originalComposition,
+    images,
+    instanceCount: 2,
+    compositionComplexity: "scene-layers-2;lyrics-static",
     logo: originalLogo,
     background: originalBackground,
     prepared: originalPrepared,
@@ -484,6 +501,9 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
     source.logo = { asset: "replacement logo" };
     source.background = { asset: "replacement background" };
     source.prepared = { events: [9] };
+    originalComposition.visualizers[0].transform.x = 0.9;
+    images.delete("cover");
+    images.set("replacement", { asset: "composition image replacement" });
 
     resolveImport();
     await waitFor(() => events.includes("adapter-called"));
@@ -499,6 +519,13 @@ test("hook snapshots mutable export inputs before lazy import and retains prepar
     assert.equal(received.prepared, originalPrepared);
     assert.equal(received.logo, originalLogo);
     assert.equal(received.background, originalBackground);
+    assert.notEqual(received.composition, originalComposition);
+    assert.equal(received.composition.visualizers[0].transform.x, 0.4);
+    assert.notEqual(received.images, images);
+    assert.equal(received.images.get("cover"), originalCompositionImage);
+    assert.equal(received.images.has("replacement"), false);
+    assert.equal(received.instanceCount, 2);
+    assert.equal(received.compositionComplexity, "scene-layers-2;lyrics-static");
     assert.equal(received.videoCompression, true);
     assert.equal(received.frameRate, 24);
     assert.equal(lockedRef.current, true, "the lock remains held while encoding is pending");

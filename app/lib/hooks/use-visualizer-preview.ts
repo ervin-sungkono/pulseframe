@@ -36,6 +36,8 @@ import {
   RollingFrequencyHistory,
 } from "@/lib/visual/styles/frequency-history";
 
+import type { Composition, CompositionImages } from "@/lib/composition/model";
+
 const previewDimensions = (format: ExportAspect) =>
   exportDimensions(format, format === "square" ? 1080 : 720);
 
@@ -54,6 +56,8 @@ export type UseVisualizerPreviewOptions = {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   settings: VisualSettings;
   subtitles: SubtitleCue[];
+  composition?: Composition;
+  images?: CompositionImages;
   format: ExportAspect;
   lockedRef: RefObject<boolean>;
   onError: (message: string) => void;
@@ -66,6 +70,8 @@ export function useVisualizerPreview({
   canvasRef,
   settings,
   subtitles,
+  composition,
+  images,
   format,
   lockedRef,
   onError,
@@ -73,6 +79,8 @@ export function useVisualizerPreview({
 }: UseVisualizerPreviewOptions) {
   const settingsRef = useRef(settings);
   const [previewQuality] = useState(() => new PreviewQuality());
+  const compositionRef = useRef(composition);
+  const imagesRef = useRef(images);
   const [liveHistory] = useState(() => new RollingFrequencyHistory());
   const subtitlesRef = useRef(subtitles);
   const formatRef = useRef(format);
@@ -132,11 +140,13 @@ export function useVisualizerPreview({
 
   useEffect(() => {
     settingsRef.current = settings;
+    compositionRef.current = composition;
+    imagesRef.current = images;
     subtitlesRef.current = subtitles;
     formatRef.current = format;
     onErrorRef.current = onError;
     onNoticeRef.current = onNotice;
-  }, [settings, subtitles, format, onError, onNotice]);
+  }, [settings, subtitles, composition, images, format, onError, onNotice]);
 
   const cancelWarm = useCallback(() => {
     requestRef.current++;
@@ -245,7 +255,9 @@ export function useVisualizerPreview({
       snapshot?.duration ?? 0,
       subtitlesRef.current,
       {
-        onset: snapshot?.sound
+        composition: compositionRef.current,
+        images: imagesRef.current,
+        onset: snapshot.sound
           ? temporalAt(snapshot.sound, frameTimeRef.current)?.onsetEnvelope
           : undefined,
         sound,
@@ -426,6 +438,8 @@ export function useVisualizerPreview({
           snapshot.duration,
           subtitlesRef.current,
           {
+            composition: compositionRef.current,
+            images: imagesRef.current,
             onset: snapshot.sound
               ? temporalAt(snapshot.sound, visualTime)?.onsetEnvelope
               : undefined,

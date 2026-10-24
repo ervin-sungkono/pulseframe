@@ -108,6 +108,33 @@ test("compressed timing profiles use the export encoder quality setting", () => 
   assert.equal(profile({ compression: true }).base.videoQuality, COMPRESSED_VIDEO_QUALITY);
 });
 
+test("optional scene instance and composition fields are retained in timing profiles", () => {
+  const workload = estimate.makeExportWorkloadForExport({
+    durationSeconds: 20,
+    analysisSeconds: 30,
+    preparedAudio: false,
+    settings: DEFAULT_SETTINGS,
+    subtitles: false,
+    logo: false,
+    background: false,
+    videoOverlay: false,
+    reducedMotion: false,
+    instanceCount: 18,
+    compositionComplexity: "scene-layers-3",
+  });
+  assert.equal(workload.instanceCount, 18);
+  assert.equal(workload.compositionComplexity, "scene-layers-3");
+  const withProfile = { ...profile().full, workload };
+  assert.equal(estimate.isValidTimingProfile(withProfile), true);
+  assert.equal(
+    estimate.isValidTimingProfile({
+      ...withProfile,
+      workload: { ...workload, instanceCount: 10001 },
+    }),
+    false,
+  );
+});
+
 test("constant completed-frame throughput produces a cautious range only after warmup", () => {
   const live = new estimate.LiveFrameEstimator();
   live.observe(5, 250);

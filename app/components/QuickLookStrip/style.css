@@ -12,16 +12,6 @@
   scroll-snap-type: x proximity;
 }
 
-.mobile-customizer-drawer {
-  & .looks-section {
-    padding-right: 0;
-  }
-
-  & .look-strip {
-    padding-right: 22px;
-  }
-}
-
 .look-card {
   position: relative;
   scroll-snap-align: start;

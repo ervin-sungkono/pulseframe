@@ -1,11 +1,7 @@
-import type { ComponentProps } from "react";
-import type { SubtitleEditor } from "@/components/SubtitleDialog";
+import type { SubtitleEditorProps } from "@/components/SubtitleEditor/type";
 import type { UseSubtitleGenerationOptions } from "@/lib/hooks/use-subtitle-generation";
 
-type SubtitleEditorProps = Omit<ComponentProps<typeof SubtitleEditor>, "generation" | "inline">;
-
-export type SubtitleWorkspaceProps = SubtitleEditorProps & {
-  desktopLayout: boolean;
+export type SubtitleWorkspaceProps = Omit<SubtitleEditorProps, "generation"> & {
   open: boolean;
   options: UseSubtitleGenerationOptions;
   onRunningChange: (running: boolean) => void;

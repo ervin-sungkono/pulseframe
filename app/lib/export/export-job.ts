@@ -1,4 +1,5 @@
 import type { ExportDestination } from "./export-file-target";
+import type { Composition, CompositionImages } from "../composition/model";
 import type { PreparedSound } from "../audio/audio-features";
 import type { ExportAspect, ExportFrameRate, ExportResolution } from "./export-settings";
 import type { ExportProgress } from "./export-video";
@@ -20,7 +21,11 @@ export type ExportSource = {
   videoCompression: boolean;
   settings: VisualSettings;
   subtitles: SubtitleCue[];
+  composition?: Composition;
+  images?: CompositionImages;
   destination?: ExportDestination;
+  instanceCount?: number;
+  compositionComplexity?: string;
   logo: LogoLayer | null;
   background: LogoLayer | null;
   prepared?: PreparedSound;

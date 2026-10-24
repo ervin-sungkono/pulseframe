@@ -154,7 +154,7 @@ test("missing and partial style option groups receive property defaults in old s
   assert.deepEqual(opened.settings.terrainOptions, DEFAULT_TERRAIN_OPTIONS);
 });
 
-test("new styles roundtrip through version 2 projects with their settings, logo placement and subtitle", async () => {
+test("new styles roundtrip through version 3 projects with their settings, logo placement and subtitle", async () => {
   const customSettings = {
     radial: {
       radialOptions: {
@@ -185,7 +185,7 @@ test("new styles roundtrip through version 2 projects with their settings, logo 
       trackTitle: `Saved ${mode}`,
     });
     const { manifest, opened } = await openProject(settings, `${mode}.pulseframe`);
-    assert.equal(manifest.version, 2);
+    assert.equal(manifest.version, 3);
     assert.equal(opened.settings.mode, mode);
     assert.equal(opened.migratedStyle, undefined);
     assert.deepEqual(opened.settings[`${mode}Options`], settings[`${mode}Options`]);
