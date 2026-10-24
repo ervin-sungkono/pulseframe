@@ -1,5 +1,11 @@
 import { z } from "zod";
 import {
+  compositionSchema,
+  defaultComposition,
+  elementAssets,
+  type Composition,
+} from "../composition/model";
+import {
   VISUAL_MODES,
   type VisualMode,
   type VisualSettings,
@@ -46,7 +52,18 @@ const cueSchema = z
 const assetSchema = z.object({
   name: z.string().min(1).max(255),
   type: z.string().max(100),
-  size: z.number().int().min(0),
+  size: z.number().safe().int().min(0),
+});
+const compositionAssetSchema = z.object({
+  id: z.string().min(1).max(80),
+  name: z.string().min(1).max(255),
+  type: z.enum(["image/png", "image/jpeg", "image/webp"]),
+  size: z
+    .number()
+    .safe()
+    .int()
+    .min(1)
+    .max(8 * 1024 * 1024),
 });
 const exportResolutionSchema = z
   .number()
@@ -58,22 +75,65 @@ const exportFrameRateSchema = z
   .refine((value): value is ExportFrameRate =>
     EXPORT_FRAME_RATES.some((frameRate) => frameRate === value),
   );
-const manifestSchema = z.object({
-  version: z.union([z.literal(1), z.literal(2)]),
-  format: z.enum(EXPORT_ASPECTS),
-  profile: z.enum(["standard", "smaller"]).optional(),
-  resolution: exportResolutionSchema.optional(),
-  videoCompression: z.boolean().optional().default(false),
-  frameRate: exportFrameRateSchema.optional().default(DEFAULT_EXPORT_FRAME_RATE),
-  range: z.tuple([z.number().finite().min(0), z.number().finite().min(0)]),
-  settings: settingsSchema,
-  subtitles: z.array(cueSchema).max(MAX_SUBTITLE_CUES),
-  media: assetSchema,
-  logo: assetSchema.nullable(),
-  background: assetSchema.nullable().optional().default(null),
-});
+const manifestSchema = z
+  .object({
+    version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    format: z.enum(EXPORT_ASPECTS),
+    profile: z.enum(["standard", "smaller"]).optional(),
+    resolution: exportResolutionSchema.optional(),
+    videoCompression: z.boolean().optional().default(false),
+    frameRate: exportFrameRateSchema.optional().default(DEFAULT_EXPORT_FRAME_RATE),
+    range: z.tuple([z.number().finite().min(0), z.number().finite().min(0)]),
+    settings: settingsSchema,
+    subtitles: z.array(cueSchema).max(MAX_SUBTITLE_CUES),
+    media: assetSchema,
+    logo: assetSchema.nullable(),
+    background: assetSchema.nullable().optional().default(null),
+    composition: compositionSchema.optional(),
+    assets: z.array(compositionAssetSchema).max(30).optional(),
+  })
+  .superRefine((manifest, ctx) => {
+    if (manifest.version !== 3) return;
+    if (!manifest.composition || !manifest.assets) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "The composition details are missing.",
+      });
+      return;
+    }
+    const ids = manifest.assets.map((asset) => asset.id);
+    if (new Set(ids).size !== ids.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["assets"],
+        message: "Duplicate image asset IDs.",
+      });
+      return;
+    }
+
+    const assetIds = new Set(ids);
+    const referencedIds = new Set(elementAssets(manifest.composition));
+    for (const id of referencedIds) {
+      if (!assetIds.has(id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["composition"],
+          message: "The composition references a missing image asset.",
+        });
+        return;
+      }
+    }
+    if (referencedIds.size !== assetIds.size) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["assets"],
+        message: "The image assets do not match the composition references.",
+      });
+    }
+  });
+
 const MAGIC = "PF01";
-const MAX_MANIFEST = 256 * 1024;
+const MAX_MANIFEST = 4 * 1024 * 1024;
 
 export type ProjectContent = {
   format: ExportAspect;
@@ -87,14 +147,51 @@ export type ProjectContent = {
   media: File;
   logo: File | null;
   background: File | null;
+  composition?: Composition;
+  assets?: Record<string, File>;
   migratedStyle?: string;
 };
 
-// A small header followed by the original media bytes and optional logo bytes.
-// Blob slicing and composition avoid reading large videos into JS memory.
+function safeOffset(base: number, size: number) {
+  const result = base + size;
+  return Number.isSafeInteger(result) ? result : Number.POSITIVE_INFINITY;
+}
+
+function validatedAssetMetadata(composition: Composition, assets: Record<string, File>) {
+  const entries = Object.entries(assets);
+  if (entries.length > 30) throw new Error("A composition can contain at most 30 images.");
+  const assetIds = new Set<string>();
+  const metadata = entries.map(([id, file]) => {
+    if (!id || id.length > 80 || assetIds.has(id))
+      throw new Error("A composition image has an invalid ID.");
+    assetIds.add(id);
+    const parsed = compositionAssetSchema.safeParse({
+      id,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+    });
+    if (!parsed.success) throw new Error("The project contains an unsupported composition image.");
+    return parsed.data;
+  });
+
+  const referencedIds = new Set(elementAssets(composition));
+  if (referencedIds.size !== assetIds.size || [...referencedIds].some((id) => !assetIds.has(id))) {
+    throw new Error("The image assets do not match the composition references.");
+  }
+  return { entries, metadata };
+}
+
+// The file contains a small header, JSON metadata, then Blob-backed media and
+// images. Keeping the original File objects here avoids reading full media bytes.
 export function makeProjectFile(content: ProjectContent): Blob {
+  const composition = compositionSchema.parse(content.composition ?? defaultComposition());
+  const { entries: assetEntries, metadata: assets } = validatedAssetMetadata(
+    composition,
+    content.assets ?? Object.create(null),
+  );
   const manifest = {
-    version: 2,
+    version: 3,
     videoCompression: content.videoCompression ?? false,
     resolution:
       content.resolution ?? (content.profile === "smaller" ? 480 : DEFAULT_EXPORT_RESOLUTION),
@@ -114,6 +211,8 @@ export function makeProjectFile(content: ProjectContent): Blob {
           size: content.background.size,
         }
       : null,
+    composition,
+    assets,
   };
   const bytes = new TextEncoder().encode(JSON.stringify(manifest));
   if (bytes.length > MAX_MANIFEST) throw new Error("This project has too much text to save.");
@@ -127,6 +226,7 @@ export function makeProjectFile(content: ProjectContent): Blob {
       content.media,
       ...(content.logo ? [content.logo] : []),
       ...(content.background ? [content.background] : []),
+      ...assetEntries.map(([, file]) => file),
     ],
     { type: "application/x-pulseframe" },
   );
@@ -155,11 +255,20 @@ export async function readProjectFile(file: File): Promise<ProjectContent> {
     throw new Error("This project has invalid timestamps.");
   }
   const mediaStart = 8 + manifestLength;
-  const logoStart = mediaStart + data.media.size;
-  const backgroundStart = logoStart + (data.logo?.size ?? 0);
-  if (!data.media.size || backgroundStart + (data.background?.size ?? 0) !== file.size) {
+  const logoStart = safeOffset(mediaStart, data.media.size);
+  const backgroundStart = safeOffset(logoStart, data.logo?.size ?? 0);
+  const existingAssetsEnd = safeOffset(backgroundStart, data.background?.size ?? 0);
+  if (!Number.isSafeInteger(existingAssetsEnd) || !data.media.size) {
     throw new Error("The project media is missing or damaged.");
   }
+  const expectedEnd = (data.assets ?? []).reduce(
+    (offset, asset) => safeOffset(offset, asset.size),
+    existingAssetsEnd,
+  );
+  if (!Number.isSafeInteger(expectedEnd) || expectedEnd !== file.size) {
+    throw new Error("The project media is missing or damaged.");
+  }
+
   const mediaSupported =
     data.media.type.startsWith("audio/") ||
     data.media.type.startsWith("video/") ||
@@ -179,6 +288,25 @@ export async function readProjectFile(file: File): Promise<ProjectContent> {
   ) {
     throw new Error("The project contains an unsupported background image.");
   }
+
+  let offset = existingAssetsEnd;
+  const compositionAssets = Object.create(null) as Record<string, File>;
+  for (const asset of data.assets ?? []) {
+    const end = safeOffset(offset, asset.size);
+    if (!Number.isSafeInteger(end) || end > file.size)
+      throw new Error("The project image assets are missing or damaged.");
+    compositionAssets[asset.id] = new File([file.slice(offset, end)], asset.name, {
+      type: asset.type,
+    });
+    offset = end;
+  }
+
+  const subtitles: SubtitleCue[] = data.subtitles.map((cue) => {
+    const words =
+      cue.words === undefined ? undefined : validateSubtitleWords(cue.text, cue.words, cue);
+    const plainCue = { id: cue.id, start: cue.start, end: cue.end, text: cue.text };
+    return words ? { ...plainCue, words } : plainCue;
+  });
   return {
     videoCompression: data.videoCompression,
     resolution: data.resolution ?? (data.profile === "smaller" ? 480 : DEFAULT_EXPORT_RESOLUTION),
@@ -189,10 +317,7 @@ export async function readProjectFile(file: File): Promise<ProjectContent> {
     migratedStyle: VISUAL_MODES.includes(data.settings.mode as VisualMode)
       ? undefined
       : data.settings.mode,
-    subtitles: data.subtitles.map(({ words, ...cue }) => ({
-      ...cue,
-      ...(words === undefined ? {} : { words: validateSubtitleWords(cue.text, words, cue)! }),
-    })),
+    subtitles,
     media: new File([file.slice(mediaStart, logoStart)], data.media.name, {
       type: data.media.type,
     }),
@@ -200,9 +325,11 @@ export async function readProjectFile(file: File): Promise<ProjectContent> {
       ? new File([file.slice(logoStart, backgroundStart)], data.logo.name, { type: data.logo.type })
       : null,
     background: data.background
-      ? new File([file.slice(backgroundStart)], data.background.name, {
+      ? new File([file.slice(backgroundStart, existingAssetsEnd)], data.background.name, {
           type: data.background.type,
         })
       : null,
+    composition: data.composition ?? defaultComposition(),
+    assets: compositionAssets,
   };
 }

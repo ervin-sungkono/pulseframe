@@ -24,6 +24,7 @@ export function SubtitleEditor({
   onPreview,
   playing,
   onTogglePlay,
+  onEditStyle,
   generation,
   trackFile,
   disabled = false,
@@ -37,7 +38,8 @@ export function SubtitleEditor({
   const [wordTimingNotice, setWordTimingNotice] = useState(false);
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 });
-  }, [tab]);
+    if (inline) scrollRef.current?.closest<HTMLElement>(".lyrics-workspace")?.scrollTo({ top: 0 });
+  }, [tab, inline]);
   const editTabRef = useRef<HTMLButtonElement>(null);
   const focusCue = useRef<string | null>(null);
   const cueElements = useRef(new Map<string, HTMLDivElement>());
@@ -246,6 +248,11 @@ export function SubtitleEditor({
         <span>
           {cues.length} {cues.length === 1 ? "block" : "blocks"}
         </span>
+        {onEditStyle && (
+          <button className="button button-soft" onClick={onEditStyle}>
+            Style &amp; animation
+          </button>
+        )}
         <button
           className="button button-soft"
           onClick={add}

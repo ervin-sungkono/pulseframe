@@ -2,9 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { loadSources } from "./load-source.mjs";
 
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
+const sharedModules = await loadSources();
 
 function compileTsx(path, mockedRequire) {
   const source = readFileSync(new URL(path, import.meta.url), "utf8");
@@ -239,6 +241,7 @@ const mediaSnapshot = {
 };
 const mediaSessionOwner = { snapshot: mediaSnapshot, requestGeneration: 0, pause() {} };
 const appMockRequire = (id) => {
+  if (id === "./const") return actualHomeConstants;
   if (id === "react") return reactMock;
   if (id === "lucide-react") return icons;
   if (id === "@/lib/export/export-settings")
@@ -360,6 +363,9 @@ const appMockRequire = (id) => {
   if (id === "@/lib/media/local-image") return { readLocalImage: async () => null };
   if (id === "@/lib/audio/live-sound") return { LiveSound: class {} };
   if (id === "@/components/TrackWaveform") return { TrackWaveform: stubComponent };
+  if (id === "@/components/SubtitleWorkspace") return { SubtitleWorkspace: stubComponent };
+  if (id === "@/components/CompositionPanel") return { CompositionPanel: stubComponent };
+  if (id === "@/components/CanvasSelection") return { CanvasSelection: stubComponent };
   if (id === "@/lib/visual/visualizer")
     return {
       createAudioReactiveState: () => ({}),
@@ -370,6 +376,9 @@ const appMockRequire = (id) => {
     };
   if (id === "@/lib/persistence/project-file")
     return { makeProjectFile() {}, readProjectFile() {} };
+  if (id === "@/lib/composition/model") return sharedModules["composition/model"];
+  if (id === "@/lib/composition/assets") return sharedModules["composition/assets"];
+  if (id === "@/lib/composition/templates") return sharedModules["composition/templates"];
   if (id === "@/lib/time") return { formatTimestamp: () => "0:00" };
   if (id === "@/lib/subtitles/model") return {};
   throw new Error(`Unexpected page import: ${id}`);
@@ -423,9 +432,17 @@ test("preset metadata refresh keeps the applied snapshot and routes explicit sav
     else delete globalThis.window;
   });
   renderHome();
-  const settingsSlot = appHooks.stateSlots[0];
-  const activeLookSlot = appHooks.stateSlots[1];
-  appHooks.hooks[settingsSlot] = settingsWith(editedB);
+  const documentSlot = appHooks.stateSlots.find((slot) => {
+    const value = appHooks.hooks[slot];
+    return value && typeof value === "object" && "composition" in value && "subtitles" in value;
+  });
+  assert.notEqual(documentSlot, undefined, "the page did not store a complete editor document");
+  const documentIndex = appHooks.stateSlots.indexOf(documentSlot);
+  const activeLookSlot = appHooks.stateSlots[documentIndex + 1];
+  appHooks.hooks[documentSlot] = {
+    ...appHooks.hooks[documentSlot],
+    settings: settingsWith(editedB),
+  };
   appHooks.hooks[activeLookSlot] = {
     id: originalA.id,
     name: originalA.name,
@@ -475,7 +492,7 @@ test("preset metadata refresh keeps the applied snapshot and routes explicit sav
     );
     await action.run(button);
     assert.deepEqual(
-      appHooks.hooks[settingsSlot],
+      appHooks.hooks[documentSlot].settings,
       settingsWith(editedB),
       `${action.label} changed the editor settings`,
     );
@@ -526,7 +543,7 @@ test("preset metadata refresh keeps the applied snapshot and routes explicit sav
   moveButton.props.onClick();
   await settle();
   assert.deepEqual(
-    appHooks.hooks[settingsSlot],
+    appHooks.hooks[documentSlot].settings,
     settingsWith(editedB),
     "reordering changed the editor settings",
   );
@@ -566,7 +583,7 @@ test("preset metadata refresh keeps the applied snapshot and routes explicit sav
   renameForm.props.onSubmit({ preventDefault() {} });
   await settle();
   assert.deepEqual(
-    appHooks.hooks[settingsSlot],
+    appHooks.hooks[documentSlot].settings,
     settingsWith(editedB),
     "renaming changed the editor settings",
   );
@@ -584,10 +601,10 @@ test("preset metadata refresh keeps the applied snapshot and routes explicit sav
     "the page did not render its customizer",
   );
   customizer.props.onResetSection("colors");
-  assert.equal(appHooks.hooks[settingsSlot].primary, originalA.settings.primary);
-  assert.equal(appHooks.hooks[settingsSlot].secondary, originalA.settings.secondary);
-  assert.equal(appHooks.hooks[settingsSlot].background, originalA.settings.background);
-  assert.equal(appHooks.hooks[settingsSlot].trackTitle, DEFAULT_SETTINGS.trackTitle);
+  assert.equal(appHooks.hooks[documentSlot].settings.primary, originalA.settings.primary);
+  assert.equal(appHooks.hooks[documentSlot].settings.secondary, originalA.settings.secondary);
+  assert.equal(appHooks.hooks[documentSlot].settings.background, originalA.settings.background);
+  assert.equal(appHooks.hooks[documentSlot].settings.trackTitle, DEFAULT_SETTINGS.trackTitle);
 
   // Applying the remote C snapshot explicitly changes the reset baseline to C.
   actionTree = renderHome();
@@ -611,9 +628,9 @@ test("preset metadata refresh keeps the applied snapshot and routes explicit sav
     "missing customizer after apply",
   );
   customizerAfterApply.props.onResetSection("colors");
-  assert.equal(appHooks.hooks[settingsSlot].primary, remoteC.settings.primary);
-  assert.equal(appHooks.hooks[settingsSlot].secondary, remoteC.settings.secondary);
-  assert.equal(appHooks.hooks[settingsSlot].background, remoteC.settings.background);
+  assert.equal(appHooks.hooks[documentSlot].settings.primary, remoteC.settings.primary);
+  assert.equal(appHooks.hooks[documentSlot].settings.secondary, remoteC.settings.secondary);
+  assert.equal(appHooks.hooks[documentSlot].settings.background, remoteC.settings.background);
 
   // The nested save dialog's confirmed-save callback still installs the saved B snapshot.
   actionTree = renderHome();

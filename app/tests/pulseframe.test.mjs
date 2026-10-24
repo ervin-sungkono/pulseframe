@@ -1621,6 +1621,18 @@ test("project subtitle validation follows the shared cue and text limits", async
   await assert.rejects(readProjectFile(new File([tooLong], "too-long.pulseframe")));
 });
 
+async function asVersionTwo(blob) {
+  const header = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
+  const manifestLength = new DataView(header.buffer).getUint32(4, true);
+  const manifest = JSON.parse(await blob.slice(8, 8 + manifestLength).text());
+  manifest.version = 2;
+  delete manifest.composition;
+  delete manifest.assets;
+  const bytes = new TextEncoder().encode(JSON.stringify(manifest));
+  new DataView(header.buffer).setUint32(4, bytes.length, true);
+  return new File([header, bytes, blob.slice(8 + manifestLength)], "legacy-v2.pulseframe");
+}
+
 test("v2 projects preserve valid subtitle word timings and reject invalid timings", async () => {
   const { makeProjectFile, readProjectFile } = modules["project-file"];
   const media = new File(["media"], "song.wav", { type: "audio/wav" });
@@ -1644,7 +1656,7 @@ test("v2 projects preserve valid subtitle word timings and reject invalid timing
       },
     ],
   };
-  const blob = makeProjectFile(content);
+  const blob = await asVersionTwo(makeProjectFile(content));
   const manifestHeader = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
   const manifestLength = new DataView(manifestHeader.buffer).getUint32(4, true);
   const manifest = JSON.parse(await blob.slice(8, 8 + manifestLength).text());
@@ -1652,14 +1664,16 @@ test("v2 projects preserve valid subtitle word timings and reject invalid timing
   const restored = await readProjectFile(new File([blob], "timed.pulseframe"));
   assert.deepEqual(restored.subtitles, content.subtitles);
 
-  const invalid = makeProjectFile({
-    ...content,
-    subtitles: [
-      {
-        ...content.subtitles[0],
-        words: [{ textStart: 0, textEnd: 99, start: 0.1, end: 0.4 }],
-      },
-    ],
-  });
+  const invalid = await asVersionTwo(
+    makeProjectFile({
+      ...content,
+      subtitles: [
+        {
+          ...content.subtitles[0],
+          words: [{ textStart: 0, textEnd: 99, start: 0.1, end: 0.4 }],
+        },
+      ],
+    }),
+  );
   await assert.rejects(readProjectFile(new File([invalid], "invalid-words.pulseframe")));
 });

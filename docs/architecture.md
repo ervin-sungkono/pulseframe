@@ -103,6 +103,37 @@ artifacts and require no Rust toolchain. The benchmark scripts measure DSP work
 separately from decoding, transfer, rendering and encoding. A DSP speedup does
 not imply the same speedup for a complete export.
 
+## Creator workspace and composition
+
+The history-managed `EditorDocument` contains `settings`, `composition`,
+`subtitles` and output `format`. `app/components/Home/index.tsx` coordinates edits through this one
+document; the composition model owns its Zod validation and the project adapter
+serializes it. Media files, decoded images, workers and export destinations are
+kept by their resource owners rather than copied into UI state.
+
+Composition layers can include visualizer frames and up to 32 total layer slots,
+counting the lyrics layer. Ring and Radial modes render up to four visualizer
+instances; each instance has its own bounded transform and optional primary and
+accent color overrides. Other visual modes render the first visualizer instance
+only. Instances use the same selected visual style, audio analysis and canvas
+renderer. Text, image and rectangle/ellipse overlays are drawn through that same
+renderer. Composition images stay in browser-owned assets and are included in a
+project's version-3 asset table.
+
+The desktop workspace docks layers at the left, a selected-layer inspector and
+shared style controls at the right, and the lyric workspace below the preview.
+At widths up to 1100px, editing uses one bounded tool panel with persistent
+Design, Layers and Subtitles navigation. Preview and playback stay together;
+landscape screens place them beside the panel. Only the applicable compact or
+desktop composition controls mount. Adding or selecting a layer opens its
+inspector, with content before geometry fields. The subtitle editor and lyric
+inspector link directly to each other. On short portrait viewports, a small
+preview beside playback leaves room for editing while the keyboard is open.
+Physical mobile keyboards still need device testing. Creator templates are
+accessible directly from the layer panel. The four templates (Cover, Portrait, Square and Dual
+visualizer) set up a composition and export aspect. They are separate from the
+five built-in Quick Looks, which apply style settings.
+
 ## Visualizer, projects and Quick Looks
 
 The editor has five first-class canvas modes: Pulse Ring, Spectrum, Edge Bars,
@@ -117,7 +148,7 @@ operate on the active source.
 ### Style rendering and source-time history
 
 `app/lib/visual/styles/types.ts` defines the React-independent style contract.
-The static registry chooses one primary renderer. Background/video, atmosphere,
+The static registry chooses the selected style for each active visualizer frame. Background/video, atmosphere,
 lighting, particles, logo fitting, titles and subtitles remain in the shared
 `drawVisualization` pipeline used by preview, PNG capture and video export.
 The original three drawing algorithms live in separate modules with their
@@ -126,9 +157,10 @@ exported from `visualizer.ts` for compatibility. Edge Bars maps its gradient to
 each visible bar, with a 75%/25% primary/accent balance and a soft transition
 across the latter half of its length.
 
-New style settings are typed groups (`radialOptions`, `terrainOptions`), with per-property validation/defaults. Existing flat options
+Four composition templates configure frames, overlays and export aspect separately
+from the five style Quick Looks. New style settings are typed groups (`radialOptions`, `terrainOptions`), with per-property validation/defaults. Existing flat options
 are retained. Missing groups in older projects and Quick Looks receive defaults;
-the project format remains version 2 and preset storage remains version 1.
+composition projects use version 3 with v1/v2 readers; preset storage remains version 1.
 Retired IDs still migrate explicitly to Ring or Spectrum and are not new styles.
 All five modes retain separate logo layouts. Nested controls have separate undo
 groups, and Visual section reset restores the active look's option groups.
@@ -194,7 +226,7 @@ resolution and FPS behavior are unchanged.
 
 Retired identifiers are accepted only during import and map to a supported
 style. The retired `blob` identifier maps to Pulse Ring; obsolete options and logo
-keys are stripped after migration. Project and preset versions stay unchanged.
+keys are stripped after migration. Legacy style migration does not change preset version 1; composition projects use version 3.
 
 The built-in Quick Looks contain exactly one look per visual style: Contour
 (Ring), After Hours (Spectrum), Counterflow (Edges), Orbit (Radial), and Neon
@@ -251,11 +283,13 @@ rather than inferring another beat grid.
 ### Projects and Quick Looks
 
 A project file is portable: it contains a validated manifest, the source media,
-and optional logo/background image bytes, plus appearance settings, subtitles
-and export settings. Saving writes the current format; reading supports older
-project versions and migrates legacy visual modes. Applying a Quick Look changes
-appearance and audio-response settings while keeping the active track, images,
-subtitles, track text and export choices.
+optional logo/background image bytes and composition image assets, plus
+appearance settings, subtitles and export settings. Version-3 manifests include
+the composition and metadata for each composition image; version-1 and version-2
+projects remain readable and receive a default composition when they do not
+contain one. Applying a Quick Look changes appearance and audio-response
+settings while keeping the active track, images, subtitles, track text and
+export choices.
 
 Built-in looks have stable IDs and complete settings snapshots. Personal Quick
 Looks are validated in the browser's `pulseframe.presets.v1` localStorage record.
@@ -319,7 +353,9 @@ deletion fails.
 Local Whisper output has cue/line timing only. Validated word timestamps from
 Gemini or timed imports survive editing and project round trips; editing cue
 text or timing removes stale word timing. The shared renderer accepts those
-words, while the default editor keeps its existing static subtitle appearance.
+words. The lyric inspector offers Static, Fade, Pop, Highlight and Karaoke;
+without word timestamps, highlighting uses line-level progress. Defaults retain
+the existing static subtitle appearance.
 Generation progress is owned by `SubtitleWorkspace`, so status updates do not
 rerender the root editor. Playback and preview can continue during inference;
 source replacement and video export share a separate activity lock.
@@ -366,7 +402,7 @@ savings vary by clip, codec and device. Project files preserve the setting;
 older ZIP-compression fields do not enable it.
 
 The export controller snapshots the selected media generation, settings,
-logo/background references, subtitles, format, range, resolution, frame
+composition and image references, subtitles, format, range, resolution, frame
 rate, compression setting and prepared audio before asynchronous work. The
 shared lock retains source resources until encoding settles. Cancellation
 prevents late progress and download; an uncommitted file destination is aborted.
@@ -390,6 +426,9 @@ all editor actions. Browser codec support and memory determine practical media
 and export limits. On-device subtitle generation has its separate ten-minute
 admission limit described above. No playlist or account-backed preset service
 is part of the current application.
+
+See [the PR split verification](creator-workspace-split-report.md) for the
+workspace integration checks and its remaining device-test limits.
 
 ## Development commands
 

@@ -1,0 +1,114 @@
+.canvas-selection {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  touch-action: pan-y;
+  outline-offset: -2px;
+}
+
+.selection-frame {
+  position: absolute;
+  border: 1px solid #c1a8ff;
+  pointer-events: none;
+  transform-origin: center;
+  box-shadow: 0 0 0 1px #17152e99;
+
+  &.is-locked {
+    border-style: dashed;
+  }
+}
+
+.selection-name {
+  position: absolute;
+  top: 3px;
+  left: 4px;
+  max-width: calc(100% - 8px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: #fff;
+  background: #21193ed9;
+  border-radius: 3px;
+  padding: 2px 5px;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: move;
+}
+
+.selection-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #e8dcff;
+  border: 2px solid #6c4eaa;
+  border-radius: 2px;
+  pointer-events: auto;
+  touch-action: none;
+
+  &[data-handle="nw"] {
+    left: -6px;
+    top: -6px;
+    cursor: nwse-resize;
+  }
+
+  &[data-handle="ne"] {
+    right: -6px;
+    top: -6px;
+    cursor: nesw-resize;
+  }
+
+  &[data-handle="sw"] {
+    left: -6px;
+    bottom: -6px;
+    cursor: nesw-resize;
+  }
+
+  &[data-handle="se"] {
+    right: -6px;
+    bottom: -6px;
+    cursor: nwse-resize;
+  }
+
+  &[data-handle="rotate"] {
+    top: 12px;
+    left: calc(50% - 6px);
+    border-radius: 50%;
+    cursor: grab;
+  }
+
+  @media (pointer: coarse) {
+    &::before {
+      content: "";
+      position: absolute;
+      inset: -14px;
+    }
+  }
+}
+
+@media (width <= 1100px) {
+  .selection-handle {
+    width: 20px;
+    height: 20px;
+
+    &[data-handle="nw"],
+    &[data-handle="ne"] {
+      top: -10px;
+    }
+
+    &[data-handle="sw"],
+    &[data-handle="se"] {
+      bottom: -10px;
+    }
+
+    &[data-handle="nw"],
+    &[data-handle="sw"] {
+      left: -10px;
+    }
+
+    &[data-handle="ne"],
+    &[data-handle="se"] {
+      right: -10px;
+    }
+  }
+}

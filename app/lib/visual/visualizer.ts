@@ -8,6 +8,14 @@ import { drawTrackOverlay } from "./track-overlay";
 import { drawBeatLighting } from "./beat-lighting";
 import { cameraMotion, ringMotion, type MotionTransform } from "./motion";
 import {
+  activeVisualizers,
+  type Composition,
+  type CompositionImages,
+  type VisualizerInstance,
+} from "../composition/model";
+import { applyFrame } from "../composition/geometry";
+import { drawCreativeElements } from "../composition/render";
+import {
   DEFAULT_SUBTITLE_RENDER_STYLE,
   drawAnimatedSubtitles,
   type SubtitleRenderStyle,
@@ -49,6 +57,8 @@ export type AudioReactiveState = {
   ringBands: Float32Array[][];
 };
 export type RenderExtras = {
+  composition?: Composition;
+  images?: CompositionImages;
   onset?: number;
   history?: FrequencyHistory;
   sound?: SoundEnvelope | null;
@@ -57,6 +67,19 @@ export type RenderExtras = {
   lyricStyle?: SubtitleRenderStyle;
   reducedMotion?: boolean;
 };
+
+const instancePalettes = new WeakMap<
+  VisualizerInstance,
+  { base: VisualSettings; settings: VisualSettings }
+>();
+function instanceSettings(instance: VisualizerInstance | undefined, base: VisualSettings) {
+  if (!instance?.palette) return base;
+  const cached = instancePalettes.get(instance);
+  if (cached?.base === base) return cached.settings;
+  const settings = { ...base, ...instance.palette };
+  instancePalettes.set(instance, { base, settings });
+  return settings;
+}
 
 export function createAudioReactiveState(): AudioReactiveState {
   return {
@@ -197,8 +220,8 @@ export function soundResponse(
       );
     }
   updateRingResponse(frame, settings, state, activity, deltaMs, speed);
-  // Ease movement separately from sharp ring/logo hits. Source-time state is
-  // replayed by preview seeks and export warmup, and stays still when paused.
+  // Movement follows its own slow envelope so transient hits do not make the
+  // composition orbit at the same rate as the sharper ring response.
   state.motionPulse = smooth(state.motionPulse, state.ringPulse, deltaMs, 450, 600);
   return {
     activity: state.activity,
@@ -731,7 +754,9 @@ export function drawVisualization(
     settings.motionBehavior === "audio-reactive" && settings.motionPreset !== "beat"
       ? state.motionPulse
       : ringPulse;
-  const object = ringMotion(time, w, h, settings, motionPulse, extras.reducedMotion);
+  const instances: readonly (VisualizerInstance | undefined)[] = extras.composition
+    ? activeVisualizers(extras.composition, settings.mode)
+    : [undefined];
   // Keep the composition on screen in silent passages. Only the audio-driven
   // part of each shape is gated, so low-level analyser noise cannot animate it.
   const captionHeight = subtitleLane(ctx, w, h, subtitles);
@@ -801,45 +826,62 @@ export function drawVisualization(
     drawParticles(ctx, w, h, settings, particles, energy, motionTime);
     ctx.restore();
   }
-  ctx.save();
-  ctx.globalAlpha = 0.7 + styleActivity * 0.3;
-  applyMotion(ctx, w, h, object);
-  if (settings.mode === "ring") {
-    ctx.translate(w / 2, h / 2);
-    ctx.scale(settings.visualScale, settings.visualScale);
-    ctx.translate(-w / 2, -h / 2);
-  }
-  drawVisualStyle(ctx, {
-    width: w,
-    height: h,
-    time,
-    sampleRate,
-    settings,
-    reducedMotion: !!extras.reducedMotion,
-    fittedLogo: !!logo && settings.logoAutoFit[settings.mode],
-    captionHeight,
-    audio: styleAudio,
-    history: extras.history,
-  });
-  if (settings.trails) {
+  for (const instance of instances) {
     ctx.save();
-    ctx.translate(w / 2, h / 2);
-    ctx.rotate(motionTime * 0.14);
-    const reach = Math.min(w, h) * 0.43;
-    for (let i = 0; i < 5; i++) {
-      const angle = (i * Math.PI * 2) / 5 + motionTime * 0.18;
-      ctx.beginPath();
-      ctx.arc(0, 0, reach + i * 3 + energy * 12, angle, angle + 0.32 + energy * 0.42);
-      ctx.strokeStyle = rgba(i % 2 ? settings.secondary : settings.primary, 0.16 + energy * 0.2);
-      ctx.lineWidth = Math.max(1.5, w / 680);
-      ctx.lineCap = "round";
-      ctx.shadowColor = i % 2 ? settings.secondary : settings.primary;
-      ctx.shadowBlur = settings.glow * 20;
-      ctx.stroke();
+    const size = instance ? applyFrame(ctx, instance.transform, w, h) : { width: w, height: h };
+    const iw = size.width,
+      ih = size.height;
+    const localSettings = instanceSettings(instance, settings);
+    ctx.globalAlpha = 0.7 + styleActivity * 0.3;
+    applyMotion(
+      ctx,
+      iw,
+      ih,
+      ringMotion(time, iw, ih, localSettings, motionPulse, extras.reducedMotion),
+    );
+    if (localSettings.mode === "ring") {
+      ctx.translate(iw / 2, ih / 2);
+      ctx.scale(localSettings.visualScale, localSettings.visualScale);
+      ctx.translate(-iw / 2, -ih / 2);
+    }
+    drawVisualStyle(ctx, {
+      width: iw,
+      height: ih,
+      time,
+      sampleRate,
+      settings: localSettings,
+      reducedMotion: !!extras.reducedMotion,
+      fittedLogo:
+        !!logo &&
+        (!extras.composition || extras.composition.logoFrameId === instance?.id) &&
+        localSettings.logoAutoFit[localSettings.mode],
+      captionHeight: captionHeight * Math.min(1, ih / h),
+      audio: styleAudio,
+      history: extras.history,
+    });
+    if (localSettings.trails) {
+      ctx.save();
+      ctx.translate(iw / 2, ih / 2);
+      ctx.rotate(motionTime * 0.14);
+      const reach = Math.min(iw, ih) * 0.43;
+      for (let i = 0; i < 5; i++) {
+        const angle = (i * Math.PI * 2) / 5 + motionTime * 0.18;
+        ctx.beginPath();
+        ctx.arc(0, 0, reach + i * 3 + energy * 12, angle, angle + 0.32 + energy * 0.42);
+        ctx.strokeStyle = rgba(
+          i % 2 ? localSettings.secondary : localSettings.primary,
+          0.16 + energy * 0.2,
+        );
+        ctx.lineWidth = Math.max(1.5, iw / 680);
+        ctx.lineCap = "round";
+        ctx.shadowColor = i % 2 ? localSettings.secondary : localSettings.primary;
+        ctx.shadowBlur = localSettings.glow * 20;
+        ctx.stroke();
+      }
+      ctx.restore();
     }
     ctx.restore();
   }
-  ctx.restore();
   ctx.restore();
   const vignette = ctx.createRadialGradient(
     w / 2,
@@ -855,21 +897,42 @@ export function drawVisualization(
   ctx.fillRect(0, 0, w, h);
   if (settings.glitch && !extras.reducedMotion)
     drawGlitch(ctx, time, energy, bassPulse, audibleActivity, settings.glitchStrength);
-  if (logo) {
+  const logoFrameId = extras.composition?.logoFrameId;
+  const attached = logoFrameId ? instances.find((item) => item?.id === logoFrameId) : undefined;
+  if (logo && (!logoFrameId || attached)) {
     ctx.save();
     applyMotion(ctx, w, h, camera);
-    applyMotion(ctx, w, h, object);
-    drawLogo(ctx, w, h, settings, logo, settings.mode === "ring" ? ringPulse : bassPulse);
+    const size = attached ? applyFrame(ctx, attached.transform, w, h) : { width: w, height: h };
+    const logoSettings = instanceSettings(attached, settings);
+    const localMotion = ringMotion(
+      time,
+      size.width,
+      size.height,
+      logoSettings,
+      motionPulse,
+      extras.reducedMotion,
+    );
+    if (!extras.composition || attached) applyMotion(ctx, size.width, size.height, localMotion);
+    drawLogo(
+      ctx,
+      size.width,
+      size.height,
+      logoSettings,
+      logo,
+      settings.mode === "ring" ? ringPulse : bassPulse,
+    );
     ctx.restore();
   }
   drawTrackOverlay(ctx, w, h, settings, time, duration, captionHeight);
+  if (extras.composition)
+    drawCreativeElements(ctx, extras.composition.elements, extras.images, settings, time);
   drawAnimatedSubtitles(
     ctx,
     w,
     h,
     subtitles,
     time,
-    extras.lyricStyle ?? DEFAULT_SUBTITLE_RENDER_STYLE,
+    extras.composition?.lyrics ?? extras.lyricStyle ?? DEFAULT_SUBTITLE_RENDER_STYLE,
     !!extras.reducedMotion,
   );
 }

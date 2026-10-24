@@ -6,7 +6,7 @@ import {
   type ExportResolution,
 } from "@/lib/export/export-settings";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import {
   AudioLines,
   Captions,
@@ -34,14 +34,6 @@ import {
 } from "lucide-react";
 import { Slider } from "@/components/ui/Slider";
 import {
-  Drawer,
-  DrawerContent,
-  DrawerDescription,
-  DrawerHandle,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/components/ui/Drawer";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -60,20 +52,33 @@ import {
 } from "@/lib/visual/customizer-config";
 import { QuickLookStrip, type ActiveLook } from "@/components/QuickLookStrip";
 import { PresetSaveDialog } from "@/components/PresetSaveDialog";
-import { dimensions } from "@/components/Home/const";
-import type { Format } from "@/components/Home/type";
-import { SubtitleWorkspace } from "@/components/SubtitleWorkspace";
 import { usePresets } from "@/lib/hooks/use-presets";
 import { useSettingsHistory } from "@/lib/hooks/use-settings-history";
 import { formatTimestamp } from "@/lib/time";
 import { useExportController } from "@/lib/hooks/use-export-controller";
+import { SubtitleWorkspace } from "@/components/SubtitleWorkspace";
+import { CompositionPanel } from "@/components/CompositionPanel";
+import { CanvasSelection } from "@/components/CanvasSelection";
 import { makeProjectFile, readProjectFile } from "@/lib/persistence/project-file";
 import type { SubtitleCue } from "@/lib/subtitles/model";
 import { useMediaSession } from "@/lib/hooks/use-media-session";
 import { useVisualizerPreview } from "@/lib/hooks/use-visualizer-preview";
 import { TrackWaveform } from "@/components/TrackWaveform";
+import {
+  defaultComposition,
+  elementAssets,
+  newElement,
+  activeVisualizers,
+  MAX_COMPOSITION_ELEMENTS,
+  type Composition,
+  type EditorDocument,
+} from "@/lib/composition/model";
+import { CompositionAssetOwner, disposeStagedAssets } from "@/lib/composition/assets";
+import type { LocalImage } from "@/lib/media/local-image";
+import { applyCreatorTemplate } from "@/lib/composition/templates";
 import type { VisualSettings } from "@/lib/visual/visual-settings-model";
-
+import { dimensions } from "./const";
+import type { Format } from "./type";
 const friendlySize = (bytes: number) =>
   bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
 export default function Home() {
@@ -83,22 +88,88 @@ export default function Home() {
   const projectInputRef = useRef<HTMLInputElement>(null);
   const exportingRef = useRef(false);
   const activityRef = useRef(false);
+  const [generationRunning, setGenerationRunning] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [assetOwner] = useState(() => new CompositionAssetOwner());
+  const [assetRevision, setAssetRevision] = useState(0);
+  const pendingAssetsRef = useRef<Map<string, LocalImage> | null>(null);
 
   const {
-    value: settings,
-    setValue: setSettings,
-    resetValue: resetSettings,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
-  } = useSettingsHistory<VisualSettings>(DEFAULT_SETTINGS);
+    value: editorDocument,
+    setValue: setDocument,
+    resetValue: resetDocument,
+    undo: restorePrevious,
+    redo: restoreNext,
+    undoValue,
+    redoValue,
+    retainedValues,
+  } = useSettingsHistory<EditorDocument>({
+    settings: DEFAULT_SETTINGS,
+    composition: defaultComposition(),
+    subtitles: [],
+    format: "landscape",
+  });
+  const { settings, composition, subtitles, format } = editorDocument;
+  const documentRef = useRef(editorDocument);
+  useEffect(() => {
+    documentRef.current = editorDocument;
+  }, [editorDocument]);
+  const canUndo = !!undoValue && (!generationRunning || undoValue.subtitles === subtitles);
+  const canRedo = !!redoValue && (!generationRunning || redoValue.subtitles === subtitles);
+  const undo = useCallback(() => {
+    if (canUndo) restorePrevious();
+  }, [canUndo, restorePrevious]);
+  const redo = useCallback(() => {
+    if (canRedo) restoreNext();
+  }, [canRedo, restoreNext]);
+  const setSettings = useCallback(
+    (value: SetStateAction<VisualSettings>, group?: string) => {
+      setDocument((previous) => {
+        const next = typeof value === "function" ? value(previous.settings) : value;
+        return next === previous.settings ? previous : { ...previous, settings: next };
+      }, group);
+    },
+    [setDocument],
+  );
+  const setSubtitles = useCallback(
+    (cues: SubtitleCue[]) =>
+      setDocument((previous) => ({ ...previous, subtitles: cues }), "subtitles"),
+    [setDocument],
+  );
+  const changeComposition = useCallback(
+    (next: Composition, group?: string) => {
+      if (!exportingRef.current)
+        setDocument((previous) => ({ ...previous, composition: next }), group);
+    },
+    [setDocument],
+  );
+  useEffect(() => {
+    const retainedIds = new Set(
+      retainedValues.flatMap((value) => elementAssets(value.composition)),
+    );
+    assetOwner.prune(retainedIds);
+  }, [retainedValues, assetOwner]);
+  const assetMounted = useRef(true);
+  useEffect(() => {
+    assetMounted.current = true;
+    return () => {
+      assetMounted.current = false;
+      queueMicrotask(() => {
+        if (!assetMounted.current) assetOwner.dispose();
+      });
+    };
+  }, [assetOwner]);
   const library = usePresets();
   const [activeLook, setActiveLook] = useState<ActiveLook | null>(null);
   const [lookSaveOpen, setLookSaveOpen] = useState(false);
   const [lookSaveTarget, setLookSaveTarget] = useState<SavedPreset | null>(null);
-  const [subtitles, setSubtitles] = useState<SubtitleCue[]>([]);
-  const [format, setFormat] = useState<Format>("landscape");
+  const setFormat = useCallback(
+    (next: Format) =>
+      setDocument((previous) =>
+        previous.format === next ? previous : { ...previous, format: next },
+      ),
+    [setDocument],
+  );
   const [frameRate, setFrameRate] = useState<ExportFrameRate>(DEFAULT_EXPORT_FRAME_RATE);
   const [videoCompression, setVideoCompression] = useState(false);
   const [resolution, setResolution] = useState<ExportResolution>(DEFAULT_EXPORT_RESOLUTION);
@@ -106,26 +177,39 @@ export default function Home() {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(""), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
   const [helpOpen, setHelpOpen] = useState(false);
   const [customizerOpen, setCustomizerOpen] = useState(false);
-  const [customizerSnap, setCustomizerSnap] = useState<number | string | null>(0.62);
+  const [mobileTab, setMobileTab] = useState<"design" | "layers">("design");
   const [exportOpen, setExportOpen] = useState(false);
   const [subtitleOpen, setSubtitleOpen] = useState(false);
-  const [generationRunning, setGenerationRunning] = useState(false);
   const [desktopLayout, setDesktopLayout] = useState(
-    () => window.matchMedia("(min-width: 861px)").matches,
+    () => window.matchMedia("(min-width: 1101px)").matches,
   );
   const subtitleTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileEditorRef = useRef<HTMLElement>(null);
   useEffect(() => {
-    const media = window.matchMedia("(min-width: 861px)");
+    const media = window.matchMedia("(min-width: 1101px)");
     const update = () => setDesktopLayout(media.matches);
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
-  const closeSubtitleEditor = (open: boolean) => {
-    setSubtitleOpen(open);
-    if (!open && desktopLayout) subtitleTriggerRef.current?.focus();
-  };
+  const closeSubtitleEditor = useCallback(
+    (open: boolean) => {
+      setSubtitleOpen(open);
+      if (open && !desktopLayout) setCustomizerOpen(false);
+      if (!open && desktopLayout) subtitleTriggerRef.current?.focus();
+    },
+    [desktopLayout],
+  );
+  const editSubtitles = useCallback(() => closeSubtitleEditor(true), [closeSubtitleEditor]);
+  useEffect(() => {
+    mobileEditorRef.current?.scrollTo({ top: 0 });
+  }, [selectedId, mobileTab, customizerOpen]);
   const [presetOpen, setPresetOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [openingProject, setOpeningProject] = useState(false);
@@ -133,6 +217,22 @@ export default function Home() {
   const [muted, setMuted] = useState(false);
   const [looping, setLooping] = useState(false);
   const [focusView, setFocusView] = useState(false);
+  const compactEditing = !desktopLayout && !focusView && (customizerOpen || subtitleOpen);
+  useEffect(() => {
+    if (compactEditing) window.scrollTo({ top: 0, behavior: "instant" });
+  }, [compactEditing]);
+  const selectLayer = useCallback(
+    (id: string | null) => {
+      setSelectedId(id);
+      if (id && !desktopLayout) {
+        setMobileTab("design");
+        setCustomizerOpen(true);
+        setSubtitleOpen(false);
+      }
+    },
+    [desktopLayout],
+  );
+  const editLyricStyle = useCallback(() => selectLayer("lyrics"), [selectLayer]);
 
   const mediaSession = useMediaSession({
     getMediaHost: () => mediaHostRef.current,
@@ -150,15 +250,28 @@ export default function Home() {
         setResolution(project.resolution ?? DEFAULT_EXPORT_RESOLUTION);
         setFrameRate(project.frameRate ?? DEFAULT_EXPORT_FRAME_RATE);
         setVideoCompression(project.videoCompression ?? false);
-        resetSettings(project.settings);
-        setSubtitles(project.subtitles);
+        if (pendingAssetsRef.current) {
+          assetOwner.commit(pendingAssetsRef.current, true);
+          pendingAssetsRef.current = null;
+          setAssetRevision((n) => n + 1);
+        }
+        resetDocument({
+          settings: project.settings,
+          composition: project.composition ?? defaultComposition(),
+          subtitles: project.subtitles,
+          format: project.format,
+        });
+        setSelectedId(null);
         setActiveLook(null);
       } else {
-        setSubtitles([]);
-        resetSettings((current) => ({
+        resetDocument((current) => ({
           ...current,
-          trackTitle: next.name.replace(/\.[^.]+$/, "").slice(0, 120),
-          trackArtist: "",
+          subtitles: [],
+          settings: {
+            ...current.settings,
+            trackTitle: next.name.replace(/\.[^.]+$/, "").slice(0, 120),
+            trackArtist: "",
+          },
         }));
       }
     },
@@ -192,6 +305,18 @@ export default function Home() {
         duration: current.duration,
         generation: current.generation,
         retainedAudio: current.sound?.audio ?? null,
+        retainedOtherBytes: [
+          ...assetOwner.images().values(),
+          current.logo?.image,
+          current.background?.image,
+        ].reduce(
+          (bytes, image) =>
+            bytes +
+            (image
+              ? (image.naturalWidth || image.width) * (image.naturalHeight || image.height) * 4
+              : 0),
+          0,
+        ),
       };
     },
     getCues: () => subtitles,
@@ -207,6 +332,8 @@ export default function Home() {
     canvasRef,
     settings,
     subtitles,
+    composition,
+    images: assetOwner.images(),
     format,
     lockedRef: exportingRef,
     onError: setError,
@@ -221,6 +348,7 @@ export default function Home() {
     capabilities,
     capabilityChecking,
   } = useExportController({
+    preflightEnabled: exportOpen,
     lockedRef: activityRef,
     getSource: () => {
       const current = session.snapshot;
@@ -237,6 +365,10 @@ export default function Home() {
         videoCompression,
         settings,
         subtitles,
+        composition,
+        images: assetOwner.images(),
+        instanceCount: activeVisualizers(composition, settings.mode).length,
+        compositionComplexity: `layers:${composition.elements.filter((item) => item.visible).length};lyrics:${composition.lyrics.animation}`,
         logo: current.logo?.image ?? null,
         background: current.background?.image ?? null,
         prepared: current.sound ?? undefined,
@@ -247,7 +379,6 @@ export default function Home() {
     onError: setError,
     onNotice: setNotice,
     onComplete: () => setExportOpen(false),
-    preflightEnabled: exportOpen,
   });
   const exporting = videoExporting;
   const sourceBusy = videoExporting || generationRunning;
@@ -390,7 +521,7 @@ export default function Home() {
 
   const saveProject = () => {
     const current = session.snapshot;
-    if (!current.file || activityRef.current) return;
+    if (!current.file || exportingRef.current) return;
     try {
       const blob = makeProjectFile({
         media: current.file,
@@ -398,6 +529,10 @@ export default function Home() {
         background: current.background?.file ?? null,
         settings,
         subtitles,
+        composition,
+        assets: Object.fromEntries(
+          elementAssets(composition).map((id) => [id, assetOwner.files()[id]]),
+        ),
         format,
         resolution,
         frameRate,
@@ -424,6 +559,12 @@ export default function Home() {
     try {
       const project = await readProjectFile(projectFile);
       if (currentLoad !== session.requestGeneration) return;
+      const staged = await assetOwner.prepare(project.assets ?? {});
+      if (currentLoad !== session.requestGeneration) {
+        disposeStagedAssets(staged);
+        return;
+      }
+      pendingAssetsRef.current = staged;
       if (!(await loadFile(project.media, project.range, project))) return;
       setProjectOpen(false);
       setNotice(
@@ -434,6 +575,10 @@ export default function Home() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not open project.");
     } finally {
+      if (pendingAssetsRef.current) {
+        disposeStagedAssets(pendingAssetsRef.current);
+        pendingAssetsRef.current = null;
+      }
       setOpeningProject(false);
     }
   };
@@ -447,7 +592,6 @@ export default function Home() {
       if (
         customizerOpen ||
         exportOpen ||
-        subtitleOpen ||
         projectOpen ||
         presetOpen ||
         lookSaveOpen ||
@@ -499,7 +643,6 @@ export default function Home() {
         presetOpen ||
         lookSaveOpen ||
         exportOpen ||
-        subtitleOpen ||
         projectOpen ||
         helpOpen
       )
@@ -535,6 +678,7 @@ export default function Home() {
   const outputDimensions = exportDimensions(format, resolution);
   const subtitleEditorProps = {
     onOpenChange: closeSubtitleEditor,
+    onEditStyle: editLyricStyle,
     cues: subtitles,
     onChange: setSubtitles,
     disabled: videoExporting,
@@ -551,6 +695,77 @@ export default function Home() {
     },
   };
 
+  const addImage = useCallback(
+    async (imageFile: File) => {
+      const hasCapacity = () => {
+        const { visualizers, elements } = documentRef.current.composition;
+        return visualizers.length + elements.length + 1 < MAX_COMPOSITION_ELEMENTS;
+      };
+      if (activityRef.current || !hasCapacity()) return;
+      const source = session.requestGeneration,
+        id = crypto.randomUUID();
+      try {
+        const staged = await assetOwner.prepare({ [id]: imageFile });
+        if (
+          !assetMounted.current ||
+          source !== session.requestGeneration ||
+          activityRef.current ||
+          !hasCapacity()
+        ) {
+          disposeStagedAssets(staged);
+          return;
+        }
+        const item = newElement("image", id);
+        try {
+          assetOwner.commit(staged);
+        } catch (error) {
+          disposeStagedAssets(staged);
+          throw error;
+        }
+        setDocument((previous) => ({
+          ...previous,
+          composition: {
+            ...previous.composition,
+            elements: [...previous.composition.elements, item],
+          },
+        }));
+        setAssetRevision((n) => n + 1);
+        selectLayer(item.id);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Could not add image.");
+      }
+    },
+    [assetOwner, session, setDocument, selectLayer],
+  );
+  const applyTemplate = useCallback(
+    (id: "cover" | "portrait" | "square" | "dual") => {
+      setDocument((previous) => {
+        const template = applyCreatorTemplate(id, previous.settings);
+        return {
+          ...previous,
+          settings: template.settings,
+          composition: template.composition,
+          format: template.format,
+        };
+      });
+      setSelectedId(null);
+      setNotice("Template applied. Undo restores your composition.");
+    },
+    [setDocument],
+  );
+  const compositionPanelProps = {
+    composition,
+    settings,
+    selectedId,
+    onSelect: selectLayer,
+    onEditSubtitles: editSubtitles,
+    onChange: changeComposition,
+    onAddImage: addImage,
+    onTemplate: applyTemplate,
+    assetsDisabled: generationRunning,
+    disabled: videoExporting || loadingMedia,
+  };
+  void assetRevision;
   return (
     <main className={`studio-shell ${focusView ? "focus-view" : ""}`}>
       <header className="topbar">
@@ -573,12 +788,13 @@ export default function Home() {
           </button>
           <button
             className="text-button preset-button"
-            aria-label="My presets"
+            aria-label="Saved Quick Looks"
+            title="Saved Quick Looks"
             onClick={() => setPresetOpen(true)}
             disabled={exporting}
           >
             <Bookmark size={17} />
-            <span>Presets</span>
+            <span>Saved looks</span>
           </button>
           <button
             className="text-button project-button"
@@ -600,7 +816,14 @@ export default function Home() {
           </button>
         </div>
       </header>
-      <div className={`workspace ${subtitleOpen && desktopLayout ? "has-subtitle-panel" : ""}`}>
+      <div
+        className={`workspace creator-workspace ${subtitleOpen && !focusView ? "has-lyrics" : ""} ${compactEditing ? "is-editing" : ""}`}
+      >
+        {desktopLayout && (
+          <aside className="composition-layers">
+            <CompositionPanel variant="layers" {...compositionPanelProps} />
+          </aside>
+        )}
         <section className="preview-column" aria-label="Visualizer preview">
           <div className="section-heading">
             <div>
@@ -641,6 +864,14 @@ export default function Home() {
                 width={1280}
                 height={720}
                 aria-label="Audio reactive visualization"
+              />
+              <CanvasSelection
+                composition={composition}
+                mode={settings.mode}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                onChange={changeComposition}
+                disabled={videoExporting || loadingMedia}
               />
               <div className="stage-corner top-left">
                 <span className="stage-indicator" /> {file ? "AUDIO REACTIVE" : "DEMO MODE"}
@@ -695,7 +926,7 @@ export default function Home() {
               ref={subtitleTriggerRef}
               aria-expanded={subtitleOpen}
               aria-label={`Edit subtitles${subtitles.length ? `, ${subtitles.length} blocks` : ""}`}
-              onClick={() => setSubtitleOpen(true)}
+              onClick={() => closeSubtitleEditor(true)}
               disabled={!file || videoExporting}
             >
               <Captions size={17} />
@@ -725,7 +956,7 @@ export default function Home() {
               {!file && (
                 <button
                   className="replace-button"
-                  disabled={sourceBusy || loadingMedia}
+                  disabled={loadingMedia}
                   onClick={async () => {
                     const { makeDemoFile } = await import("@/lib/media/demo-file");
                     await loadFile(makeDemoFile());
@@ -833,14 +1064,7 @@ export default function Home() {
             </span>
           </div>
         </section>
-        <SubtitleWorkspace
-          desktopLayout={desktopLayout}
-          open={subtitleOpen}
-          options={subtitleOptions}
-          onRunningChange={setGenerationRunning}
-          {...subtitleEditorProps}
-        />
-        {!(subtitleOpen && desktopLayout) && (
+        {desktopLayout && (
           <aside className="controls desktop-controls" aria-label="Customization controls">
             <div className="panel-header">
               <div>
@@ -849,7 +1073,17 @@ export default function Home() {
               </div>
               <SlidersHorizontal size={19} />
             </div>
-            <CustomizerPanel {...customizerPanelProps} />
+            <CompositionPanel variant="inspector" {...compositionPanelProps} />
+            <details
+              className="shared-style-controls"
+              open={
+                selectedId === null ||
+                composition.visualizers.some((item) => item.id === selectedId)
+              }
+            >
+              <summary>Visual style &amp; shared controls</summary>
+              <CustomizerPanel {...customizerPanelProps} />
+            </details>
             <div className="export-panel">
               <div className="export-title">
                 <div>
@@ -875,16 +1109,101 @@ export default function Home() {
             </div>
           </aside>
         )}
+        <div className="editing-panels">
+          <nav className="workspace-mobile-tabs" aria-label="Editor tools">
+            <button
+              className="button button-soft"
+              onClick={() => {
+                setMobileTab("design");
+                setCustomizerOpen(true);
+                setSubtitleOpen(false);
+              }}
+              aria-pressed={customizerOpen && mobileTab === "design"}
+            >
+              Design
+            </button>
+            <button
+              className="button button-soft"
+              onClick={() => {
+                setMobileTab("layers");
+                setCustomizerOpen(true);
+                setSubtitleOpen(false);
+              }}
+              aria-pressed={customizerOpen && mobileTab === "layers"}
+            >
+              Layers
+            </button>
+            <button
+              className="button button-soft"
+              aria-pressed={subtitleOpen}
+              disabled={!file || videoExporting}
+              onClick={() => {
+                setSubtitleOpen(true);
+                setCustomizerOpen(false);
+              }}
+            >
+              Subtitles
+            </button>
+            <button
+              className="icon-button"
+              aria-label="Close editing panel"
+              onClick={() => {
+                setCustomizerOpen(false);
+                setSubtitleOpen(false);
+              }}
+            >
+              <X size={18} />
+            </button>
+          </nav>
+          {!desktopLayout && (
+            <section
+              ref={mobileEditorRef}
+              className="mobile-editing-workspace"
+              hidden={!customizerOpen}
+            >
+              {mobileTab === "layers" ? (
+                <CompositionPanel variant="layers" {...compositionPanelProps} />
+              ) : (
+                <>
+                  {selectedId && (
+                    <CompositionPanel variant="inspector" {...compositionPanelProps} />
+                  )}
+                  {selectedId ? (
+                    <details className="shared-style-controls">
+                      <summary>Visualizer style &amp; effects</summary>
+                      <CustomizerPanel {...customizerPanelProps} />
+                    </details>
+                  ) : (
+                    <CustomizerPanel {...customizerPanelProps} />
+                  )}
+                </>
+              )}
+            </section>
+          )}
+          <SubtitleWorkspace
+            desktopLayout={desktopLayout}
+            open={subtitleOpen}
+            options={subtitleOptions}
+            onRunningChange={setGenerationRunning}
+            {...subtitleEditorProps}
+          />
+        </div>
       </div>
       <div className="mobile-action-dock">
         <button
           className="button button-soft"
           onClick={() => {
-            setCustomizerSnap(0.62);
-            setCustomizerOpen(true);
+            if (compactEditing) {
+              setSubtitleOpen(false);
+              setCustomizerOpen(false);
+            } else {
+              setSubtitleOpen(false);
+              setCustomizerOpen(true);
+            }
           }}
+          aria-expanded={compactEditing}
         >
-          <SlidersHorizontal size={17} /> Customize
+          <SlidersHorizontal size={17} /> {compactEditing ? "Preview" : "Customize"}
         </button>
         <button
           className="button export-button"
@@ -894,59 +1213,6 @@ export default function Home() {
           <Download size={17} /> Export video
         </button>
       </div>
-      <Drawer
-        open={customizerOpen}
-        onOpenChange={setCustomizerOpen}
-        direction="bottom"
-        snapPoints={[0.62, 0.94]}
-        activeSnapPoint={customizerSnap}
-        setActiveSnapPoint={setCustomizerSnap}
-        handleOnly
-      >
-        <DrawerContent
-          className="mobile-customizer-drawer"
-          data-expanded={customizerSnap === 0.94}
-          showHandle={false}
-        >
-          <div className="mobile-drawer-viewport">
-            <div className="mobile-drawer-top">
-              <DrawerHandle
-                className="mobile-drawer-grip"
-                preventCycle
-                aria-hidden={false}
-                role="slider"
-                tabIndex={0}
-                aria-label="Customization drawer height"
-                aria-valuemin={62}
-                aria-valuemax={94}
-                aria-valuenow={customizerSnap === 0.94 ? 94 : 62}
-                aria-valuetext={customizerSnap === 0.94 ? "Expanded" : "Compact"}
-                onKeyDown={(event) => {
-                  if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
-                    event.preventDefault();
-                    setCustomizerSnap(event.key === "ArrowUp" || event.key === "End" ? 0.94 : 0.62);
-                  }
-                }}
-              >
-                <span className="mobile-grip-bar" />
-                <span className="mobile-grip-hint">
-                  {customizerSnap === 0.94 ? "Drag down to shrink" : "Drag up to expand"}
-                </span>
-              </DrawerHandle>
-            </div>
-            <DrawerHeader>
-              <DrawerTitle>Customize visualizer</DrawerTitle>
-              <DrawerDescription>
-                Adjust the look while the preview stays visible above.
-              </DrawerDescription>
-            </DrawerHeader>
-            <CustomizerPanel {...customizerPanelProps} />
-            <button className="button done-button" onClick={() => setCustomizerOpen(false)}>
-              Done
-            </button>
-          </div>
-        </DrawerContent>
-      </Drawer>
       <ExportDialog
         open={exportOpen}
         onOpenChange={setExportOpen}
@@ -1026,7 +1292,7 @@ export default function Home() {
               <button
                 className="button button-soft"
                 onClick={saveProject}
-                disabled={!file || sourceBusy || openingProject || loadingMedia}
+                disabled={!file || openingProject || loadingMedia}
               >
                 <Save size={16} /> Save project file
               </button>
@@ -1037,7 +1303,7 @@ export default function Home() {
               <button
                 className="button button-soft"
                 onClick={() => projectInputRef.current?.click()}
-                disabled={sourceBusy || openingProject}
+                disabled={openingProject}
               >
                 <FolderOpen size={16} /> {openingProject ? "Opening…" : "Choose project file"}
               </button>

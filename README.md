@@ -1,7 +1,9 @@
 # Pulseframe
 
 A browser-based audio and video visualizer built with React, TypeScript and Vite.
-Audio analysis, canvas rendering and video encoding run on the user's device.
+Audio analysis, composition rendering and video encoding run on the user's device.
+The responsive creator workspace supports selectable visualizer frames, text,
+images, shapes and a docked subtitle editor.
 Automatic subtitles can run locally; the optional Gemini method uploads audio to
 Google only after the user chooses it and confirms generation. Current behavior,
 architecture, privacy and runtime details are in

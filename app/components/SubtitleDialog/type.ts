@@ -11,6 +11,7 @@ export type SubtitleEditorProps = {
   onPreview: (time: number) => void;
   playing: boolean;
   onTogglePlay: () => void;
+  onEditStyle?: () => void;
   generation?: SubtitleGenerationController;
   trackFile?: File | null;
   disabled?: boolean;

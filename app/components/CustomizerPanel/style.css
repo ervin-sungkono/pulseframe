@@ -167,6 +167,19 @@
 
 /* stylelint-enable no-descending-specificity */
 
+@media (width <= 1100px) {
+  .mobile-editing-workspace {
+    & .studio-slider {
+      min-height: 44px;
+    }
+
+    & [data-slot="slider-thumb"] {
+      width: 22px;
+      height: 22px;
+    }
+  }
+}
+
 .setting-choice {
   margin-top: 20px;
 

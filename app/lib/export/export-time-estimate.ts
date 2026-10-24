@@ -22,6 +22,10 @@ export type ExportWorkload = {
   analysisBucket: string;
   mode: string;
   styleComplexity?: string;
+  /** Number of scene instances composed into each frame, when known. */
+  instanceCount?: number;
+  /** Bounded coarse composition signature, when the caller has one. */
+  compositionComplexity?: string;
   ringLayers: number;
   spectrumReflectionTier: "off" | "low" | "medium" | "high";
   glowTier: "off" | "low" | "medium" | "high";
@@ -118,6 +122,11 @@ function validWorkload(value: unknown): value is ExportWorkload {
     isText(workload.analysisBucket) &&
     isText(workload.mode) &&
     (workload.styleComplexity === undefined || isText(workload.styleComplexity)) &&
+    (workload.instanceCount === undefined ||
+      (Number.isInteger(workload.instanceCount) &&
+        Number(workload.instanceCount) >= 0 &&
+        Number(workload.instanceCount) <= 10000)) &&
+    (workload.compositionComplexity === undefined || isText(workload.compositionComplexity)) &&
     Number.isInteger(workload.ringLayers) &&
     Number(workload.ringLayers) >= 0 &&
     Number(workload.ringLayers) <= 4 &&
@@ -509,6 +518,8 @@ export function makeExportWorkload(input: {
   preparedAudio: boolean;
   mode: string;
   styleComplexity?: string;
+  instanceCount?: number;
+  compositionComplexity?: string;
   ringLayers: number;
   spectrumReflection: number;
   glow: number;
@@ -540,11 +551,17 @@ export function makeExportWorkload(input: {
   const reflection = Number.isFinite(input.spectrumReflection)
     ? Math.max(0, input.spectrumReflection)
     : 0;
+  const compositionComplexity =
+    typeof input.compositionComplexity === "string" ? input.compositionComplexity.slice(0, 63) : "";
   return {
     durationBucket: timingDurationBucket(input.durationSeconds),
     analysisBucket: input.preparedAudio ? "prepared" : timingDurationBucket(input.analysisSeconds),
     mode: input.mode,
     ...(input.styleComplexity ? { styleComplexity: input.styleComplexity } : {}),
+    ...(Number.isInteger(input.instanceCount) && input.instanceCount! >= 0
+      ? { instanceCount: Math.min(10000, input.instanceCount!) }
+      : {}),
+    ...(compositionComplexity ? { compositionComplexity } : {}),
     ringLayers:
       input.mode === "ring" && Number.isInteger(input.ringLayers)
         ? Math.max(1, Math.min(4, input.ringLayers))
@@ -613,6 +630,8 @@ export function makeExportWorkloadForExport(input: {
   background: boolean;
   videoOverlay: boolean;
   reducedMotion: boolean;
+  instanceCount?: number;
+  compositionComplexity?: string;
 }): ExportWorkload {
   const { settings } = input;
   return makeExportWorkload({
@@ -626,6 +645,8 @@ export function makeExportWorkloadForExport(input: {
         : settings.mode === "terrain"
           ? `response2-${settings.terrainOptions.density}-${settings.terrainOptions.historySeconds <= 5 ? "short" : "long"}-${settings.terrainOptions.surfaceFill > 0 ? "filled" : "wire"}`
           : undefined,
+    instanceCount: input.instanceCount,
+    compositionComplexity: input.compositionComplexity,
     ringLayers: settings.ringLayers,
     spectrumReflection: settings.spectrumReflection,
     glow: settings.glow,

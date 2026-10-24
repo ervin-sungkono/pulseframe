@@ -22,6 +22,9 @@ to the application package; shared build tools live in `scripts/`.
   orchestrate controllers, and settings, validation, serialization and DSP
   calculations belong in UI-independent models.
 - `app/components/Home/index.tsx` composes the editor; `app/components/` presents controls and dialogs.
+  The history-managed `EditorDocument` owns settings, composition, subtitles and
+  output aspect. Composition validation/geometry belongs in `lib/composition`;
+  browser image resources remain with their asset owner.
   Keep audio analysis, persistence rules and export algorithms out of views.
 - Components use PascalCase folders with their exported function in `index.tsx`;
   add `type.ts`, `const.ts` or `style.css` only for meaningful owned content.

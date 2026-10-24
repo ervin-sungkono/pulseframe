@@ -38,7 +38,7 @@ function reducer<T>(state: History<T>, action: Action<T>): History<T> {
       ? (action.value as (current: T) => T)(state.present)
       : action.value;
   if (action.type === "reset") return { past: [], present: value, future: [], time: 0 };
-  if (JSON.stringify(value) === JSON.stringify(state.present)) return state;
+  if (Object.is(value, state.present)) return state;
   // Consecutive changes to one slider form a single undo step. Applying a
   // preset, resetting a section, or changing another control starts a new step.
   const merge =
@@ -81,5 +81,8 @@ export function useSettingsHistory<T>(initial: T) {
     redo,
     canUndo: state.past.length > 0,
     canRedo: state.future.length > 0,
+    undoValue: state.past.at(-1),
+    redoValue: state.future[0],
+    retainedValues: [...state.past, state.present, ...state.future],
   };
 }
