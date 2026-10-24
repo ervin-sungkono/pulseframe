@@ -1,21 +1,14 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Captions, Pause, Play, Plus, X } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
+import { DialogHeader } from "@/components/ui/Dialog";
 import { SubtitleImportPanel } from "@/components/SubtitleImportPanel";
 import { SubtitleCueRow, type SubtitleCueRowActions } from "@/components/SubtitleCueRow";
 import { SubtitleGenerationPanel } from "@/components/SubtitleGenerationPanel";
 import { formatTimestamp } from "@/lib/time";
 import { MAX_SUBTITLE_CUES, type SubtitleCuePatch, updateSubtitleCue } from "@/lib/subtitles/model";
-import type { SubtitleDialogProps, SubtitleEditorProps } from "./type";
+import type { SubtitleEditorProps } from "./type";
 
 export function SubtitleEditor({
-  inline = false,
   onOpenChange,
   cues,
   onChange,
@@ -38,8 +31,8 @@ export function SubtitleEditor({
   const [wordTimingNotice, setWordTimingNotice] = useState(false);
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 });
-    if (inline) scrollRef.current?.closest<HTMLElement>(".lyrics-workspace")?.scrollTo({ top: 0 });
-  }, [tab, inline]);
+    scrollRef.current?.closest<HTMLElement>(".lyrics-workspace")?.scrollTo({ top: 0 });
+  }, [tab]);
   const editTabRef = useRef<HTMLButtonElement>(null);
   const focusCue = useRef<string | null>(null);
   const cueElements = useRef(new Map<string, HTMLDivElement>());
@@ -47,8 +40,6 @@ export function SubtitleEditor({
     cues,
     onChange,
     onPreview,
-    onOpenChange,
-    inline,
     onWordTimingCleared: () => setWordTimingNotice(true),
   });
   useEffect(() => {
@@ -56,11 +47,9 @@ export function SubtitleEditor({
       cues,
       onChange,
       onPreview,
-      onOpenChange,
-      inline,
       onWordTimingCleared: () => setWordTimingNotice(true),
     };
-  }, [cues, onChange, onOpenChange, onPreview, inline]);
+  }, [cues, onChange, onPreview]);
   useEffect(() => {
     if (!focusCue.current) return;
     const field = document.getElementById(`${editorId}-${focusCue.current}`);
@@ -79,10 +68,8 @@ export function SubtitleEditor({
   );
   const titleRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
-    if (inline) titleRef.current?.focus();
-  }, [inline]);
-  const Title = inline ? "h2" : DialogTitle;
-  const Description = inline ? "p" : DialogDescription;
+    titleRef.current?.focus();
+  }, []);
   const editingDisabled = disabled || !!generation?.running;
   const applyCuePatch = useCallback((id: string, patch: SubtitleCuePatch) => {
     const current = editorActionState.current;
@@ -116,7 +103,6 @@ export function SubtitleEditor({
     const cue = current.cues.find((item) => item.id === id);
     if (!cue) return;
     current.onPreview(cue.start);
-    if (!current.inline) current.onOpenChange(false);
   }, []);
   const setCueElement = useCallback((id: string, element: HTMLDivElement | null) => {
     if (element) cueElements.current.set(id, element);
@@ -162,27 +148,20 @@ export function SubtitleEditor({
 
   return (
     <>
-      {inline && (
-        <button
-          className="subtitle-panel-close"
-          onClick={() => onOpenChange(false)}
-          aria-label="Close subtitle editor"
-        >
-          <X size={18} />
-        </button>
-      )}
+      <button
+        className="subtitle-panel-close"
+        onClick={() => onOpenChange(false)}
+        aria-label="Close subtitle editor"
+      >
+        <X size={18} />
+      </button>
       <DialogHeader>
-        <Title
-          ref={titleRef}
-          tabIndex={inline ? -1 : undefined}
-          data-slot="dialog-title"
-          className="subtitle-editor-title"
-        >
+        <h2 ref={titleRef} tabIndex={-1} data-slot="dialog-title" className="subtitle-editor-title">
           <Captions size={19} aria-hidden="true" /> Subtitles
-        </Title>
-        <Description data-slot="dialog-description">
+        </h2>
+        <p data-slot="dialog-description">
           Edit captions while listening. Changes appear in the preview immediately.
-        </Description>
+        </p>
       </DialogHeader>
       <div className="subtitle-editor-tabs" role="tablist" aria-label="Subtitle tools">
         {tabs.map((item) => (
@@ -338,15 +317,5 @@ export function SubtitleEditor({
         Done
       </button>
     </>
-  );
-}
-
-export function SubtitleDialog({ open, ...props }: SubtitleDialogProps) {
-  return (
-    <Dialog open={open} onOpenChange={props.onOpenChange}>
-      <DialogContent className="subtitle-dialog">
-        <SubtitleEditor {...props} />
-      </DialogContent>
-    </Dialog>
   );
 }

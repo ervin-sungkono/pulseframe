@@ -245,8 +245,7 @@ h2 {
   margin-bottom: 6px;
 }
 
-.project-dialog,
-.subtitle-dialog {
+.project-dialog {
   background: #131d2e;
   border: 1px solid #44516b;
   color: #edf2fc;
@@ -257,30 +256,20 @@ h2 {
   gap: 0;
 }
 
-.project-dialog [data-slot="dialog-header"],
-.subtitle-dialog [data-slot="dialog-header"] {
+.project-dialog [data-slot="dialog-header"] {
   text-align: left;
   gap: 7px;
 }
 
-.project-dialog [data-slot="dialog-title"],
-.subtitle-dialog [data-slot="dialog-title"] {
+.project-dialog [data-slot="dialog-title"] {
   font-size: 23px;
   letter-spacing: -0.04em;
 }
 
-.project-dialog [data-slot="dialog-description"],
-.subtitle-dialog [data-slot="dialog-description"] {
+.project-dialog [data-slot="dialog-description"] {
   color: #a6b4ca;
   font-size: 14px;
   line-height: 1.45;
-}
-
-.subtitle-dialog {
-  max-height: min(88dvh, 780px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
 }
 
 .subtitle-warning {
@@ -293,7 +282,6 @@ h2 {
 @media (width <= 580px) {
   .export-dialog,
   .help-dialog,
-  .subtitle-dialog,
   .project-dialog {
     /* Cancel the shared dialog's 50% centering when anchored as a bottom sheet. */
     top: auto !important;
@@ -309,11 +297,6 @@ h2 {
     width: 100%;
     max-width: none;
     border-radius: 18px 18px 0 0;
-  }
-
-  .subtitle-dialog {
-    max-height: 90dvh;
-    padding: 21px 17px calc(17px + env(safe-area-inset-bottom));
   }
 }
 

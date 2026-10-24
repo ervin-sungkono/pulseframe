@@ -44,7 +44,10 @@ and scrolling to the final cue without covering the preview. Design/Layers/
 Subtitles navigation and Import/Generate tabs remain usable. Mocked generation
 left Home and CustomizerPanel render counts unchanged across five progress ticks.
 The primary agent reviewed the phone capture and widened the Done action to
-match its editor panel.
+match its editor panel. The obsolete drawer, Vaul dependency and its React-type
+hoisting exception were removed because the creator panels replaced them.
+`SubtitleEditor` now owns only the inline flow; the unused modal wrapper and its
+styles were removed.
 
 A separate browser check confirmed WASM temporal analysis, saved a PNG containing
 an edited text layer, and exported seconds 3–5 to an 854×480, 30 FPS VP9/Opus

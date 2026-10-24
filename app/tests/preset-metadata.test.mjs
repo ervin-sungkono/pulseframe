@@ -251,15 +251,6 @@ const appMockRequire = (id) => {
       exportDimensions: () => ({ width: 1280, height: 720 }),
     };
   if (id === "@/components/ui/Slider") return { Slider: stubComponent };
-  if (id === "@/components/ui/Drawer")
-    return {
-      Drawer: stubComponent,
-      DrawerContent: stubComponent,
-      DrawerDescription: stubComponent,
-      DrawerHandle: stubComponent,
-      DrawerHeader: stubComponent,
-      DrawerTitle: stubComponent,
-    };
   if (id === "@/components/ui/Dialog") return uiDialog;
   if (id === "@/components/CustomizerPanel") return { CustomizerPanel: customizerPanelStub };
   if (id === "@/components/ExportDialog") return { ExportDialog: exportDialogStub };
@@ -346,8 +337,7 @@ const appMockRequire = (id) => {
         cancelExport() {},
       }),
     };
-  if (id === "@/components/SubtitleDialog")
-    return { SubtitleDialog: stubComponent, SubtitleEditor: stubComponent };
+  if (id === "@/components/SubtitleEditor") return { SubtitleEditor: stubComponent };
   if (id === "@/components/SubtitleGenerationPanel")
     return { SubtitleGenerationStatus: stubComponent };
   if (id === "@/lib/hooks/use-subtitle-generation")

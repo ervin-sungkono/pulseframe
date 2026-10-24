@@ -2,7 +2,6 @@ import type { SubtitleGenerationController } from "@/lib/hooks/use-subtitle-gene
 import type { SubtitleCue } from "@/lib/subtitles/model";
 
 export type SubtitleEditorProps = {
-  inline?: boolean;
   onOpenChange: (open: boolean) => void;
   cues: SubtitleCue[];
   onChange: (cues: SubtitleCue[]) => void;
@@ -16,5 +15,3 @@ export type SubtitleEditorProps = {
   trackFile?: File | null;
   disabled?: boolean;
 };
-
-export type SubtitleDialogProps = SubtitleEditorProps & { open: boolean };

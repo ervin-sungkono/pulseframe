@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { SubtitleEditor } from "@/components/SubtitleDialog";
+import { SubtitleEditor } from "@/components/SubtitleEditor";
 import { SubtitleGenerationStatus } from "@/components/SubtitleGenerationPanel";
 import { useSubtitleGeneration } from "@/lib/hooks/use-subtitle-generation";
 
@@ -31,7 +31,7 @@ export function SubtitleWorkspace({
           }
         }}
       >
-        <SubtitleEditor inline {...editor} generation={generation} />
+        <SubtitleEditor {...editor} generation={generation} />
       </section>
       {!open && (
         <SubtitleGenerationStatus
