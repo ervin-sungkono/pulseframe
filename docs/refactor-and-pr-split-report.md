@@ -12,11 +12,12 @@ Tooling now applies ESLint's recommended JavaScript, TypeScript and React Hooks 
 
 ## Verification
 
-All 39 Node test files pass. TypeScript, ESLint and Stylelint checks pass. Formatting checks pass.
+The original 39-file suite passes, and the restored memoized subtitle-row
+regression passes separately (40 files total). TypeScript, ESLint and Stylelint checks pass. Formatting checks pass.
 
 The browser layout comparison matched main's measured geometry at 1440, 768, 390 and 320 pixels, with no horizontal overflow detected. In the mocked subtitle-generation progress check, Home and CustomizerPanel each had zero extra renders; the comparison baseline had five.
 
-The DSP benchmark used a real Node worker with WASM for 300-second inputs, one paired run per signal after an excluded warmup. It shows the added temporal/onset analysis cost, not a speedup: prepared scans retained 504,000 bytes of temporal frames and up to 9,584 bytes across about 599 events. Cancellation was acknowledged in about 11 ms after a 10 ms artificial scheduling window. These are Node-host measurements, not browser or phone latency claims.
+The DSP benchmark used a real Node worker with WASM for 300-second inputs, one paired run per signal after an excluded warmup. It shows the added temporal/onset analysis cost, not a speedup: temporal-frame payloads represented 504,000 bytes plus up to 9,584 bytes across 599 events. Payload counts exclude JavaScript object/allocator overhead and are not total heap measurements. Cancellation was acknowledged in about 11 ms after a 10 ms artificial scheduling window. These are Node-host measurements, not browser or phone latency claims.
 
 A browser check activated WASM with temporal analysis, saved a PNG, and exported
 seconds 3–5 as a 480p WebM (803,266 bytes), which FFmpeg decoded successfully.

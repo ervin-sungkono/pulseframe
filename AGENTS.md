@@ -101,6 +101,9 @@ On branches containing `crates/pulseframe-dsp` and `app/lib/dsp`:
 
 ## Persistence, publishing and repository hygiene
 
+- Use conventional commit subjects with `fix:`, `feat:`, `refactor:` or `chore:`
+  followed by a clear description.
+
 - Keep Quick Looks local to the browser and origin. Maintain validation, save
   confirmation, revision conflict handling and cross-tab refresh. Do not add
   account authentication or a persistence service without a concrete requirement.
