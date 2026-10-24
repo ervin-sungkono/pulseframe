@@ -66,6 +66,7 @@
   }
 
   & .subtitle-done {
+    width: 100%;
     grid-column: 1 / -1;
     grid-row: 5;
     margin: 0;

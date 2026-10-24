@@ -1181,7 +1181,6 @@ export default function Home() {
             </section>
           )}
           <SubtitleWorkspace
-            desktopLayout={desktopLayout}
             open={subtitleOpen}
             options={subtitleOptions}
             onRunningChange={setGenerationRunning}

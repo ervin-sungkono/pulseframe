@@ -1,8 +1,10 @@
 import { memo } from "react";
-import { useCompositionInteraction } from "@/lib/hooks/use-composition-interaction";
-import type { CanvasSelectionProps } from "./type";
+import {
+  useCompositionInteraction,
+  type CompositionInteractionOptions,
+} from "@/lib/hooks/use-composition-interaction";
 
-export const CanvasSelection = memo(function CanvasSelection(props: CanvasSelectionProps) {
+export const CanvasSelection = memo(function CanvasSelection(props: CompositionInteractionOptions) {
   const { selected, ...handlers } = useCompositionInteraction(props);
   return (
     <div

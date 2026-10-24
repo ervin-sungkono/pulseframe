@@ -31,7 +31,26 @@ checks pass. Coverage includes legacy projects, version-3 asset round trips,
 concurrent canvas edits, preview warming, motion synchronization, and export
 snapshots remaining stable after the original composition and image Map change.
 
-Final browser checks are recorded below after the desktop/mobile walkthrough.
+Luna user-style Chromium checks covered 1440/1100/1024/768/390/320 px. They
+passed SRT import and cue-preview autoplay, text/shape/image editing, numeric
+positions, bounded canvas dragging, undo/redo, and project save/reopen with
+restored image pixels, text, Spectrum, square aspect and subtitles. No horizontal
+overflow, page errors or external/model/cloud requests were observed.
+
+The walkthrough caught a split regression: compact Subtitles used the old modal
+and covered the preview. It now renders inline in the workspace at every size.
+Retests at 1100/1024/768/390/320 px verified zero dialogs, visible preview centers,
+and scrolling to the final cue without covering the preview. Design/Layers/
+Subtitles navigation and Import/Generate tabs remain usable. Mocked generation
+left Home and CustomizerPanel render counts unchanged across five progress ticks.
+The primary agent reviewed the phone capture and widened the Done action to
+match its editor panel.
+
+A separate browser check confirmed WASM temporal analysis, saved a PNG containing
+an edited text layer, and exported seconds 3–5 to an 854×480, 30 FPS VP9/Opus
+WebM (816,875 bytes). FFmpeg decoded it completely; cancellation unlocked the
+controls. JavaScript fallback playback reported temporal analysis unavailable,
+as expected.
 
 ## Limits
 
