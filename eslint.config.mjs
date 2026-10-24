@@ -6,13 +6,13 @@ import eslintConfigPrettier from "eslint-config-prettier";
 
 export default defineConfig([
   globalIgnores([
-    "app/dist/**",
+    "dist/**",
     "build/**",
-    "app/outputs/**",
-    "app/work/**",
-    "app/public/dsp/**",
-    "app/public/mdx-ort/**",
-    "app/public/whisper-ort/**",
+    "outputs/**",
+    "work/**",
+    "src/public/dsp/**",
+    "src/public/mdx-ort/**",
+    "src/public/whisper-ort/**",
     "crates/pulseframe-dsp/target/**",
   ]),
   { ...js.configs.recommended, files: ["**/*.{ts,tsx}"] },

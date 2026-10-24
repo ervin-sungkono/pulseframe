@@ -13,23 +13,23 @@ encoding run on the user's device; keep uploaded media local.
 
 Read `docs/architecture.md` for the current architecture, feature contracts,
 subtitle setup, export behavior and DSP requirements. Use the checked-out source
-and `app/package.json` as the source of truth. The root package forwards commands
-to the application package; shared build tools live in `scripts/`.
+and root `package.json` as the source of truth. Shared build tools live in
+`scripts/`.
 
 ## Architecture and engineering principles
 
 - Preserve the existing MVC arrangement: React components are views, hooks
   orchestrate controllers, and settings, validation, serialization and DSP
   calculations belong in UI-independent models.
-- `app/components/Home/index.tsx` composes the editor; `app/components/` presents controls and dialogs.
+- `src/components/Home/index.tsx` composes the editor; `src/components/` presents controls and dialogs.
   Keep audio analysis, persistence rules and export algorithms out of views.
 - Components use PascalCase folders with their exported function in `index.tsx`;
   add `type.ts`, `const.ts` or `style.css` only for meaningful owned content.
   Use native nested CSS and kebab-case classes. Keep shared tokens global.
-- `app/lib/hooks/` owns application orchestration, state transitions and cleanup.
+- `src/lib/hooks/` owns application orchestration, state transitions and cleanup.
   Delegate drawing to the canvas renderer rather than duplicating drawing code
   in controllers.
-- `app/lib/` contains several roles, not just models. `audio/`, `media/`,
+- `src/lib/` contains several roles, not just models. `audio/`, `media/`,
   `visual/`, `export/`, `persistence/`, `subtitles/` and `lyrics/` group the
   related modules; `dsp/` owns Rust/WASM adapters. Settings and file contracts
   must not depend on components or hooks. `visual/visualizer.ts` and its drawing
@@ -63,7 +63,7 @@ to the application package; shared build tools live in `scripts/`.
   preparation, rendering and finalization; learn rendering rates after warmup.
   Store only bounded, expiring successful-run timings and show uncertainty.
 
-On branches containing `crates/pulseframe-dsp` and `app/lib/dsp`:
+On branches containing `crates/pulseframe-dsp` and `src/lib/dsp`:
 
 - Rust implements DSP calculations; browser/worker adapters manage WASM and
   application integration. Keep UI, canvas and encoding code outside Rust.
@@ -71,7 +71,7 @@ On branches containing `crates/pulseframe-dsp` and `app/lib/dsp`:
   checks, bounded worker chunks and cancellation behavior.
 - Free WASM handles exactly once and refresh memory views after memory growth.
   Copy results that must outlive a WASM call; do not expose stale borrowed views.
-- Regenerate `app/public/dsp/` through `pnpm dsp:build`; do not hand-edit bindings or
+- Regenerate `src/public/dsp/` through `pnpm dsp:build`; do not hand-edit bindings or
   binaries. Keep Rust and wasm-bindgen versions aligned with the checked-in
   toolchain, build script and lockfile.
 - Benchmark analysis separately from decoding, rendering and encoding. Report
@@ -108,8 +108,8 @@ On branches containing `crates/pulseframe-dsp` and `app/lib/dsp`:
   confirmation, revision conflict handling and cross-tab refresh. Do not add
   account authentication or a persistence service without a concrete requirement.
 - For Vercel deployment, use the Git-connected project and the reviewed commit.
-  Use Vercel Root Directory `app`, allow source files outside that directory for
-  shared scripts, and keep the Vite build and `dist/` output in `app/vercel.json`. Verify the
+  Use the repository root as Vercel Root Directory and keep the Vite build and
+  `dist/` output settings in the root `vercel.json`. Verify the
   hosted worker uses WASM and the exported video decodes, not just that assets load.
 - Preserve project-file compatibility. Project files transfer media and appearance
   across browser origins; saved Quick Looks remain local to each origin.

@@ -7,15 +7,15 @@
 .env*
 
 # Build, test and generated local output
-/app/dist/
+/dist/
 /build/
 /coverage/
 *.tsbuildinfo
 __pycache__/
 /crates/pulseframe-dsp/target/
-/app/public/.dsp-build/
-/app/outputs/
-/app/work/
+/src/public/.dsp-build/
+/outputs/
+/work/
 
 # Editor / operating-system files and logs
 .DS_Store
@@ -26,5 +26,5 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # Generated browser inference runtimes
-/app/public/mdx-ort/
-/app/public/whisper-ort/
+/src/public/mdx-ort/
+/src/public/whisper-ort/

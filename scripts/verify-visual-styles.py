@@ -25,7 +25,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-REFERENCE = ROOT / 'app' / 'tests' / 'fixtures' / 'visual-style-reference.json'
+REFERENCE = ROOT / 'src' / 'tests' / 'fixtures' / 'visual-style-reference.json'
 OUT = Path('/tmp/pulseframe-visual-styles')
 SIGNATURE_MAE_LIMIT = 3.0
 BOUNDS_TOLERANCE = 1
@@ -40,13 +40,13 @@ SETUP_JS = r"""async () => {
     { styleResponseHistory },
     { createTerrainSampleBuffer, terrainResolution, sampleTerrain, projectTerrain },
   ] = await Promise.all([
-    import('/lib/visual/visualizer.ts'),
-    import('/lib/visual/customizer-config.ts'),
-    import('/lib/audio/pcm-features.ts'),
-    import('/lib/visual/styles/frequency-history.ts'),
-    import('/lib/visual/styles/radial-spectrum.ts'),
-    import('/lib/visual/styles/audio-response.ts'),
-    import('/lib/visual/styles/spectral-terrain.ts'),
+    import('/src/lib/visual/visualizer.ts'),
+    import('/src/lib/visual/customizer-config.ts'),
+    import('/src/lib/audio/pcm-features.ts'),
+    import('/src/lib/visual/styles/frequency-history.ts'),
+    import('/src/lib/visual/styles/radial-spectrum.ts'),
+    import('/src/lib/visual/styles/audio-response.ts'),
+    import('/src/lib/visual/styles/spectral-terrain.ts'),
   ]);
   const sampleRate = 48000;
   const durationSeconds = 6;
@@ -598,7 +598,7 @@ def main() -> None:
 
     metadata = {
       'generatedAtUtc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-      'sourceRenderer': 'app/lib/visual/visualizer.ts drawVisualization → app/lib/visual/styles/registry.ts',
+      'sourceRenderer': 'src/lib/visual/visualizer.ts drawVisualization → src/lib/visual/styles/registry.ts',
       'sourceAudio': 'PcmFeatures JavaScript backend, generated before timing; PreparedFrequencyHistory instantiated once per draw run and reused throughout its frames',
       'browser': '/usr/bin/chromium, headless Playwright Chromium',
       'host': 'Managed Linux execution host; desktop render canvas is 1280x720 at deviceScaleFactor=1',

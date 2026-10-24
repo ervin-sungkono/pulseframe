@@ -1,4 +1,4 @@
-import { handleGeminiLyricsRequest } from "../../lib/lyrics/gemini-server.js";
+import { handleGeminiLyricsRequest } from "../../src/lib/lyrics/gemini-server.js";
 
 /** Vercel's Node.js Web Request entry point preserves request cancellation and streamed body limits. */
 export default {

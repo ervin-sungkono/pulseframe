@@ -13,8 +13,8 @@ const target = path.join(
   "release",
   "pulseframe_dsp.wasm",
 );
-const output = path.join(root, "app", "public", "dsp");
-const staging = path.join(root, "app", "public", ".dsp-build");
+const output = path.join(root, "src", "public", "dsp");
+const staging = path.join(root, "src", "public", ".dsp-build");
 const cargoHome = path.resolve(root, process.env.CARGO_HOME || path.join(os.homedir(), ".cargo"));
 // Remap source and registry paths embedded in Wasm panic metadata. Keep these
 // flags controlled so identical sources build byte-for-byte from other roots.
