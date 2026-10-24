@@ -8,7 +8,6 @@ export type PresetDialogProps = {
   settings: VisualSettings;
   library: PresetLibrary;
   currentPreset?: SavedPreset | null;
-  onApply: (preset: SavedPreset) => void;
   onSaved?: (preset: SavedPreset) => void;
   onMetadataChanged?: (preset: SavedPreset) => void;
   onDeleted?: (id: string) => void;

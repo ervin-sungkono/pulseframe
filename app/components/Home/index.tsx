@@ -6,7 +6,7 @@ import {
   type ExportResolution,
 } from "@/lib/export/export-settings";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AudioLines,
   Captions,
@@ -73,6 +73,7 @@ import { useMediaSession } from "@/lib/hooks/use-media-session";
 import { useVisualizerPreview } from "@/lib/hooks/use-visualizer-preview";
 import { TrackWaveform } from "@/components/TrackWaveform";
 import type { VisualSettings } from "@/lib/visual/visual-settings-model";
+import { EditorActionsContext } from "@/lib/hooks/use-editor-actions";
 
 const friendlySize = (bytes: number) =>
   bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
@@ -261,55 +262,90 @@ export default function Home() {
     setMediaLoop(looping);
   }, [looping, setMediaLoop]);
 
-  const update = <K extends keyof VisualSettings>(
-    key: K,
-    value: VisualSettings[K],
-    historyGroup?: string,
-  ) => {
-    if (!exportingRef.current)
-      setSettings((current) => ({ ...current, [key]: value }), historyGroup ?? key);
-  };
-  const applyLook = (changes: Partial<VisualSettings>) => {
-    if (!exportingRef.current) setSettings((current) => ({ ...current, ...changes }));
-  };
-  const applySavedLook = (preset: SavedPreset) => {
-    if (exportingRef.current) return;
-    setSettings((current) => applyPreset(current, preset.settings));
-    setActiveLook({
-      id: preset.id,
-      name: preset.name,
-      settings: preset.settings,
-      preset,
-    });
-    setNotice(`Applied “${preset.name}”.`);
-  };
-  const applyBuiltinLook = (look: (typeof BUILTIN_LOOKS)[number]) => {
-    if (exportingRef.current) return;
-    setSettings((current) => applyPreset(current, look.settings));
-    setActiveLook({ id: look.id, name: look.name, settings: look.settings });
-    setNotice(`Applied “${look.name}”.`);
-  };
-  const resetAppearance = () => {
+  const updateVisualSetting = useCallback(
+    <K extends keyof VisualSettings>(key: K, value: VisualSettings[K], historyGroup?: string) => {
+      if (!exportingRef.current)
+        setSettings((current) => ({ ...current, [key]: value }), historyGroup ?? key);
+    },
+    [setSettings],
+  );
+  const patchVisualSettings = useCallback(
+    (changes: Partial<VisualSettings>) => {
+      if (!exportingRef.current) setSettings((current) => ({ ...current, ...changes }));
+    },
+    [setSettings],
+  );
+  const applySavedLook = useCallback(
+    (preset: SavedPreset) => {
+      if (exportingRef.current) return;
+      setSettings((current) => applyPreset(current, preset.settings));
+      setActiveLook({
+        id: preset.id,
+        name: preset.name,
+        settings: preset.settings,
+        preset,
+      });
+      setNotice(`Applied “${preset.name}”.`);
+    },
+    [setSettings],
+  );
+  const applyBuiltinLook = useCallback(
+    (look: (typeof BUILTIN_LOOKS)[number]) => {
+      if (exportingRef.current) return;
+      setSettings((current) => applyPreset(current, look.settings));
+      setActiveLook({ id: look.id, name: look.name, settings: look.settings });
+      setNotice(`Applied “${look.name}”.`);
+    },
+    [setSettings],
+  );
+  const resetAppearance = useCallback(() => {
     if (exportingRef.current) return;
     setSettings((current) => applyPreset(current, presetStyle(DEFAULT_SETTINGS)));
     setActiveLook(null);
     setNotice("Appearance reset. Your track text and project assets are preserved.");
-  };
-  const resetSection = (section: CustomizerSection) => {
-    if (exportingRef.current) return;
-    const baseline = activeLook?.settings ?? presetStyle(DEFAULT_SETTINGS);
-    setSettings((current) => {
-      const next = { ...current };
-      for (const key of SECTION_KEYS[section]) {
-        if (key === "trackTitle" || key === "trackArtist") continue;
-        Object.assign(next, {
-          [key]: structuredClone(baseline[key as keyof typeof baseline]),
-        });
-      }
-      return next;
-    });
-    setNotice(`Reset ${section} settings to ${activeLook ? `“${activeLook.name}”` : "defaults"}.`);
-  };
+  }, [setSettings]);
+  const resetVisualSection = useCallback(
+    (section: CustomizerSection) => {
+      if (exportingRef.current) return;
+      const baseline = activeLook?.settings ?? presetStyle(DEFAULT_SETTINGS);
+      setSettings((current) => {
+        const next = { ...current };
+        for (const key of SECTION_KEYS[section]) {
+          if (key === "trackTitle" || key === "trackArtist") continue;
+          Object.assign(next, {
+            [key]: structuredClone(baseline[key as keyof typeof baseline]),
+          });
+        }
+        return next;
+      });
+      setNotice(
+        `Reset ${section} settings to ${activeLook ? `“${activeLook.name}”` : "defaults"}.`,
+      );
+    },
+    [activeLook, setSettings],
+  );
+  const editorActions = useMemo(
+    () => ({
+      updateVisualSetting,
+      patchVisualSettings,
+      resetVisualSection,
+      resetAppearance,
+      applyBuiltinLook,
+      applySavedLook,
+      undo,
+      redo,
+    }),
+    [
+      updateVisualSetting,
+      patchVisualSettings,
+      resetVisualSection,
+      resetAppearance,
+      applyBuiltinLook,
+      applySavedLook,
+      undo,
+      redo,
+    ],
+  );
   const currentPreset = activeLook?.preset
     ? (library.pinnedPresets.find((item) => item.id === activeLook.id) ??
       library.presets.find((item) => item.id === activeLook.id) ??
@@ -352,10 +388,6 @@ export default function Home() {
       disabled={exporting}
       canUndo={canUndo}
       canRedo={canRedo}
-      onUndo={undo}
-      onRedo={redo}
-      onApplyBuiltin={applyBuiltinLook}
-      onApplyPreset={applySavedLook}
       onSave={() => saveQuickLook()}
       onUpdate={(preset) => saveQuickLook(preset)}
       onManage={() => setPresetOpen(true)}
@@ -369,12 +401,9 @@ export default function Home() {
   const changeBackground = mediaSession.changeBackground;
   const customizerPanelProps = {
     settings,
-    onChange: update,
     isVideo,
     quickLooks,
     disabled: exporting,
-    onPatch: applyLook,
-    onResetSection: resetSection,
     logoName,
     logoUrl,
     onLogoFile: changeLogo,
@@ -382,7 +411,6 @@ export default function Home() {
     backgroundUrl,
     assetsDisabled: sourceBusy,
     onBackgroundFile: changeBackground,
-    onReset: resetAppearance,
   };
   const previewRange = async () => {
     if (await mediaSession.previewRange(range)) setExportOpen(false);
@@ -551,7 +579,7 @@ export default function Home() {
     },
   };
 
-  return (
+  const editorWorkspace = (
     <main className={`studio-shell ${focusView ? "focus-view" : ""}`}>
       <header className="topbar">
         <div className="brand" aria-label="Pulseframe">
@@ -983,7 +1011,6 @@ export default function Home() {
         settings={settings}
         library={library}
         currentPreset={currentPreset}
-        onApply={applySavedLook}
         onSaved={lookSaved}
         onMetadataChanged={lookMetadataChanged}
         onDeleted={(id) => {
@@ -1099,5 +1126,10 @@ export default function Home() {
         </div>
       )}
     </main>
+  );
+  return (
+    <EditorActionsContext.Provider value={editorActions}>
+      {editorWorkspace}
+    </EditorActionsContext.Provider>
   );
 }
