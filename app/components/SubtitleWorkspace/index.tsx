@@ -1,17 +1,8 @@
-import { useEffect, type ComponentProps } from "react";
+import { useEffect } from "react";
 import { SubtitleDialog, SubtitleEditor } from "@/components/SubtitleDialog";
 import { SubtitleGenerationStatus } from "@/components/SubtitleGenerationPanel";
-import type { UseSubtitleGenerationOptions } from "@/lib/hooks/use-subtitle-generation";
+import type { SubtitleWorkspaceProps } from "./type";
 import { useSubtitleGeneration } from "@/lib/hooks/use-subtitle-generation";
-
-type SubtitleEditorProps = Omit<ComponentProps<typeof SubtitleEditor>, "generation" | "inline">;
-
-type SubtitleWorkspaceProps = SubtitleEditorProps & {
-  desktopLayout: boolean;
-  open: boolean;
-  options: UseSubtitleGenerationOptions;
-  onRunningChange: (running: boolean) => void;
-};
 
 /** Keeps generation state alive while the editor changes between inline and modal layouts. */
 export function SubtitleWorkspace({

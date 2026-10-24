@@ -380,6 +380,7 @@ export default function Home() {
     onLogoFile: changeLogo,
     backgroundName,
     backgroundUrl,
+    assetsDisabled: sourceBusy,
     onBackgroundFile: changeBackground,
     onReset: resetAppearance,
   };
@@ -962,7 +963,7 @@ export default function Home() {
         exporting={videoExporting}
         progress={progress}
         estimateBeforeExport={estimateBeforeExport}
-        onExport={exportVideo}
+        onExport={() => void exportVideo()}
         exportReady={!capabilityChecking && (!capabilities || capabilities.supported)}
         exportHint={
           capabilityChecking
