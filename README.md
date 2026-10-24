@@ -28,12 +28,11 @@ Rust/WASM analysis assets; see the architecture guide for the required toolchain
 
 ## Deployment
 
-After the branch is merged, set Vercel's project root to `app` and allow the
-build to access repository-root workspace and tooling files. The deployed
-static app uses the checked-in DSP assets and does not require Rust. Gemini
+After the branch is merged, use the repository root as Vercel's project root.
+The deployed static app uses the checked-in DSP assets and does not require Rust. Gemini
 subtitle generation requires a user-supplied session key through the same-origin
 serverless function. Only the non-secret `GEMINI_MODEL` override is optional.
 
 `pnpm lint` runs ESLint and Stylelint; Prettier handles spacing and newlines.
 Components use `ComponentName/index.tsx` with optional owned types, constants
-and styles; controller hooks live under `app/lib/hooks/`.
+and styles; controller hooks live under `src/lib/hooks/`.

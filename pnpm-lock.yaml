@@ -6,9 +6,7 @@ settings:
 
 importers:
 
-  .: {}
-
-  app:
+  .:
     dependencies:
       '@huggingface/transformers':
         specifier: 3.8.1

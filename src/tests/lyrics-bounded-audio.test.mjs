@@ -5,16 +5,16 @@ import { createServer } from "vite";
 
 test("bounded local audio preparation preserves resampling, cancellation, and duration limits", async (t) => {
   const vite = await createServer({
-    root: fileURLToPath(new URL("..", import.meta.url)),
+    root: fileURLToPath(new URL("../..", import.meta.url)),
     configFile: false,
     logLevel: "silent",
     server: { middlewareMode: true },
   });
 
   try {
-    const audio = await vite.ssrLoadModule("/lib/lyrics/audio.ts");
-    const policy = await vite.ssrLoadModule("/lib/lyrics/policy.ts");
-    const protocol = await vite.ssrLoadModule("/lib/lyrics/worker-protocol.ts");
+    const audio = await vite.ssrLoadModule("/src/lib/lyrics/audio.ts");
+    const policy = await vite.ssrLoadModule("/src/lib/lyrics/policy.ts");
+    const protocol = await vite.ssrLoadModule("/src/lib/lyrics/worker-protocol.ts");
 
     await t.test("bounded slices match full-track FIR output at every boundary", async () => {
       const length = 150_123;

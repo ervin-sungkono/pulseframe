@@ -8,10 +8,12 @@ method and confirms the upload.
 
 ## Source layout
 
-- `app/` contains the browser application, Vite entry/configuration, serverless
-  subtitle handler, public assets and application tests. `app/components/Home/index.tsx` composes
-  the editor; `app/components/` renders controls and dialogs; `app/lib/hooks/`
-  coordinates editor and media lifecycles. `app/lib/` groups audio analysis in
+- The repository root contains package and Vite configuration, the serverless
+  subtitle handler, documentation and scripts. Vercel and Vite both use this
+  root, and builds output to root `dist/`. `src/` contains browser code, static
+  public assets and application tests: `src/components/Home/index.tsx` composes the editor,
+  `src/components/` renders controls and dialogs, and `src/lib/hooks/`
+  coordinates editor and media lifecycles. `src/lib/` groups audio analysis in
   `audio/`, browser resources in `media/`, settings and rendering in `visual/`,
   video jobs in `export/`, saved data and project files in `persistence/`, and
   caption logic in `subtitles/` and `lyrics/`. `dsp/` owns the worker and
@@ -20,18 +22,15 @@ method and confirms the upload.
 - `scripts/` contains root development helpers, runtime-asset preparation,
   reproducible DSP generation and benchmarks.
 - `crates/pulseframe-dsp/` contains the Rust DSP crate. Its generated browser
-  bindings and WASM are checked in under `app/public/dsp/` so deployment does
+  bindings and WASM are checked in under `src/public/dsp/` so deployment does
   not need Rust.
-- Root package commands are the supported shortcuts for developing and
-  building the app from the repository. Vercel's project root is `app`; because
-  installation and build tooling also use repository-root files, enable access
-  to source files outside that root in the Vercel project settings when applying
-  the root-directory change.
+- Root package commands are the supported commands for developing and building
+  the app. Vercel uses the repository root and the root `vercel.json`.
 
 Components live in PascalCase folders: `index.tsx` defines the exported view,
 `type.ts` holds meaningful component-specific contracts, `const.ts` holds static
 configuration, and `style.css` holds owned rules. Optional files are omitted
-when unnecessary. Shared UI wrappers remain under `components/ui/`. CSS uses
+when unnecessary. Shared UI wrappers remain under `src/components/ui/`. CSS uses
 native nesting and kebab-case classes; the entry point imports the style sheets
 in explicit cascade order. ESLint and Stylelint recommended rules run together
 through `pnpm lint`; Prettier owns formatting and trailing newlines. The empty
@@ -39,7 +38,7 @@ vendor placeholder was removed; generated DSP assets remain intentional.
 
 ```mermaid
 flowchart LR
-  Entry[app/main.tsx] --> Editor[React editor]
+  Entry[src/main.tsx] --> Editor[React editor]
   Editor --> Controllers[Controller hooks]
   Controllers --> Session[Media session owner]
   Session --> Decode[Browser decode and live audio]
@@ -122,7 +121,7 @@ operate on the active source.
 
 ### Style rendering and source-time history
 
-`app/lib/visual/styles/types.ts` defines the React-independent style contract.
+`src/lib/visual/styles/types.ts` defines the React-independent style contract.
 The static registry chooses one primary renderer. Background/video, atmosphere,
 lighting, particles, logo fitting, titles and subtitles remain in the shared
 `drawVisualization` pipeline used by preview, PNG capture and video export.
@@ -231,7 +230,7 @@ measured response. Titles, timer and subtitles remain steady for readability.
 Both effects start off, including when loading older projects or Quick Looks,
 and respect reduced motion in preview, PNG capture and video export.
 
-`app/lib/visual/motion.ts` computes pure transforms from absolute media time,
+`src/lib/visual/motion.ts` computes pure transforms from absolute media time,
 dimensions, settings and the existing audio response. The shared canvas renderer
 applies camera and object transforms, then restores screen coordinates before
 drawing text. The logo receives matching transforms while retaining its layer
@@ -349,7 +348,7 @@ found. Resolve the weight terms before redistributing them. The Rust crate's
 
 The browser inference runtimes are pinned to Transformers.js 3.8.1 and
 ONNX Runtime Web 1.22.0. `pnpm dev` and `pnpm build` prepare the separate
-`app/public/whisper-ort/` and `app/public/mdx-ort/` runtime asset directories
+`src/public/whisper-ort/` and `src/public/mdx-ort/` runtime asset directories
 from installed packages. The deployment sends the COOP `same-origin` and COEP
 `credentialless` headers required by the worker configuration. Embedding the
 editor in another site's iframe may need different headers.

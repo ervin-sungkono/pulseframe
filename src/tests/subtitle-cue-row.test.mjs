@@ -7,14 +7,14 @@ import { createServer } from "vite";
 
 test("memoized cue rows keep playback enabled while generation locks cue editing", async () => {
   const vite = await createServer({
-    root: fileURLToPath(new URL("..", import.meta.url)),
-    configFile: fileURLToPath(new URL("../vite.config.ts", import.meta.url)),
+    root: fileURLToPath(new URL("../..", import.meta.url)),
+    configFile: fileURLToPath(new URL("../../vite.config.ts", import.meta.url)),
     logLevel: "silent",
     server: { middlewareMode: true },
   });
 
   try {
-    const { SubtitleCueRow } = await vite.ssrLoadModule("/components/SubtitleCueRow/index.tsx");
+    const { SubtitleCueRow } = await vite.ssrLoadModule("/src/components/SubtitleCueRow/index.tsx");
     assert.equal(SubtitleCueRow.$$typeof, Symbol.for("react.memo"));
     const markup = renderToStaticMarkup(
       React.createElement(SubtitleCueRow, {

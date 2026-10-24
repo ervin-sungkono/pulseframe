@@ -10,7 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { performance } from "node:perf_hooks";
-import ts from "../app/node_modules/typescript/lib/typescript.js";
+import ts from "../node_modules/typescript/lib/typescript.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DURATION_SECONDS = Number(process.argv[3] ?? 300);
@@ -35,15 +35,15 @@ if (!Number.isInteger(PAIRS) || PAIRS < 1 || PAIRS > 3)
   throw new Error("Paired runs must be 1..3; default is 3.");
 
 const sourceModules = [
-  ["app/lib/audio/audio-analysis-config.ts", "audio/audio-analysis-config.mjs"],
-  ["app/lib/audio/audio-dsp.mjs", "audio/audio-dsp.mjs"],
-  ["app/lib/audio/art-reactivity.mjs", "audio/art-reactivity.mjs"],
-  ["app/lib/audio/drop-detector.mjs", "audio/drop-detector.mjs"],
-  ["app/lib/audio/pcm-features.ts", "audio/pcm-features.mjs"],
-  ["app/lib/dsp/contracts.ts", "dsp/contracts.mjs"],
-  ["app/lib/dsp/loader.ts", "dsp/loader.mjs"],
-  ["app/lib/dsp/wasm-backend.ts", "dsp/wasm-backend.mjs"],
-  ["app/lib/dsp/analysis-worker.ts", "dsp/analysis-worker.mjs"],
+  ["src/lib/audio/audio-analysis-config.ts", "audio/audio-analysis-config.mjs"],
+  ["src/lib/audio/audio-dsp.mjs", "audio/audio-dsp.mjs"],
+  ["src/lib/audio/art-reactivity.mjs", "audio/art-reactivity.mjs"],
+  ["src/lib/audio/drop-detector.mjs", "audio/drop-detector.mjs"],
+  ["src/lib/audio/pcm-features.ts", "audio/pcm-features.mjs"],
+  ["src/lib/dsp/contracts.ts", "dsp/contracts.mjs"],
+  ["src/lib/dsp/loader.ts", "dsp/loader.mjs"],
+  ["src/lib/dsp/wasm-backend.ts", "dsp/wasm-backend.mjs"],
+  ["src/lib/dsp/analysis-worker.ts", "dsp/analysis-worker.mjs"],
 ];
 
 function instrumentWorker(source) {
@@ -120,12 +120,12 @@ function stageVariant(stageRoot, name, omitTemporalBinding) {
   mkdirSync(stagedDsp, { recursive: true });
   const stagedModule = join(stagedDsp, "pulseframe_dsp.mjs");
   const stagedWasm = join(stagedDsp, "pulseframe_dsp_bg.wasm");
-  cpSync(join(ROOT, "app/public/dsp/pulseframe_dsp.js"), stagedModule);
-  cpSync(join(ROOT, "app/public/dsp/pulseframe_dsp_bg.wasm"), stagedWasm);
+  cpSync(join(ROOT, "src/public/dsp/pulseframe_dsp.js"), stagedModule);
+  cpSync(join(ROOT, "src/public/dsp/pulseframe_dsp_bg.wasm"), stagedWasm);
 
   for (const [repoPath, outputPath] of sourceModules) {
     let source = readFileSync(join(ROOT, repoPath), "utf8");
-    if (repoPath === "app/lib/dsp/loader.ts") {
+    if (repoPath === "src/lib/dsp/loader.ts") {
       source = source
         .replace('"/dsp/pulseframe_dsp.js"', JSON.stringify(pathToFileURL(stagedModule).href))
         .replace('"/dsp/pulseframe_dsp_bg.wasm"', JSON.stringify(pathToFileURL(stagedWasm).href));
@@ -136,8 +136,8 @@ function stageVariant(stageRoot, name, omitTemporalBinding) {
         source = source.replace(moduleAnchor, `${moduleAnchor}\n  delete dspModule.TemporalDsp;`);
       }
     }
-    if (repoPath === "app/lib/dsp/wasm-backend.ts") source = instrumentWasmCleanup(source);
-    if (repoPath === "app/lib/dsp/analysis-worker.ts") source = instrumentWorker(source);
+    if (repoPath === "src/lib/dsp/wasm-backend.ts") source = instrumentWasmCleanup(source);
+    if (repoPath === "src/lib/dsp/analysis-worker.ts") source = instrumentWorker(source);
     const output = repoPath.endsWith(".ts")
       ? ts.transpileModule(source, {
           compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
@@ -614,14 +614,14 @@ async function main() {
         architecture: process.arch,
         cpuModel: cpus()[0]?.model ?? "unknown",
         logicalCpuCount: cpus().length,
-        wasmAssets: "checked-in app/public/dsp assets",
+        wasmAssets: "checked-in src/public/dsp assets",
         actualWorker: true,
       },
       method: {
         baselineSource:
           "working-tree worker and FrameDsp adapters with TemporalDsp omitted from the staged optional WASM binding",
         preparedSource:
-          "working-tree app/lib/dsp and app/lib/audio/pcm-features.ts with the compiled TemporalDsp binding",
+          "working-tree src/lib/dsp and src/lib/audio/pcm-features.ts with the compiled TemporalDsp binding",
         pairedRuns: PAIRS,
         durationSeconds: DURATION_SECONDS,
         warmups: 1,

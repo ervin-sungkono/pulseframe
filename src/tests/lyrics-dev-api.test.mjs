@@ -68,21 +68,21 @@ async function invoke(middleware, body) {
 
 test("lyrics dev API accepts 100-second requests and matches canonical error responses", async () => {
   const vite = await createServer({
-    root: fileURLToPath(new URL("..", import.meta.url)),
+    root: fileURLToPath(new URL("../..", import.meta.url)),
     configFile: false,
     logLevel: "silent",
     server: { middlewareMode: true },
   });
 
   try {
-    const { lyricsDevApi } = await vite.ssrLoadModule("/lib/lyrics/dev-api.ts");
+    const { lyricsDevApi } = await vite.ssrLoadModule("/src/lib/lyrics/dev-api.ts");
     const {
       GEMINI_MAX_REQUEST_BYTES,
       GEMINI_MAX_WAV_BYTES,
       GEMINI_SAMPLE_RATE,
       GEMINI_AUDIO_CHUNK_MS,
       geminiTranscriptionRequestSchema,
-    } = await vite.ssrLoadModule("/lib/lyrics/gemini-contract.ts");
+    } = await vite.ssrLoadModule("/src/lib/lyrics/gemini-contract.ts");
 
     let middleware;
     let routeCalls = 0;

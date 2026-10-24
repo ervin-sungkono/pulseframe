@@ -7,15 +7,15 @@ import { createServer } from "vite";
 
 test("editor actions require a provider and remain scoped to each editor", async () => {
   const vite = await createServer({
-    root: fileURLToPath(new URL("..", import.meta.url)),
-    configFile: fileURLToPath(new URL("../vite.config.ts", import.meta.url)),
+    root: fileURLToPath(new URL("../..", import.meta.url)),
+    configFile: fileURLToPath(new URL("../../vite.config.ts", import.meta.url)),
     logLevel: "silent",
     server: { middlewareMode: true },
   });
 
   try {
     const { EditorActionsContext, useEditorActions } = await vite.ssrLoadModule(
-      "/lib/hooks/use-editor-actions.ts",
+      "/src/lib/hooks/use-editor-actions.ts",
     );
     function ActionProbe() {
       return React.createElement("span", null, useEditorActions().label);

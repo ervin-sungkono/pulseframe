@@ -36,7 +36,7 @@ jobs:
       - run: cargo install wasm-bindgen-cli --version 0.2.100 --locked
       - run: cargo test --locked --manifest-path crates/pulseframe-dsp/Cargo.toml
       - run: pnpm dsp:build
-      - run: git diff --exit-code -- app/public/dsp
+      - run: git diff --exit-code -- src/public/dsp
       - run: pnpm test
       - run: pnpm build
       - run: pnpm typecheck

@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const requireFromProject = createRequire(join(projectRoot, "app", "package.json"));
+const requireFromProject = createRequire(join(projectRoot, "package.json"));
 const transformersEntry = requireFromProject.resolve("@huggingface/transformers");
 const requireFromTransformers = createRequire(transformersEntry);
 
@@ -29,7 +29,7 @@ async function copyRuntime(label, entry, publicDirectory) {
   )
     throw new Error(`Could not find ONNX Runtime WASM assets for ${label} in ${distDirectory}.`);
 
-  const destination = join(projectRoot, "app", "public", publicDirectory);
+  const destination = join(projectRoot, "src", "public", publicDirectory);
   await rm(destination, { recursive: true, force: true });
   await mkdir(destination, { recursive: true });
   for (const file of runtimeFiles) await cp(join(distDirectory, file), join(destination, file));

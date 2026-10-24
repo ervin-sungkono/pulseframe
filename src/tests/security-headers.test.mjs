@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const config = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
+const config = JSON.parse(readFileSync(new URL("../../vercel.json", import.meta.url), "utf8"));
 const headers = config.headers.find(({ source }) => source === "/(.*)").headers;
 const headerValue = (name) =>
   headers.find(({ key }) => key.toLowerCase() === name.toLowerCase())?.value;

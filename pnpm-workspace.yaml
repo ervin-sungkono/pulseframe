@@ -1,7 +1,5 @@
-packages:
-  - app
 # Vaul references React types without declaring them as a peer dependency.
-# Keep those declarations visible to dependencies in the workspace store.
+# Keep those declarations visible to dependencies in the package store.
 publicHoistPattern:
   - "@types/react"
 minimumReleaseAge: 10080
