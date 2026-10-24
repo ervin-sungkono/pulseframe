@@ -4,6 +4,7 @@ import { Slider } from "@/components/ui/Slider";
 import { Switch } from "@/components/ui/Switch";
 import { palettes } from "@/lib/visual/customizer-config";
 import type { CustomizerSection } from "@/lib/visual/customizer-config";
+import { useEditorActions } from "@/lib/hooks/use-editor-actions";
 import {
   DEFAULT_LOGO_AUTO_FIT,
   DEFAULT_LOGO_FIT_SCALE,
@@ -246,11 +247,7 @@ export function CustomizerPanel({
   quickLooks,
   disabled = false,
   assetsDisabled = false,
-  onPatch,
-  onResetSection,
-  onChange,
   isVideo,
-  onReset,
   logoName,
   logoUrl,
   onLogoFile,
@@ -258,6 +255,8 @@ export function CustomizerPanel({
   backgroundUrl,
   onBackgroundFile,
 }: CustomizerPanelProps) {
+  const { updateVisualSetting, patchVisualSettings, resetVisualSection, resetAppearance } =
+    useEditorActions();
   const palette = palettes.find(
     (item) =>
       item.primary === settings.primary &&
@@ -272,10 +271,10 @@ export function CustomizerPanel({
     historyGroup?: string,
   ) => {
     if (disabled) return;
-    onChange(key, value, historyGroup);
+    updateVisualSetting(key, value, historyGroup);
   };
   const patch = (changes: Partial<VisualSettings>) => {
-    if (!disabled) onPatch(changes);
+    if (!disabled) patchVisualSettings(changes);
   };
   const updatePlacement = (key: keyof LogoPlacement, value: number) =>
     change("logoPlacements", {
@@ -306,7 +305,7 @@ export function CustomizerPanel({
             title="Visual"
             section="visual"
             initiallyOpen
-            onResetSection={onResetSection}
+            onResetSection={resetVisualSection}
           >
             <h4 className="control-subtitle">Visual style</h4>
             <div className="mode-grid">
@@ -590,7 +589,7 @@ export function CustomizerPanel({
             title="Colors & background"
             section="colors"
             initiallyOpen
-            onResetSection={onResetSection}
+            onResetSection={resetVisualSection}
           >
             <h4 className="control-subtitle">Color palette</h4>
             <div className="palette-list">
@@ -752,7 +751,7 @@ export function CustomizerPanel({
             number="03"
             title="Motion & effects"
             section="motion"
-            onResetSection={onResetSection}
+            onResetSection={resetVisualSection}
           >
             <div className="setting-choice">
               <span>Circle motion</span>
@@ -1033,7 +1032,7 @@ export function CustomizerPanel({
             number="04"
             title="Audio response"
             section="audio"
-            onResetSection={onResetSection}
+            onResetSection={resetVisualSection}
           >
             <p className="control-hint">
               Choose how quickly the visual reacts. The quiet cutoff still keeps it calm in silence.
@@ -1106,7 +1105,12 @@ export function CustomizerPanel({
             </div>
           </ControlSection>
 
-          <ControlSection number="05" title="Logo" section="logo" onResetSection={onResetSection}>
+          <ControlSection
+            number="05"
+            title="Logo"
+            section="logo"
+            onResetSection={resetVisualSection}
+          >
             <h4 className="control-subtitle">Logo overlay</h4>
             <p className="control-hint">One logo, with a separate layout for each visual style.</p>
             <div className="logo-row">
@@ -1251,7 +1255,7 @@ export function CustomizerPanel({
             number="06"
             title="Track details"
             section="track"
-            onResetSection={onResetSection}
+            onResetSection={resetVisualSection}
           >
             <p className="control-hint">
               Optional text that appears in the preview, saved frame, and video.
@@ -1484,7 +1488,7 @@ export function CustomizerPanel({
             )}
           </ControlSection>
 
-          <button type="button" className="reset-button" onClick={onReset}>
+          <button type="button" className="reset-button" onClick={resetAppearance}>
             <RotateCcw size={14} /> Reset appearance
           </button>
         </div>

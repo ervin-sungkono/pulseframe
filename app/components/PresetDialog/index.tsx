@@ -29,6 +29,7 @@ import {
 import { PresetSaveDialog } from "@/components/PresetSaveDialog";
 import { PresetStoreError } from "@/lib/persistence/preset-store";
 import { visualModeName, type SavedPreset } from "@/lib/visual/presets";
+import { useEditorActions } from "@/lib/hooks/use-editor-actions";
 import type { PresetDialogProps } from "./type";
 
 const errorMessage = (caught: unknown, fallback: string) =>
@@ -40,12 +41,12 @@ export function PresetDialog({
   settings,
   library,
   currentPreset = null,
-  onApply,
   onSaved,
   onMetadataChanged,
   onDeleted,
   onHelp,
 }: PresetDialogProps) {
+  const { applySavedLook } = useEditorActions();
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveTarget, setSaveTarget] = useState<SavedPreset | null>(null);
   const [rename, setRename] = useState<SavedPreset | null>(null);
@@ -278,7 +279,7 @@ export function PresetDialog({
                     className="button button-soft preset-apply"
                     disabled={busyId !== null}
                     onClick={() => {
-                      onApply(preset);
+                      applySavedLook(preset);
                       onOpenChange(false);
                     }}
                   >

@@ -66,6 +66,12 @@ the application model code. Browser APIs are wrapped by media, persistence,
 subtitle and encoder adapters. Preview and export share the canvas renderer and
 the same source-time audio-response calculations.
 
+Home owns visual settings and edit history. It provides the shared visual
+commands, Quick Look application, and undo/redo through an editor-scoped
+`EditorActionsContext`; controls still receive rendered settings, media details,
+and disabled state through props. Playback, subtitle generation, export
+progress, and media resources remain with their existing owners.
+
 ## Media and DSP lifecycle
 
 The editor handles one active track at a time. A replacement file or project is

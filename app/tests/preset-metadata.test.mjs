@@ -58,13 +58,24 @@ class HookHarness {
     return this.hooks[index];
   }
 
-  useCallback(callback) {
-    this.index++;
-    return callback;
+  useCallback(callback, dependencies) {
+    return this.useMemo(() => callback, dependencies);
   }
-  useMemo(factory) {
-    this.index++;
-    return factory();
+  useMemo(factory, dependencies) {
+    const index = this.index++;
+    const previous = this.hooks[index];
+    if (
+      previous &&
+      dependencies &&
+      previous.dependencies?.length === dependencies.length &&
+      dependencies.every((dependency, dependencyIndex) =>
+        Object.is(dependency, previous.dependencies[dependencyIndex]),
+      )
+    )
+      return previous.value;
+    const value = factory();
+    this.hooks[index] = { value, dependencies };
+    return value;
   }
   useEffect() {
     this.index++;
@@ -76,11 +87,15 @@ class HookHarness {
 }
 
 let activeHarness;
+const editorActionsContext = { Provider: Symbol("EditorActionsContext.Provider") };
+let activeEditorActions;
 const reactMock = {
+  createContext: () => editorActionsContext,
+  useContext: (context) => (context === editorActionsContext ? activeEditorActions : undefined),
   useState: (initial) => activeHarness.useState(initial),
   useRef: (initial) => activeHarness.useRef(initial),
-  useCallback: (callback) => activeHarness.useCallback(callback),
-  useMemo: (factory) => activeHarness.useMemo(factory),
+  useCallback: (callback, dependencies) => activeHarness.useCallback(callback, dependencies),
+  useMemo: (factory, dependencies) => activeHarness.useMemo(factory, dependencies),
   useEffect: (...args) => activeHarness.useEffect(...args),
 };
 
@@ -183,6 +198,7 @@ const stubComponent = () => null;
 const icons = new Proxy({}, { get: () => stubComponent });
 const presetSaveDialogStub = () => null;
 const customizerPanelStub = () => null;
+const subtitleWorkspaceStub = () => null;
 const exportDialogStub = () => null;
 const exportControllerCalls = [];
 const actualHomeConstants = compileTsx("../components/Home/const.ts", (id) => {
@@ -207,6 +223,8 @@ const uiAlertDialog = {
 };
 const presetComponentMocks = (id) => {
   if (id === "react") return reactMock;
+  if (id === "@/lib/hooks/use-editor-actions")
+    return { useEditorActions: () => reactMock.useContext(editorActionsContext) };
   if (id === "lucide-react") return icons;
   if (id === "@/components/ui/Dialog") return uiDialog;
   if (id === "@/components/ui/AlertDialog") return uiAlertDialog;
@@ -261,6 +279,8 @@ const appMockRequire = (id) => {
   if (id === "@/components/CustomizerPanel") return { CustomizerPanel: customizerPanelStub };
   if (id === "@/components/ExportDialog") return { ExportDialog: exportDialogStub };
   if (id === "@/components/PresetDialog") return { PresetDialog: actualPresetDialog };
+  if (id === "@/lib/hooks/use-editor-actions")
+    return { EditorActionsContext: editorActionsContext };
   if (id === "@/lib/visual/presets")
     return {
       applyPreset: (current, next) => ({
@@ -284,18 +304,19 @@ const appMockRequire = (id) => {
   if (id === "@/components/QuickLookStrip") return { QuickLookStrip: stubComponent };
   if (id === "@/components/PresetSaveDialog") return { PresetSaveDialog: presetSaveDialogStub };
   if (id === "@/components/Home/const") return actualHomeConstants;
-  if (id === "@/components/SubtitleWorkspace") return { SubtitleWorkspace: stubComponent };
+  if (id === "@/components/SubtitleWorkspace") return { SubtitleWorkspace: subtitleWorkspaceStub };
   if (id === "@/lib/hooks/use-presets") return { usePresets: () => library };
   if (id === "@/lib/hooks/use-settings-history")
     return {
       useSettingsHistory(initial) {
         const [value, setValue] = reactMock.useState(initial);
+        const update = reactMock.useCallback(setValue, []);
         return {
           value,
-          setValue,
-          resetValue: setValue,
-          undo() {},
-          redo() {},
+          setValue: update,
+          resetValue: update,
+          undo: reactMock.useCallback(() => {}, []),
+          redo: reactMock.useCallback(() => {}, []),
           canUndo: false,
           canRedo: false,
         };
@@ -378,7 +399,13 @@ const appMockRequire = (id) => {
 const Home = compileTsx("../components/Home/index.tsx", appMockRequire).default;
 const renderHome = () => {
   activeHarness = appHooks;
-  return appHooks.render(() => Home());
+  const tree = appHooks.render(() => Home());
+  activeEditorActions = find(
+    tree,
+    (node) => node.type === editorActionsContext.Provider,
+    "Home did not provide editor actions",
+  ).props.value;
+  return tree;
 };
 const renderPresetDialog = (props, harness = new HookHarness()) => {
   activeHarness = harness;
@@ -577,13 +604,8 @@ test("preset metadata refresh keeps the applied snapshot and routes explicit sav
   );
 
   // Section reset still uses A after the preset's remote settings have refreshed to C.
-  actionTree = renderHome();
-  const customizer = find(
-    actionTree,
-    (node) => node.type === customizerPanelStub,
-    "the page did not render its customizer",
-  );
-  customizer.props.onResetSection("colors");
+  renderHome();
+  activeEditorActions.resetVisualSection("colors");
   assert.equal(appHooks.hooks[settingsSlot].primary, originalA.settings.primary);
   assert.equal(appHooks.hooks[settingsSlot].secondary, originalA.settings.secondary);
   assert.equal(appHooks.hooks[settingsSlot].background, originalA.settings.background);
@@ -605,12 +627,7 @@ test("preset metadata refresh keeps the applied snapshot and routes explicit sav
   applyButton.props.onClick();
   assert.equal(appHooks.hooks[activeLookSlot].settings.primary, remoteC.settings.primary);
   actionTree = renderHome();
-  const customizerAfterApply = find(
-    actionTree,
-    (node) => node.type === customizerPanelStub,
-    "missing customizer after apply",
-  );
-  customizerAfterApply.props.onResetSection("colors");
+  activeEditorActions.resetVisualSection("colors");
   assert.equal(appHooks.hooks[settingsSlot].primary, remoteC.settings.primary);
   assert.equal(appHooks.hooks[settingsSlot].secondary, remoteC.settings.secondary);
   assert.equal(appHooks.hooks[settingsSlot].background, remoteC.settings.background);
@@ -658,4 +675,29 @@ test("Home drops the ExportDialog click event before calling the export controll
   exportDialog.props.onExport(clickEvent);
 
   assert.deepEqual(exportControllerCalls, [[]]);
+});
+
+test("Home keeps editor action context stable during subtitle progress updates", (t) => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { matchMedia: () => ({ matches: true }) },
+  });
+  t.after(() => {
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+    else delete globalThis.window;
+  });
+  appHooks.hooks = [];
+  let tree = renderHome();
+  const initialActions = activeEditorActions;
+  const workspace = find(
+    tree,
+    (node) => node.type === subtitleWorkspaceStub,
+    "missing subtitle workspace",
+  );
+
+  workspace.props.onRunningChange(true);
+  renderHome();
+
+  assert.equal(activeEditorActions, initialActions);
 });

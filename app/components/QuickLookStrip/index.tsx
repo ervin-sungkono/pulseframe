@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { Bookmark, Check, Plus, PinOff, RotateCcw, Undo2, Redo2 } from "lucide-react";
 import { BUILTIN_LOOKS } from "@/lib/visual/customizer-config";
 import { visualModeName, type PresetStyle, type SavedPreset } from "@/lib/visual/presets";
+import { useEditorActions } from "@/lib/hooks/use-editor-actions";
 import type { QuickLookStripProps } from "./type";
 
 export type { ActiveLook } from "./type";
@@ -28,23 +29,16 @@ export function QuickLookStrip({
   disabled,
   canUndo,
   canRedo,
-  onUndo,
-  onRedo,
-  onApplyBuiltin,
-  onApplyPreset,
   onSave,
   onUpdate,
   onManage,
   onPresetChanged,
 }: QuickLookStripProps) {
+  const { applyBuiltinLook, applySavedLook, undo, redo } = useEditorActions();
   const [view, setView] = useState<"builtin" | "personal">("builtin");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const saved = active?.preset
-    ? (library.pinnedPresets.find((item) => item.id === active.id) ??
-      library.presets.find((item) => item.id === active.id) ??
-      active.preset)
-    : null;
+  const saved = active?.preset ?? null;
   const unpin = async (preset: SavedPreset) => {
     setBusy(preset.id);
     setError(null);
@@ -100,7 +94,7 @@ export function QuickLookStrip({
                 className={`look-card ${selected ? "selected" : ""}`}
                 aria-pressed={selected}
                 disabled={disabled}
-                onClick={() => onApplyBuiltin(look)}
+                onClick={() => applyBuiltinLook(look)}
               >
                 <LookArt settings={look.settings} />
                 <strong>{look.name}</strong>
@@ -126,7 +120,7 @@ export function QuickLookStrip({
                     className={`look-card ${selected ? "selected" : ""}`}
                     aria-pressed={selected}
                     disabled={disabled || busy !== null}
-                    onClick={() => onApplyPreset(preset)}
+                    onClick={() => applySavedLook(preset)}
                   >
                     <LookArt settings={preset.settings} />
                     <strong>{preset.name}</strong>
@@ -199,20 +193,20 @@ export function QuickLookStrip({
         )}
       </div>
       <div className="settings-history">
-        <button aria-label="Undo customization" disabled={disabled || !canUndo} onClick={onUndo}>
+        <button aria-label="Undo customization" disabled={disabled || !canUndo} onClick={undo}>
           <Undo2 size={15} /> Undo
         </button>
-        <button aria-label="Redo customization" disabled={disabled || !canRedo} onClick={onRedo}>
+        <button aria-label="Redo customization" disabled={disabled || !canRedo} onClick={redo}>
           <Redo2 size={15} /> Redo
         </button>
         {active && modified && (
           <button
             disabled={disabled}
             onClick={() => {
-              if (active.preset) onApplyPreset(saved ?? active.preset);
+              if (active.preset) applySavedLook(saved ?? active.preset);
               else {
                 const look = BUILTIN_LOOKS.find((item) => item.id === active.id);
-                if (look) onApplyBuiltin(look);
+                if (look) applyBuiltinLook(look);
               }
             }}
           >
