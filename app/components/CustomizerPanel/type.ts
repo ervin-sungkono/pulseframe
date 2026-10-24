@@ -6,6 +6,7 @@ export type CustomizerPanelProps = {
   settings: VisualSettings;
   quickLooks?: ReactNode;
   disabled?: boolean;
+  assetsDisabled?: boolean;
   onPatch: (changes: Partial<VisualSettings>) => void;
   onResetSection: (section: CustomizerSection) => void;
   onChange: <K extends keyof VisualSettings>(

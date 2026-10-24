@@ -183,6 +183,8 @@ const stubComponent = () => null;
 const icons = new Proxy({}, { get: () => stubComponent });
 const presetSaveDialogStub = () => null;
 const customizerPanelStub = () => null;
+const exportDialogStub = () => null;
+const exportControllerCalls = [];
 const actualHomeConstants = compileTsx("../components/Home/const.ts", (id) => {
   throw new Error(`Unexpected Home constants import: ${id}`);
 });
@@ -257,7 +259,7 @@ const appMockRequire = (id) => {
     };
   if (id === "@/components/ui/Dialog") return uiDialog;
   if (id === "@/components/CustomizerPanel") return { CustomizerPanel: customizerPanelStub };
-  if (id === "@/components/ExportDialog") return { ExportDialog: stubComponent };
+  if (id === "@/components/ExportDialog") return { ExportDialog: exportDialogStub };
   if (id === "@/components/PresetDialog") return { PresetDialog: actualPresetDialog };
   if (id === "@/lib/visual/presets")
     return {
@@ -282,8 +284,7 @@ const appMockRequire = (id) => {
   if (id === "@/components/QuickLookStrip") return { QuickLookStrip: stubComponent };
   if (id === "@/components/PresetSaveDialog") return { PresetSaveDialog: presetSaveDialogStub };
   if (id === "@/components/Home/const") return actualHomeConstants;
-  if (id === "@/components/SubtitleWorkspace")
-    return { SubtitleWorkspace: stubComponent };
+  if (id === "@/components/SubtitleWorkspace") return { SubtitleWorkspace: stubComponent };
   if (id === "@/lib/hooks/use-presets") return { usePresets: () => library };
   if (id === "@/lib/hooks/use-settings-history")
     return {
@@ -336,7 +337,9 @@ const appMockRequire = (id) => {
       useExportController: () => ({
         exporting: false,
         progress: null,
-        exportVideo() {},
+        exportVideo(...args) {
+          exportControllerCalls.push(args);
+        },
         cancelExport() {},
       }),
     };
@@ -631,4 +634,28 @@ test("preset metadata refresh keeps the applied snapshot and routes explicit sav
     editedB,
     "a confirmed settings save did not update the applied snapshot",
   );
+});
+
+test("Home drops the ExportDialog click event before calling the export controller", (t) => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { matchMedia: () => ({ matches: true }) },
+  });
+  t.after(() => {
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+    else delete globalThis.window;
+  });
+
+  exportControllerCalls.length = 0;
+  const tree = renderHome();
+  const exportDialog = find(
+    tree,
+    (node) => node.type === exportDialogStub,
+    "missing export dialog",
+  );
+  const clickEvent = { nativeEvent: { type: "click" }, preventDefault() {} };
+  exportDialog.props.onExport(clickEvent);
+
+  assert.deepEqual(exportControllerCalls, [[]]);
 });

@@ -245,6 +245,7 @@ export function CustomizerPanel({
   settings,
   quickLooks,
   disabled = false,
+  assetsDisabled = false,
   onPatch,
   onResetSection,
   onChange,
@@ -697,7 +698,10 @@ export function CustomizerPanel({
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/webp,image/avif"
-                    disabled={disabled}
+                    disabled={disabled || assetsDisabled}
+                    title={
+                      assetsDisabled ? "Add images after subtitle generation finishes." : undefined
+                    }
                     onChange={(event) => {
                       const chosen = event.currentTarget.files?.[0];
                       if (chosen) onBackgroundFile(chosen);
@@ -709,6 +713,7 @@ export function CustomizerPanel({
                   <button
                     type="button"
                     className="logo-remove"
+                    disabled={assetsDisabled}
                     onClick={() => onBackgroundFile(null)}
                   >
                     <X size={15} /> Remove
@@ -750,13 +755,13 @@ export function CustomizerPanel({
             onResetSection={onResetSection}
           >
             <div className="setting-choice">
-              <span>Pulse Ring motion</span>
-              {settings.mode === "ring" ? (
+              <span>Circle motion</span>
+              {settings.mode === "ring" || settings.mode === "radial" ? (
                 <>
                   <div
                     className="pill-group motion-preset-group"
                     role="group"
-                    aria-label="Pulse Ring motion"
+                    aria-label="Circle motion"
                   >
                     {motionPresets.map(({ id, label }) => (
                       <button
@@ -815,7 +820,8 @@ export function CustomizerPanel({
                 </>
               ) : (
                 <p className="setting-hint">
-                  Select Pulse Ring to adjust ring motion. Your saved motion settings are kept.
+                  Select Pulse Ring or Radial Spectrum to adjust circle motion. Your saved motion
+                  settings are kept.
                 </p>
               )}
             </div>
@@ -853,7 +859,7 @@ export function CustomizerPanel({
               onChange={(value) => change("cameraShakeAmount", value)}
             />
             <p className="setting-hint">
-              Pulse Ring motion and camera shake respect your reduced motion preference.
+              Circle motion and camera shake respect your reduced motion preference.
             </p>
             <div className="toggle-line border-top">
               <div>
@@ -1123,7 +1129,10 @@ export function CustomizerPanel({
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
-                  disabled={disabled}
+                  disabled={disabled || assetsDisabled}
+                  title={
+                    assetsDisabled ? "Add images after subtitle generation finishes." : undefined
+                  }
                   onChange={(event) => {
                     const chosen = event.currentTarget.files?.[0];
                     if (chosen) onLogoFile(chosen);
@@ -1132,7 +1141,12 @@ export function CustomizerPanel({
                 />
               </label>
               {logoName && (
-                <button type="button" className="logo-remove" onClick={() => onLogoFile(null)}>
+                <button
+                  type="button"
+                  className="logo-remove"
+                  disabled={assetsDisabled}
+                  onClick={() => onLogoFile(null)}
+                >
                   <X size={15} /> Remove
                 </button>
               )}

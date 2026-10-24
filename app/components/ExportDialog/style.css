@@ -7,6 +7,8 @@
   gap: 0;
   border-radius: 16px;
   box-shadow: 0 30px 75px #0009;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
 
   & [data-slot="dialog-header"] {
     text-align: left;
@@ -28,6 +30,10 @@
 }
 
 .export-range-section {
+  .export-dialog.is-exporting & {
+    display: none;
+  }
+
   margin-top: 24px;
   padding: 19px;
   border: 1px solid #36435b;
@@ -167,6 +173,10 @@
 }
 
 .export-quality {
+  .export-dialog.is-exporting & {
+    display: none;
+  }
+
   margin-top: 17px;
 
   & > strong {
@@ -279,6 +289,14 @@
 }
 
 .dialog-actions {
+  .export-dialog & {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding-block: 12px;
+    background: #131d2e;
+  }
+
   margin-top: 21px;
 }
 
